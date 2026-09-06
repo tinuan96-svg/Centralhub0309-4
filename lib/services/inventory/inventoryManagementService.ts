@@ -28,7 +28,6 @@ export interface StockAdjustment {
 export class InventoryManagementService {
   static async getDashboardStats() {
     try {
-      // 1. Get basic counts
       const { count: totalProducts, error: prodError } = await supabase
         .from('products')
         .select('*', { count: 'exact', head: true })
@@ -36,8 +35,6 @@ export class InventoryManagementService {
 
       if (prodError) console.warn('[InventoryManagementService] totalProducts error:', prodError.message);
 
-      // 2. Fetch inventory data with product info (explicit join or separate)
-      // Attempt explicit join via product_id to ensure PostgREST finds the relationship
       const { data: inventoryData, error: invError } = await supabase
         .from('central_inventory')
         .select(`
@@ -50,7 +47,6 @@ export class InventoryManagementService {
 
       if (invError) {
         console.error('[InventoryManagementService] inventoryData join error:', invError.message);
-        // Fallback: If join fails, fetch central_inventory alone to at least show stock units
         const { data: fallbackData, error: fallbackError } = await supabase
           .from('central_inventory')
           .select('stock_quantity, low_stock_threshold');
@@ -71,12 +67,15 @@ export class InventoryManagementService {
 
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        const { count: movementsToday } = await supabase.from('inventory_logs').select('*', { count: 'exact', head: true }).gte('created_at', today.toISOString());
+        const { count: movementsToday } = await supabase
+          .from('inventory_logs')
+          .select('*', { count: 'exact', head: true })
+          .gte('created_at', today.toISOString());
 
         return {
           totalProducts: totalProducts || 0,
           totalStockUnits,
-          totalInventoryValue: 0, // Cannot calculate without cost_price
+          totalInventoryValue: 0,
           lowStockCount,
           outOfStockCount,
           movementsToday: movementsToday || 0
@@ -94,9 +93,7 @@ export class InventoryManagementService {
         const threshold = Number(inv.low_stock_threshold || 5);
 
         totalStockUnits += stock;
-        if (productData) {
-          totalInventoryValue += stock * (Number(productData.cost_price) || 0);
-        }
+        if (productData) totalInventoryValue += stock * (Number(productData.cost_price) || 0);
 
         if (stock <= 0) outOfStockCount++;
         else if (stock <= threshold) lowStockCount++;
@@ -128,10 +125,13 @@ export class InventoryManagementService {
   static async adjustStock(adj: StockAdjustment) {
     console.log(`[InventoryManagementService] Adjusting stock for ${adj.productId} by ${adj.changeAmount}`);
 
-    // 1. Fetch current state from central_inventory (Source of Truth)
+    if (!Number.isFinite(adj.changeAmount) || adj.changeAmount === 0) {
+      throw new Error('Stock change must be a non-zero number.');
+    }
+
     const { data: inventory, error: fetchError } = await supabase
       .from('central_inventory')
-      .select('stock_quantity, products!product_id(name, sku)')
+      .select('stock_quantity')
       .eq('product_id', adj.productId)
       .maybeSingle();
 
@@ -140,46 +140,54 @@ export class InventoryManagementService {
       throw new Error('Product not found in inventory. Please ensure it is registered in the catalog.');
     }
 
-    const product = Array.isArray((inventory as any).products)
-      ? (inventory as any).products[0]
-      : (inventory as any).products;
     const oldStock = Number(inventory.stock_quantity || 0);
     const newStock = oldStock + adj.changeAmount;
+    if (newStock < 0) {
+      throw new Error(`Stock adjustment would make inventory negative (${newStock}).`);
+    }
 
-    // 2. Update central_inventory Ledger (Atomic Upsert)
+    const changedAt = new Date().toISOString();
     const { error: ciError } = await supabase
       .from('central_inventory')
       .upsert({
         product_id: adj.productId,
         stock_quantity: newStock,
-        updated_at: new Date().toISOString()
+        updated_at: changedAt
       }, { onConflict: 'product_id' });
 
     if (ciError) {
-      console.error(`[InventoryManagementService] central_inventory update failed:`, ciError);
+      console.error('[InventoryManagementService] central_inventory update failed:', ciError);
       throw new Error(`Inventory update failed: ${ciError.message}`);
     }
 
-    // 2b. Sync back to legacy products.stock - REMOVED: Database trigger now handles this automatically
-    // to prevent "Direct updates to products.stock are blocked" errors.
-    // await supabase.from('products').update({ stock: newStock }).eq('id', adj.productId);
-
-    // 3. Log the change for Audit Trail (inventory_movements is our enterprise ledger)
     const { error: moveError } = await supabase.from('inventory_movements').insert({
       product_id: adj.productId,
-      sku: product?.sku,
+      order_id: adj.orderId || null,
+      supplier_id: adj.supplierId || null,
+      warehouse_id: adj.warehouseId || null,
       change_amount: adj.changeAmount,
       old_stock: oldStock,
       new_stock: newStock,
       action_type: adj.type,
-      reason: adj.reason,
       notes: adj.notes || adj.reason,
-      order_id: adj.orderId,
-      created_at: new Date().toISOString()
+      created_at: changedAt
     });
 
     if (moveError) {
-       console.error(`[InventoryManagementService] inventory_movements insert failed:`, moveError);
+      console.error('[InventoryManagementService] inventory_movements insert failed; rolling stock back:', moveError);
+      const { error: rollbackError } = await supabase
+        .from('central_inventory')
+        .upsert({
+          product_id: adj.productId,
+          stock_quantity: oldStock,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'product_id' });
+
+      if (rollbackError) {
+        console.error('[InventoryManagementService] CRITICAL: stock rollback failed:', rollbackError);
+        throw new Error(`Audit ledger failed (${moveError.message}) and stock rollback also failed (${rollbackError.message}).`);
+      }
+      throw new Error(`Stock adjustment was rolled back because audit logging failed: ${moveError.message}`);
     }
 
     return { success: true, newStock };
@@ -207,11 +215,28 @@ export class InventoryManagementService {
     return data;
   }
 
-  static async getMovements(filters?: { productId?: string; type?: string; limit?: number }) {
-    let query = supabase.from('inventory_movements').select('*, products!product_id(name)').order('created_at', { ascending: false });
+  static async getMovements(filters?: {
+    productId?: string;
+    type?: string;
+    warehouseId?: string;
+    supplierId?: string;
+    from?: string;
+    to?: string;
+    limit?: number;
+  }) {
+    let query = supabase
+      .from('inventory_movements')
+      .select('*, products!product_id(name, sku)')
+      .order('created_at', { ascending: false });
+
     if (filters?.productId) query = query.eq('product_id', filters.productId);
     if (filters?.type) query = query.eq('action_type', filters.type);
+    if (filters?.warehouseId) query = query.eq('warehouse_id', filters.warehouseId);
+    if (filters?.supplierId) query = query.eq('supplier_id', filters.supplierId);
+    if (filters?.from) query = query.gte('created_at', filters.from);
+    if (filters?.to) query = query.lte('created_at', filters.to);
     if (filters?.limit) query = query.limit(filters.limit);
+
     const { data, error } = await query;
     if (error) {
       console.error('Error fetching inventory movements:', {
@@ -222,19 +247,25 @@ export class InventoryManagementService {
       });
       return [];
     }
-    return (data || []).map((row: any) => ({
-      id: row.id,
-      product_id: row.product_id,
-      product_name: row.products?.name || 'Unknown',
-      sku: row.sku,
-      change_amount: row.change_amount,
-      old_stock: row.old_stock,
-      new_stock: row.new_stock,
-      action_type: row.action_type,
-      notes: row.notes,
-      order_number: row.order_number,
-      created_at: row.created_at,
-    }));
+
+    return (data || []).map((row: any) => {
+      const product = Array.isArray(row.products) ? row.products[0] : row.products;
+      return {
+        id: row.id,
+        product_id: row.product_id,
+        product_name: product?.name || 'Unknown',
+        sku: product?.sku || null,
+        warehouse_id: row.warehouse_id || null,
+        supplier_id: row.supplier_id || null,
+        change_amount: row.change_amount,
+        old_stock: row.old_stock,
+        new_stock: row.new_stock,
+        action_type: row.action_type,
+        notes: row.notes,
+        order_number: row.order_number,
+        created_at: row.created_at,
+      };
+    });
   }
 
   static async getWarehouses() {
