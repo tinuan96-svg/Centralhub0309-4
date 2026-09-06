@@ -20,6 +20,7 @@ export default function SettingsLayout({
     { href: '/settings/master-data/brands', label: 'Brands', icon: '🏷️' },
     { href: '/settings/master-data/suppliers', label: 'Suppliers', icon: '🏭' },
     { href: '/settings/master-data/stores', label: 'Stores', icon: '🏪' },
+    { href: '/settings/notifications', label: 'Notifications', icon: '🔔' },
     { href: '/settings/users', label: 'User Management', icon: '👥' },
   ];
 
