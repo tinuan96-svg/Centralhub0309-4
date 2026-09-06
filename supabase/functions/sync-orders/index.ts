@@ -2,357 +2,537 @@ import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-function getErrorMessage(err: any): string {
-  if (!err) return "Unknown error";
-  if (typeof err === 'string') return err;
-  if (err.message) return err.message;
-  if (err.details) return err.details;
-  return String(err);
-}
+type SyncRequest = { orderId?: string; storeSlug?: string };
+type SourceConfig = { slug: string; url?: string; key?: string };
+type Bundle = { orders: any[]; order_items: any[]; products: any[] };
 
-function isUuid(id: any): boolean {
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  return typeof id === 'string' && uuidRegex.test(id);
-}
-
-function generateSafeUuid(preferredId?: any, fallbackNamespace?: string): string {
-  if (isUuid(preferredId)) return preferredId;
-  if (fallbackNamespace) {
-    let hash = 0;
-    for (let i = 0; i < fallbackNamespace.length; i++) { hash = ((hash << 5) - hash) + fallbackNamespace.charCodeAt(i); hash |= 0; }
-    const hex = Math.abs(hash).toString(16).padStart(8, '0');
-    return `${hex}-0000-4000-8000-000000000000`;
-  }
-  return crypto.randomUUID();
-}
-
-const mapOrderData = (order: any, storeId: string) => {
-  const paymentMethodMap: Record<string, string> = { card: "card", cod: "cod", mollie: "card", paypal: "paypal", wallet: "wallet" };
-  const orderStatusMap: Record<string, string> = {
-    pending: "pending_payment",
-    confirmed: "confirmed",
-    processing: "packing",
-    packed: "packed",
-    shipped: "shipped",
-    cancelled: "cancelled",
-    refunded: "refunded",
-    paid: "paid",
-    picking: "picking",
-    picked: "picked",
-    packing: "packing",
-    ready_to_ship: "ready_to_ship",
-    shipment_booked: "shipment_booked",
-    collected: "collected",
-    at_local_depot: "at_local_depot",
-    out_for_delivery: "out_for_delivery",
-    delivered: "delivered",
-    completed: "completed",
-    failed: "failed",
-    returned: "returned",
-    delivery_attempted: "delivery_attempted",
-    ready_for_collection: "ready_for_collection",
-    delivery_rescheduled: "delivery_rescheduled"
-  };
-  const paymentStatusMap: Record<string, string> = { pending: "pending", paid: "paid", failed: "failed", refunded: "refunded" };
-
-  const total = Number(order.total || order.total_amount || 0);
-  const delivery_fee = Number(order.delivery_fee || order.shipping_cost || 0);
-  const subtotal = order.subtotal ? Number(order.subtotal) : (total - delivery_fee);
-
-  const mapped: any = {
-    id: order.id, store_id: storeId,
-    order_number: order.order_number, customer_name: order.customer_name ?? "Guest",
-    customer_email: order.customer_email ?? "", customer_phone: order.customer_phone ?? "",
-    delivery_address: order.delivery_address ?? "", delivery_city: order.delivery_city ?? "",
-    delivery_postcode: order.delivery_postcode ?? "", subtotal, delivery_fee, total,
-    payment_method: paymentMethodMap[String(order.payment_method).toLowerCase()] ?? "card",
-    payment_status: paymentStatusMap[String(order.payment_status).toLowerCase()] ?? "pending",
-    order_status: orderStatusMap[String(order.order_status ?? order.status).toLowerCase()] ?? "pending_payment",
-    created_at: order.created_at, updated_at: order.updated_at,
-    inventory_sync_status: 'pending',
-    stock_deducted: false,
-  };
-
-  const paidStatuses = ['confirmed', 'picking', 'packing', 'packed', 'ready_to_ship', 'shipment_booked', 'shipped', 'collected', 'out_for_delivery', 'at_local_depot', 'delivered', 'completed'];
-  if (mapped.payment_status !== 'paid' && paidStatuses.includes(mapped.order_status)) {
-    mapped.payment_status = 'paid';
-  }
-
-  return mapped;
-};
-
-/**
- * Strictly matches remote products to CentralHub products.
- * Priority: 1. Direct ID/UUID match, 2. SKU backup match.
- * NEVER creates new products.
- */
-async function getProductMappings(supabase: any, remoteProducts: any[], storeId: string): Promise<{ remoteIdToChUuid: Map<string, string>; unmatchedSkus: Set<string> }> {
-  const remoteIdToChUuid = new Map<string, string>();
-  const unmatchedSkus = new Set<string>();
-
-  if (!remoteProducts || remoteProducts.length === 0) return { remoteIdToChUuid, unmatchedSkus };
-
-  // 1. PHASE 1: Match by IDs (Direct UUID links)
-  const idsToCheck = new Set<string>();
-  remoteProducts.forEach(p => {
-    if (isUuid(p.id)) idsToCheck.add(p.id);
-    if (isUuid(p.centralhub_product_id)) idsToCheck.add(p.centralhub_product_id);
+function reply(body: any, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
-
-  if (idsToCheck.size > 0) {
-    const { data: existing } = await supabase.from('products').select('id').in('id', Array.from(idsToCheck));
-    const existingIds = new Set((existing || []).map((p: any) => p.id));
-
-    remoteProducts.forEach(p => {
-      // Priority 1: Use centralhub_product_id if it exists in CH
-      if (isUuid(p.centralhub_product_id) && existingIds.has(p.centralhub_product_id)) {
-        remoteIdToChUuid.set(p.id, p.centralhub_product_id);
-      }
-      // Priority 2: Use remote ID if it is a valid CH UUID
-      else if (isUuid(p.id) && existingIds.has(p.id)) {
-        remoteIdToChUuid.set(p.id, p.id);
-      }
-    });
-  }
-
-  // 2. PHASE 2: Match by SKU (Backup plan)
-  const unmatchedProducts = remoteProducts.filter(p => !remoteIdToChUuid.has(p.id));
-  const skusToCheck = unmatchedProducts.map(p => p.sku).filter(Boolean);
-
-  if (skusToCheck.length > 0) {
-    const { data: existing } = await supabase.from('products').select('id, sku').in('sku', skusToCheck);
-    const skuMap = new Map((existing || []).map((p: any) => [p.sku, p.id]));
-
-    unmatchedProducts.forEach(p => {
-      if (p.sku && skuMap.has(p.sku)) {
-        remoteIdToChUuid.set(p.id, skuMap.get(p.sku)!);
-      } else {
-        unmatchedSkus.add(p.sku || `Unnamed (ID: ${p.id})`);
-      }
-    });
-  }
-
-  // Product identity is established by centralhub_product_id/SKU.
-  // Stores use separate databases; never create store-product assignment rows.
-  return { remoteIdToChUuid, unmatchedSkus };
 }
 
-async function getLastSyncTimestamp(centralHubSupabase: any, storeId: string): Promise<string | null> {
-  try {
-    const { data } = await centralHubSupabase.from('orders')
-      .select('created_at')
-      .eq('store_id', storeId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    return data?.created_at ?? null;
-  } catch { return null; }
+function errorMessage(error: any) {
+  if (!error) return "Unknown error";
+  if (typeof error === "string") return error;
+  return error.message || error.details || String(error);
 }
 
-async function syncFromSource(
-  centralHubUrl: string,
-  centralHubKey: string,
-  supabaseUrl: string,
-  serviceKey: string,
-  storeSlug: string,
-  specificOrderId?: string
-): Promise<{ success: boolean; orders?: number; items?: number; mismatched_orders?: any[]; error?: string }> {
-  const centralHubSupabase = createClient(centralHubUrl, centralHubKey);
-  const remoteSupabase = createClient(supabaseUrl, serviceKey);
-  const { data: store } = await centralHubSupabase.from('stores').select('id').ilike('slug', storeSlug).maybeSingle();
-  if (!store) return { success: false, error: "Store not found" };
+function isUuid(value: any): value is string {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
 
-  try {
-    let query = remoteSupabase.from("orders").select("*");
-    if (specificOrderId) {
-      query = query.eq('id', specificOrderId);
+function normalizeSlug(value?: string | null) {
+  const slug = String(value || "").trim().toLowerCase();
+  if (!slug) return undefined;
+  if (slug === "keralagroceries") return "keralagrocery";
+  if (slug === "tamilretail.com") return "tamilretail";
+  return slug;
+}
+
+function money(value: any) {
+  const number = Number(value ?? 0);
+  return Number.isFinite(number) ? Math.round(number * 100) / 100 : 0;
+}
+
+function text(value: any) {
+  if (value == null) return "";
+  if (["string", "number", "boolean"].includes(typeof value)) return String(value);
+  return "";
+}
+
+function safeUuid(preferred: any, namespace: string) {
+  if (isUuid(preferred)) return preferred;
+  let hash = 0;
+  for (let i = 0; i < namespace.length; i++) {
+    hash = ((hash << 5) - hash) + namespace.charCodeAt(i);
+    hash |= 0;
+  }
+  const hex = Math.abs(hash).toString(16).padStart(8, "0");
+  return `${hex}-0000-4000-8000-000000000000`;
+}
+
+function addressParts(order: any) {
+  const shipping = order.shipping_address && typeof order.shipping_address === "object"
+    ? order.shipping_address
+    : {};
+  const line1 = text(order.delivery_address)
+    || text(order.shipping_address_line1)
+    || text(shipping.line1)
+    || text(shipping.address_line1);
+  const line2 = text(order.shipping_address_line2)
+    || text(shipping.line2)
+    || text(shipping.address_line2);
+  return {
+    address: [line1, line2].filter(Boolean).join(", "),
+    city: text(order.delivery_city) || text(order.shipping_city) || text(shipping.city),
+    postcode: text(order.delivery_postcode)
+      || text(order.shipping_postcode)
+      || text(shipping.postal_code)
+      || text(shipping.postcode),
+  };
+}
+
+function mapOrder(order: any, storeId: string) {
+  const paymentMethodMap: Record<string, string> = {
+    card: "card", online: "card", cod: "cod", mollie: "mollie",
+    paypal: "paypal", wallet: "wallet", globalpayments: "globalpayments",
+    trustpayments: "trustpayments", clearpay: "clearpay",
+  };
+  const statusMap: Record<string, string> = {
+    pending: "pending_payment", pending_payment: "pending_payment", paid: "paid",
+    confirmed: "confirmed", processing: "packing", picking: "picking", picked: "picked",
+    packing: "packing", packed: "packed", ready_to_ship: "ready_to_ship",
+    shipment_booked: "shipment_booked", collected: "collected", shipped: "shipped",
+    at_local_depot: "at_local_depot", out_for_delivery: "out_for_delivery",
+    delivered: "delivered", completed: "completed", cancelled: "cancelled",
+    refunded: "refunded", delivery_attempted: "delivery_attempted",
+    ready_for_collection: "ready_for_collection", delivery_rescheduled: "delivery_rescheduled",
+    returned: "returned", failed: "failed",
+  };
+  const paymentStatusMap: Record<string, string> = {
+    pending: "pending", paid: "paid", completed: "paid", failed: "failed", refunded: "refunded",
+  };
+
+  const method = String(order.payment_method || "card").toLowerCase();
+  const total = money(order.total ?? order.total_amount);
+  const deliveryFee = money(order.delivery_fee ?? order.delivery_charge ?? order.shipping_cost);
+  const subtotal = order.subtotal != null ? money(order.subtotal) : money(total - deliveryFee);
+  const status = statusMap[String(order.order_status || order.status || "pending").toLowerCase()] || "pending_payment";
+  const address = addressParts(order);
+  const mollieId = order.mollie_payment_id || (method === "mollie" ? order.payment_reference : null);
+  const legacyEstimate = money(order.gateway_fee_estimated ?? order.payment_fee);
+  const actualVerified = order.gateway_fee_source === "mollie_balance_transaction" && order.gateway_fee_actual != null;
+
+  const mapped: Record<string, any> = {
+    id: order.id,
+    store_id: storeId,
+    order_number: order.order_number,
+    customer_name: text(order.customer_name) || text(order.shipping_name) || "Guest",
+    customer_email: text(order.customer_email) || text(order.shipping_email),
+    customer_phone: text(order.customer_phone) || text(order.shipping_phone),
+    delivery_address: address.address,
+    delivery_city: address.city,
+    delivery_postcode: address.postcode,
+    subtotal,
+    delivery_fee: deliveryFee,
+    total,
+    payment_method: paymentMethodMap[method] || "card",
+    payment_status: paymentStatusMap[String(order.payment_status || "pending").toLowerCase()] || "pending",
+    order_status: status,
+    payment_reference: order.payment_reference || mollieId || null,
+    mollie_payment_id: mollieId || null,
+    created_at: order.created_at,
+    updated_at: order.updated_at || order.created_at,
+    inventory_sync_status: "pending",
+    stock_deducted: false,
+    sync_state: "synced",
+    sync_error: null,
+    last_synced_at: new Date().toISOString(),
+  };
+
+  if (method === "mollie") {
+    mapped.payment_fee = legacyEstimate;
+    mapped.gateway_fee_estimated = legacyEstimate;
+    if (actualVerified) {
+      mapped.gateway_fee_actual = money(order.gateway_fee_actual);
+      mapped.gateway_fee_net = money(order.gateway_fee_net ?? order.gateway_fee_actual);
+      mapped.gateway_fee_vat = order.gateway_fee_vat == null ? null : money(order.gateway_fee_vat);
+      mapped.gateway_fee_gross = order.gateway_fee_gross == null ? null : money(order.gateway_fee_gross);
+      mapped.gateway_fee_source = "mollie_balance_transaction";
+      mapped.gateway_fee_reconciled_at = order.gateway_fee_reconciled_at || new Date().toISOString();
     } else {
-      const lastSync = await getLastSyncTimestamp(centralHubSupabase, store.id);
-      if (lastSync) {
-        query = query.gte('created_at', lastSync).order('created_at', { ascending: false }).limit(100);
-      } else {
-        query = query.order('created_at', { ascending: false }).limit(100);
-      }
+      mapped.gateway_fee_net = legacyEstimate;
+      mapped.gateway_fee_source = "store_estimate";
+      mapped.gateway_fee_meta = {
+        estimate_origin: "malluspices_legacy_formula",
+        store_order_number: order.order_number || null,
+      };
     }
-    const { data: orders } = await query;
-    if (!orders || orders.length === 0) return { success: true, orders: 0, items: 0 };
+  }
 
-    // Fetch all order items from remote
-    const { data: allTableItems } = await remoteSupabase.from("order_items").select("*").in('order_id', orders.map((o: any) => o.id));
-    if (!allTableItems) return { success: true, orders: orders.length, items: 0 };
+  const operationalPaid = new Set([
+    "confirmed", "picking", "picked", "packing", "packed", "ready_to_ship",
+    "shipment_booked", "collected", "shipped", "at_local_depot",
+    "out_for_delivery", "delivered", "completed",
+  ]);
+  if (mapped.payment_status !== "paid" && operationalPaid.has(status)) mapped.payment_status = "paid";
+  return mapped;
+}
 
-    // Identify unique remote products to match
-    const uniqueRemoteProductIds = new Set<string>();
-    allTableItems.forEach((i: any) => { if (i.product_id) uniqueRemoteProductIds.add(i.product_id); });
+async function fetchDirectBundle(source: SourceConfig, orderId?: string): Promise<Bundle> {
+  const remote = createClient(source.url!, source.key!);
+  let orderQuery = remote.from("orders").select("*");
+  let orderResult: any;
 
-    let remoteIdToChUuid = new Map<string, string>();
-    const remoteProductSkuMap = new Map<string, string>(); // remote_product_id -> sku
-
-    if (uniqueRemoteProductIds.size > 0) {
-      const { data: remoteProducts } = await remoteSupabase.from('products').select('*').in('id', Array.from(uniqueRemoteProductIds));
-      if (remoteProducts) {
-        const mappings = await getProductMappings(centralHubSupabase, remoteProducts, store.id);
-        remoteIdToChUuid = mappings.remoteIdToChUuid;
-        remoteProducts.forEach((p: any) => { if (p.sku) remoteProductSkuMap.set(p.id, p.sku); });
-      }
+  if (orderId) {
+    orderResult = await orderQuery.eq("id", orderId).limit(1);
+  } else {
+    orderResult = await orderQuery.order("updated_at", { ascending: false }).limit(100);
+    if (orderResult.error) {
+      orderQuery = remote.from("orders").select("*");
+      orderResult = await orderQuery.order("created_at", { ascending: false }).limit(100);
     }
+  }
 
-    const mismatchedOrders: any[] = [];
-    const validOrdersToUpsert: any[] = [];
-    const validItemsToUpsert: any[] = [];
+  if (orderResult.error) throw orderResult.error;
+  const orders = orderResult.data || [];
+  if (!orders.length) return { orders: [], order_items: [], products: [] };
 
-    const orderIds = orders.map((o: any) => o.id);
-    const { data: existingOrders } = await centralHubSupabase.from("orders").select('id, inventory_sync_status').in('id', orderIds);
-    const existingMap = new Map((existingOrders || []).map((o: any) => [o.id, o]));
+  const orderIds = orders.map((order: any) => order.id);
+  const itemResult = await remote.from("order_items").select("*").in("order_id", orderIds);
+  if (itemResult.error) throw itemResult.error;
+  const orderItems = itemResult.data || [];
 
-    for (const remoteOrder of orders) {
-      const remoteItems = allTableItems.filter(i => i.order_id === remoteOrder.id);
-      const mappedItems: any[] = [];
-      const missingSkus: string[] = [];
+  const productIds = [...new Set(orderItems.map((item: any) => item.product_id).filter(Boolean))];
+  let products: any[] = [];
+  if (productIds.length) {
+    const productResult = await remote.from("products").select("*").in("id", productIds);
+    if (productResult.error) throw productResult.error;
+    products = productResult.data || [];
+  }
 
-      for (const item of remoteItems) {
-        // Priority 1: Check if the order item itself carries a valid CentralHub Product UUID
-        let chUuid = isUuid(item.centralhub_product_id) ? item.centralhub_product_id : null;
+  return { orders, order_items: orderItems, products };
+}
 
-        // Priority 2: Use the pre-computed product mapping (ID-match then SKU-match)
-        if (!chUuid) {
-          chUuid = remoteIdToChUuid.get(item.product_id);
-        }
+function toHex(buffer: ArrayBuffer) {
+  return Array.from(new Uint8Array(buffer)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
 
-        const resolvedSku = item.sku || remoteProductSkuMap.get(item.product_id);
+async function signedTamilRequest(action: string, params: Record<string, any> = {}) {
+  const secret = Deno.env.get("CENTRALHUB_WEBHOOK_SECRET") || "";
+  if (!secret) throw new Error("CentralHub signed gateway is not configured");
+  const payload = JSON.stringify({ action, params });
+  const timestamp = Date.now().toString();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = toHex(await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(`${timestamp}.${payload}`),
+  ));
 
-        if (!chUuid) {
-          missingSkus.push(resolvedSku || item.product_name || `ID:${item.product_id}`);
-          continue;
-        }
+  const response = await fetch(
+    "https://gokapknjocmgciwnxnxr.supabase.co/functions/v1/centralhub-orders",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timestamp, payload, signature }),
+    },
+  );
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data?.success === false) {
+    throw new Error(data?.error || `TamilRetail gateway failed (${response.status})`);
+  }
+  return data;
+}
 
-        mappedItems.push({
-          id: generateSafeUuid(item.id, `${remoteOrder.id}-${item.product_id}-${item.quantity}`),
-          order_id: remoteOrder.id,
-          product_id: chUuid,
-          product_name: item.product_name || item.name || 'Item',
-          quantity: Number(item.quantity || 1),
-          unit_price: Number(item.unit_price || 0),
-          total_price: Number(item.total_price || 0),
-          sku: resolvedSku
-        });
-      }
+async function persistBundle(ch: any, storeSlug: string, bundle: Bundle, specificOrderId?: string) {
+  const { data: store, error: storeError } = await ch
+    .from("stores")
+    .select("id")
+    .ilike("slug", storeSlug)
+    .maybeSingle();
+  if (storeError || !store) return { success: false, error: `Store not found: ${storeSlug}` };
 
-      // STRICT RULE: If any item in the order is missing a SKU match, skip the entire order
-      if (missingSkus.length > 0) {
-        mismatchedOrders.push({
-          order_number: remoteOrder.order_number,
-          missing_skus: missingSkus
-        });
+  const orders = (bundle.orders || []).filter((order: any) =>
+    !String(order.order_number || "").toLowerCase().startsWith("compat-test-")
+  );
+  const items = bundle.order_items || [];
+  const products = bundle.products || [];
+
+  if (!orders.length) {
+    return specificOrderId
+      ? { success: false, orders: 0, items: 0, error: `Order ${specificOrderId} was not found on ${storeSlug}` }
+      : { success: true, orders: 0, items: 0 };
+  }
+
+  const productByRemoteId = new Map(products.map((product: any) => [product.id, product]));
+  const candidateIds = new Set<string>();
+  for (const product of products) {
+    if (isUuid(product.id)) candidateIds.add(product.id);
+    if (isUuid(product.centralhub_product_id)) candidateIds.add(product.centralhub_product_id);
+    if (isUuid(product.source_product_id)) candidateIds.add(product.source_product_id);
+  }
+  for (const item of items) {
+    if (isUuid(item.centralhub_product_id)) candidateIds.add(item.centralhub_product_id);
+  }
+
+  const centralIdResult = candidateIds.size
+    ? await ch.from("products").select("id").in("id", [...candidateIds])
+    : { data: [], error: null };
+  if (centralIdResult.error) throw centralIdResult.error;
+  const validCentralIds = new Set((centralIdResult.data || []).map((product: any) => product.id));
+
+  const skus = [...new Set([
+    ...products.map((product: any) => product.sku),
+    ...items.map((item: any) => item.sku),
+  ].filter(Boolean))];
+  const skuResult = skus.length
+    ? await ch.from("products").select("id,sku").in("sku", skus)
+    : { data: [], error: null };
+  if (skuResult.error) throw skuResult.error;
+  const centralBySku = new Map((skuResult.data || []).map((product: any) => [product.sku, product.id]));
+
+  const orderIds = orders.map((order: any) => order.id);
+  const existingByIdResult = await ch
+    .from("orders")
+    .select("id,order_number,inventory_sync_status")
+    .in("id", orderIds);
+  if (existingByIdResult.error) throw existingByIdResult.error;
+  const existingById = new Map((existingByIdResult.data || []).map((order: any) => [order.id, order]));
+
+  const orderNumbers = [...new Set(orders.map((order: any) => order.order_number).filter(Boolean))];
+  const existingByNumberResult = orderNumbers.length
+    ? await ch
+        .from("orders")
+        .select("id,order_number,inventory_sync_status")
+        .eq("store_id", store.id)
+        .in("order_number", orderNumbers)
+    : { data: [], error: null };
+  if (existingByNumberResult.error) throw existingByNumberResult.error;
+  const existingByNumber = new Map((existingByNumberResult.data || []).map((order: any) => [order.order_number, order]));
+
+  const validOrders: any[] = [];
+  const validItems: any[] = [];
+  const mismatches: any[] = [];
+  const canonicalIdsToReplace = new Set<string>();
+
+  for (const remoteOrder of orders) {
+    const numberMatch = existingByNumber.get(remoteOrder.order_number);
+    const targetOrderId = numberMatch?.id || remoteOrder.id;
+    if (targetOrderId !== remoteOrder.id) canonicalIdsToReplace.add(targetOrderId);
+
+    const remoteItems = items.filter((item: any) => item.order_id === remoteOrder.id);
+    const mappedItems: any[] = [];
+    const missing: string[] = [];
+
+    for (const item of remoteItems) {
+      const product = productByRemoteId.get(item.product_id) as any;
+      const preferred = [
+        item.centralhub_product_id,
+        product?.centralhub_product_id,
+        product?.source_product_id,
+        product?.id,
+      ].find((value) => isUuid(value) && validCentralIds.has(value));
+      const sku = item.sku || product?.sku || null;
+      const centralProductId = preferred || (sku ? centralBySku.get(sku) : undefined);
+
+      if (!centralProductId) {
+        missing.push(sku || item.product_name || item.name || product?.name || `ID:${item.product_id}`);
         continue;
       }
 
-      const mappedOrder = mapOrderData(remoteOrder, store.id);
-      const existing = existingMap.get(remoteOrder.id);
-
-      // Preserve sync status if already processed
-      if (existing?.inventory_sync_status === 'synced') {
-        mappedOrder.inventory_sync_status = 'synced';
-        mappedOrder.stock_deducted = true;
-      }
-
-      validOrdersToUpsert.push({ ...mappedOrder, items: mappedItems.map(i => ({ name: i.product_name, quantity: i.quantity, price: i.unit_price, product_id: i.product_id })) });
-      mappedItems.forEach(i => validItemsToUpsert.push(i));
+      const quantity = Number(item.quantity || 1);
+      const unitPrice = money(item.unit_price ?? item.product_price);
+      mappedItems.push({
+        id: safeUuid(item.id, `${remoteOrder.id}-${item.product_id}-${quantity}`),
+        order_id: targetOrderId,
+        product_id: centralProductId,
+        product_name: item.product_name || item.name || product?.name || "Item",
+        quantity,
+        unit_price: unitPrice,
+        total_price: money(item.total_price ?? item.subtotal ?? unitPrice * quantity),
+        sku,
+      });
     }
 
-    if (validOrdersToUpsert.length > 0) {
-      await centralHubSupabase.from("orders").upsert(validOrdersToUpsert, { onConflict: 'id' });
-    }
-    if (validItemsToUpsert.length > 0) {
-      await centralHubSupabase.from("order_items").upsert(validItemsToUpsert, { onConflict: 'id' });
+    if (missing.length) {
+      mismatches.push({ order_id: targetOrderId, order_number: remoteOrder.order_number, missing_skus: missing });
+      continue;
     }
 
+    const mapped = mapOrder(remoteOrder, store.id);
+    mapped.id = targetOrderId;
+    const existing = existingById.get(remoteOrder.id) || numberMatch;
+    if (existing?.inventory_sync_status === "synced") {
+      mapped.inventory_sync_status = "synced";
+      mapped.stock_deducted = true;
+    }
+    mapped.items = mappedItems.map((item: any) => ({
+      name: item.product_name,
+      quantity: item.quantity,
+      price: item.unit_price,
+      product_id: item.product_id,
+    }));
+
+    validOrders.push(mapped);
+    validItems.push(...mappedItems);
+  }
+
+  if (validOrders.length) {
+    const upsertOrders = await ch.from("orders").upsert(validOrders, { onConflict: "id" });
+    if (upsertOrders.error) throw upsertOrders.error;
+  }
+
+  for (const orderId of canonicalIdsToReplace) {
+    const deletion = await ch.from("order_items").delete().eq("order_id", orderId);
+    if (deletion.error) throw deletion.error;
+  }
+
+  if (validItems.length) {
+    const upsertItems = await ch.from("order_items").upsert(validItems, { onConflict: "id" });
+    if (upsertItems.error) throw upsertItems.error;
+  }
+
+  for (const order of validOrders) {
+    try {
+      await ch.rpc("recalculate_order_profitability", { p_order_id: order.id });
+    } catch {
+      // Derived profitability must never make transport fail.
+    }
+  }
+
+  if (specificOrderId && mismatches.length) {
     return {
-      success: true,
-      orders: validOrdersToUpsert.length,
-      items: validItemsToUpsert.length,
-      mismatched_orders: mismatchedOrders.length > 0 ? mismatchedOrders : undefined
+      success: false,
+      orders: 0,
+      items: 0,
+      mismatched_orders: mismatches,
+      error: `Order ${specificOrderId} has unmapped product(s): ${mismatches[0].missing_skus.join(", ")}`,
     };
-  } catch (err) { return { success: false, error: getErrorMessage(err) }; }
+  }
+
+  return {
+    success: true,
+    orders: validOrders.length,
+    items: validItems.length,
+    mismatched_orders: mismatches.length ? mismatches : undefined,
+  };
 }
 
-async function syncFromSourceWithTimeout(
-  centralHubUrl: string, centralHubKey: string,
-  supabaseUrl: string, serviceKey: string,
-  storeSlug: string, specificOrderId: string | undefined,
-  timeoutMs: number
-): Promise<{ success: boolean; orders?: number; items?: number; mismatched_orders?: any[]; error?: string }> {
-  const timeoutPromise = new Promise<{ success: false; error: string }>((resolve) =>
-    setTimeout(() => resolve({ success: false, error: `Sync timed out after ${timeoutMs / 1000}s` }), timeoutMs)
-  );
+async function syncSource(chUrl: string, chKey: string, source: SourceConfig, orderId?: string) {
+  const ch = createClient(chUrl, chKey);
+  try {
+    const bundle: Bundle = source.slug === "tamilretail" && (!source.url || !source.key)
+      ? await signedTamilRequest("pull", { orderId: orderId || null })
+      : await fetchDirectBundle(source, orderId);
+    return await persistBundle(ch, source.slug, bundle, orderId);
+  } catch (error) {
+    return { success: false, error: errorMessage(error) };
+  }
+}
+
+async function withTimeout(promise: Promise<any>, timeoutMs = 45000) {
   return Promise.race([
-    syncFromSource(centralHubUrl, centralHubKey, supabaseUrl, serviceKey, storeSlug, specificOrderId),
-    timeoutPromise,
+    promise,
+    new Promise((resolve) => setTimeout(
+      () => resolve({ success: false, error: `Sync timed out after ${timeoutMs / 1000}s` }),
+      timeoutMs,
+    )),
   ]);
 }
 
+async function parseRequest(req: Request): Promise<SyncRequest> {
+  const url = new URL(req.url);
+  const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
+  return {
+    orderId: body?.orderId || url.searchParams.get("orderId") || undefined,
+    storeSlug: normalizeSlug(body?.storeSlug || url.searchParams.get("storeSlug")),
+  };
+}
+
 Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 200, headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
+  if (!["GET", "POST"].includes(req.method)) return reply({ success: false, error: "Method not allowed" }, 405);
 
   try {
-    const centralHubUrl = Deno.env.get("SUPABASE_URL") || "";
-    const centralHubKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-
-    const sources = [
-      { url: Deno.env.get("MALLUSPICES_SUPABASE_URL"), key: Deno.env.get("MALLUSPICES_SUPABASE_SERVICE_ROLE_KEY"), slug: 'malluspices' },
-      { url: Deno.env.get("POCKET_SUPABASE_URL"), key: Deno.env.get("POCKET_SUPABASE_SERVICE_ROLE_KEY"), slug: 'pocketgrocery' },
-      { url: Deno.env.get("SOURCE3_SUPABASE_URL") || Deno.env.get("KERALA_SUPABASE_URL"), key: Deno.env.get("SOURCE3_SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("KERALA_SUPABASE_SERVICE_ROLE_KEY"), slug: 'keralagrocery' }
-    ].filter(s => s.url && s.key);
-
-    if (sources.length === 0) {
-      return new Response(JSON.stringify({ success: true, imported: 0, message: 'No remote stores configured.' }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const chUrl = Deno.env.get("SUPABASE_URL") || "";
+    const chKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    const request = await parseRequest(req);
+    if (request.orderId && !request.storeSlug) {
+      return reply({ success: false, error: "storeSlug is required when orderId is supplied" }, 400);
     }
 
-    const PER_STORE_TIMEOUT = 45000;
-    const results = await Promise.all(
-      sources.map(source =>
-        syncFromSourceWithTimeout(centralHubUrl, centralHubKey, source.url!, source.key!, source.slug!, undefined, PER_STORE_TIMEOUT)
-      )
-    );
+    const sources: SourceConfig[] = [
+      {
+        slug: "malluspices",
+        url: Deno.env.get("MALLUSPICES_SUPABASE_URL"),
+        key: Deno.env.get("MALLUSPICES_SUPABASE_SERVICE_ROLE_KEY"),
+      },
+      {
+        slug: "pocketgrocery",
+        url: Deno.env.get("POCKET_SUPABASE_URL"),
+        key: Deno.env.get("POCKET_SUPABASE_SERVICE_ROLE_KEY"),
+      },
+      {
+        slug: "keralagrocery",
+        url: Deno.env.get("SOURCE3_SUPABASE_URL") || Deno.env.get("KERALA_SUPABASE_URL"),
+        key: Deno.env.get("SOURCE3_SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("KERALA_SUPABASE_SERVICE_ROLE_KEY"),
+      },
+      {
+        slug: "tamilretail",
+      },
+    ];
 
-    const imported = results.reduce((sum, r) => sum + (r.orders || 0), 0);
-    const items_synced = results.reduce((sum, r) => sum + (r.items || 0), 0);
-    const allMismatches = results.reduce((acc, r) => r.mismatched_orders ? acc.concat(r.mismatched_orders) : acc, [] as any[]);
-    const failures = results.filter(r => !r.success).map((r, i) => ({
-      store: sources[i]?.slug,
-      error: r.error,
+    const selected = request.storeSlug
+      ? sources.filter((source) => source.slug === request.storeSlug)
+      : sources;
+    if (request.storeSlug && !selected.length) {
+      return reply({ success: false, error: `Unsupported store: ${request.storeSlug}` }, 400);
+    }
+
+    const results = await Promise.all(selected.map(async (source) => {
+      const usesTamilGateway = source.slug === "tamilretail" && (!source.url || !source.key);
+      if ((!source.url || !source.key) && !usesTamilGateway) {
+        return {
+          store: source.slug,
+          configured: false,
+          success: false,
+          orders: 0,
+          items: 0,
+          error: `Source credentials are not configured for ${source.slug}`,
+        };
+      }
+      const result: any = await withTimeout(syncSource(chUrl, chKey, source, request.orderId));
+      return {
+        store: source.slug,
+        configured: true,
+        transport: usesTamilGateway ? "signed_gateway" : "direct_service_role",
+        ...result,
+      };
     }));
 
-    let message = `Sync Complete: ${imported} Orders imported.`;
-    if (allMismatches.length > 0) {
-      message += `\n\n⚠️ ${allMismatches.length} orders SKIPPED due to unmatched SKUs:`;
-      allMismatches.slice(0, 5).forEach(m => {
-        message += `\n- Order ${m.order_number}: Missing [${m.missing_skus.join(', ')}]`;
-      });
-      if (allMismatches.length > 5) message += `\n...and ${allMismatches.length - 5} more.`;
-    }
+    const imported = results.reduce((sum: number, result: any) => sum + Number(result.orders || 0), 0);
+    const itemsSynced = results.reduce((sum: number, result: any) => sum + Number(result.items || 0), 0);
+    const mismatches = results.flatMap((result: any) => result.mismatched_orders || []);
+    const failures = results
+      .filter((result: any) => !result.success)
+      .map((result: any) => ({ store: result.store, error: result.error || "Unknown sync failure" }));
+    const warnings = results
+      .filter((result: any) => result.success && (result.mismatched_orders?.length || 0) > 0)
+      .map((result: any) => ({
+        store: result.store,
+        warning: `${result.mismatched_orders.length} order(s) skipped because product mappings are missing`,
+      }));
 
-    return new Response(JSON.stringify({
+    return reply({
       success: failures.length === 0,
+      partial_success: failures.length > 0 && failures.length < results.length,
+      targeted: Boolean(request.orderId || request.storeSlug),
+      order_id: request.orderId || null,
+      store_slug: request.storeSlug || null,
       imported,
-      items_synced,
-      mismatched_count: allMismatches.length,
-      message,
-      failures: failures.length > 0 ? failures : undefined,
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      items_synced: itemsSynced,
+      mismatched_count: mismatches.length,
+      stores: results,
+      failures: failures.length ? failures : undefined,
+      warnings: warnings.length ? warnings : undefined,
+      message: failures.length
+        ? `Sync completed with ${failures.length} store failure(s).`
+        : `Sync complete: ${imported} order(s) imported or refreshed.`,
     });
-  } catch (err: any) {
-    return new Response(JSON.stringify({ success: false, error: getErrorMessage(err) }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  } catch (error) {
+    return reply({ success: false, error: errorMessage(error) }, 500);
   }
 });
