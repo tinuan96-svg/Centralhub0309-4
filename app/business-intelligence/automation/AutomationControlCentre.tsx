@@ -9,6 +9,7 @@ export default function AutomationControlCentre() {
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState<any[]>([]);
   const [updating, setUpdating] = useState(false);
+  const [settingError, setSettingError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -17,10 +18,16 @@ export default function AutomationControlCentre() {
         supabase.from('automation_execution_log').select('*').order('created_at', { ascending: false }).limit(50),
         supabase.from('system_intelligence_settings').select('*').filter('key', 'ilike', 'automation_%')
       ]);
+
+      if (logData.error) throw logData.error;
+      if (settingsData.error) throw settingsData.error;
+
       setLogs(logData.data || []);
       setSettings(settingsData.data || []);
+      setSettingError(null);
     } catch (err) {
       console.error('Failed to load automation data:', err);
+      setSettingError(err instanceof Error ? err.message : 'Failed to load automation control state.');
     } finally {
       setLoading(false);
     }
@@ -28,23 +35,53 @@ export default function AutomationControlCentre() {
 
   const updateSetting = async (key: string, value: boolean) => {
     setUpdating(true);
+    setSettingError(null);
     try {
-      await supabase
+      const { error } = await supabase
         .from('system_intelligence_settings')
-        .update({ value, updated_at: new Date().toISOString() })
-        .eq('key', key);
+        .upsert(
+          { key, value, updated_at: new Date().toISOString() },
+          { onConflict: 'key' }
+        );
+
+      if (error) throw error;
       await loadData();
+      return true;
+    } catch (err) {
+      console.error(`Failed to update automation setting ${key}:`, err);
+      setSettingError(err instanceof Error ? err.message : `Failed to update ${key}.`);
+      return false;
     } finally {
       setUpdating(false);
     }
   };
 
   useEffect(() => {
-    loadData();
+    void loadData();
   }, [loadData]);
 
-  const globalEnabled = settings.find(s => s.key === 'automation_global_enabled')?.value;
-  const activeMode = settings.find(s => s.key === 'automation_mode_active')?.value;
+  const globalEnabled = settings.find(s => s.key === 'automation_global_enabled')?.value === true;
+  const activeMode = settings.find(s => s.key === 'automation_mode_active')?.value === true;
+
+  const requestGlobalToggle = async () => {
+    if (!globalEnabled && activeMode) {
+      const confirmed = window.confirm(
+        'Automation is configured for ACTIVE mode. Resuming the global switch can allow live mutations and messages. Resume anyway?'
+      );
+      if (!confirmed) return;
+    }
+    await updateSetting('automation_global_enabled', !globalEnabled);
+  };
+
+  const requestModeToggle = async () => {
+    if (!activeMode) {
+      const confirmed = window.confirm(
+        'Switch to ACTIVE mode? When the global switch is online, enabled modules may change live data or send messages. Use DRY RUN unless you intentionally want live execution.'
+      );
+      if (!confirmed) return;
+    }
+    await updateSetting('automation_mode_active', !activeMode);
+  };
 
   const health = useMemo(() => {
     const total = logs.length;
@@ -79,6 +116,19 @@ export default function AutomationControlCentre() {
         subtitle="Manage safety policies, execution modes, and emergency kill-switches."
       />
 
+      {settingError && (
+        <Card className="p-4 border border-rose-500/30 bg-rose-500/10">
+          <p className="text-sm font-bold text-rose-300">Automation control update failed</p>
+          <p className="text-xs text-rose-200/70 mt-1">{settingError}</p>
+        </Card>
+      )}
+
+      {loading && (
+        <Card className="p-4 border border-slate-800 bg-slate-900/50">
+          <p className="text-xs text-slate-400">Loading the current automation safety state…</p>
+        </Card>
+      )}
+
       {/* Health Check Summary */}
       <Card className={`p-6 border-l-4 ${
         health.status === 'HEALTHY' ? 'border-l-emerald-500 bg-emerald-500/5' :
@@ -110,9 +160,9 @@ export default function AutomationControlCentre() {
                 <p className="text-sm text-slate-400">Global kill switch state</p>
              </div>
              <Button
-               onClick={() => updateSetting('automation_global_enabled', !globalEnabled)}
+               onClick={() => void requestGlobalToggle()}
                variant={globalEnabled ? 'danger' : 'primary'}
-               disabled={updating}
+               disabled={updating || loading}
                className="font-black uppercase"
              >
                {globalEnabled ? 'STOP ALL' : 'RESUME'}
@@ -132,9 +182,9 @@ export default function AutomationControlCentre() {
                 <p className="text-sm text-slate-400">Operational mutation setting</p>
              </div>
              <Button
-               onClick={() => updateSetting('automation_mode_active', !activeMode)}
+               onClick={() => void requestModeToggle()}
                variant="secondary"
-               disabled={updating || !globalEnabled}
+               disabled={updating || loading || !globalEnabled}
                className="text-[10px] font-black"
              >
                SWITCH TO {activeMode ? 'DRY RUN' : 'ACTIVE'}
@@ -151,7 +201,7 @@ export default function AutomationControlCentre() {
          <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-6">Module Level Controls</h3>
          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {modules.map(m => {
-               const enabled = settings.find(s => s.key === m.key)?.value;
+               const enabled = settings.find(s => s.key === m.key)?.value === true;
                return (
                   <div key={m.key} className="p-4 rounded-xl bg-slate-800/40 border border-slate-700/50 flex justify-between items-center">
                      <div>
@@ -159,8 +209,8 @@ export default function AutomationControlCentre() {
                         <p className="text-[10px] text-slate-500">{enabled ? 'Enabled' : 'Disabled'}</p>
                      </div>
                      <button
-                        onClick={() => updateSetting(m.key, !enabled)}
-                        disabled={updating || !globalEnabled}
+                        onClick={() => void updateSetting(m.key, !enabled)}
+                        disabled={updating || loading || !globalEnabled}
                         className={`w-10 h-5 rounded-full transition-colors relative ${enabled ? 'bg-blue-600' : 'bg-slate-700'}`}
                      >
                         <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${enabled ? 'right-1' : 'left-1'}`} />
@@ -195,19 +245,19 @@ export default function AutomationControlCentre() {
               <tbody className="divide-y divide-slate-800">
                  {logs.map(log => (
                     <tr key={log.id} className="text-sm hover:bg-slate-800/30 transition-colors">
-                       <td className="px-4 py-3 text-slate-200 font-medium">{log.action_type.replace(/_/g, ' ')}</td>
+                       <td className="px-4 py-3 text-slate-200 font-medium">{String(log.action_type || 'unknown').replace(/_/g, ' ')}</td>
                        <td className="px-4 py-3">
                           <Badge variant={
                              log.status === 'executed' ? 'success' :
                              log.status === 'failed' ? 'danger' :
                              log.status === 'stale' ? 'warning' : 'info'
                           }>
-                             {log.status.toUpperCase()}
+                             {String(log.status || 'unknown').toUpperCase()}
                           </Badge>
                        </td>
-                       <td className="px-4 py-3 text-[10px] font-mono text-slate-400 uppercase">{log.mode}</td>
-                       <td className="px-4 py-3 text-xs text-slate-500 font-mono truncate max-w-[200px]">{log.idempotency_key}</td>
-                       <td className="px-4 py-3 text-xs text-slate-400">{new Date(log.created_at).toLocaleTimeString()}</td>
+                       <td className="px-4 py-3 text-[10px] font-mono text-slate-400 uppercase">{log.mode || '—'}</td>
+                       <td className="px-4 py-3 text-xs text-slate-500 font-mono truncate max-w-[200px]">{log.idempotency_key || '—'}</td>
+                       <td className="px-4 py-3 text-xs text-slate-400">{log.created_at ? new Date(log.created_at).toLocaleTimeString() : '—'}</td>
                     </tr>
                  ))}
                  {logs.length === 0 && (
