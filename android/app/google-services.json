@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "479507805159",
+    "project_id": "centralhub-4a434",
+    "storage_bucket": "centralhub-4a434.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:479507805159:android:19fd8c10614f9acbdb4342",
+        "android_client_info": {
+          "package_name": "com.centralhub.network"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBnVNY5rfnUhfsuYzaMS7izdxbUhWjF-Nw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

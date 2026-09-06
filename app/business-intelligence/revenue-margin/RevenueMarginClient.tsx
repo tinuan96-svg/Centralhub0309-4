@@ -1,0 +1,27 @@
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { PageHeader, Card, StatGrid, StatCard, Button, Badge } from '@/lib/design-system';
+import { supabase } from '@/lib/supabase';
+import { productEconomicsService } from '@/lib/services/marketing/productEconomicsService';
+import { formatCurrency } from '@/lib/utils/currency';
+import { useStore } from '@/lib/store/useStore';
+
+export default function RevenueMarginClient({ params, searchParams }: { params?: any; searchParams?: any }) {
+  const { stores } = useStore();
+  const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
+  const selectedStore = stores.find(s => s.id === selectedStoreId);
+  const [data, setData] = useState<any[]>([]); const [refreshing, setRefreshing] = useState(false);
+  const loadData = useCallback(async () => {
+    try {
+      let query = supabase.from('product_economics').select('*, products!product_id(name,sku,category,cost_price)');
+      if (selectedStoreId) { const { data: storeProductIds } = await supabase.from('store_products').select('product_id').eq('store_id', selectedStoreId).eq('is_active', true); const ids = (storeProductIds || []).map(sp => sp.product_id); if (ids.length) query = query.in('product_id', ids); else { setData([]); return; } }
+      const { data: econ, error } = await query.order('profitability_score', { ascending: false }); if (error) throw error; setData(econ || []);
+    } catch (err) { console.error('Failed to load margin data:', err); }
+  }, [selectedStoreId]);
+  useEffect(() => { loadData(); }, [loadData]);
+  const handleRunAnalysis = async () => { setRefreshing(true); try { await productEconomicsService.refreshCache(50); await loadData(); } catch (err) { console.error('Economics refresh failed:', err); alert('Failed to refresh economics. Check console.'); } finally { setRefreshing(false); } };
+  return <div className="p-6 space-y-8"><PageHeader title="Revenue & Margin Intel" subtitle={`Optimization of product economics and discount efficiency ${selectedStore ? `for ${selectedStore.name}` : 'across all stores'}.`} action={<div className="flex gap-2"><select value={selectedStoreId || ''} onChange={e => setSelectedStoreId(e.target.value || null)} className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white"><option value="">All Stores</option>{stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select><Button onClick={handleRunAnalysis} disabled={refreshing}>{refreshing ? 'Analyzing...' : 'Run Margin Analysis'}</Button><Button onClick={loadData} variant="secondary">Refresh View</Button></div>} />
+  <StatGrid columns={4}><StatCard label="Healthy Margins" value={data.filter(d => d.margin_health === 'healthy').length} icon="🟢"/><StatCard label="Low Margin Risk" value={data.filter(d => d.margin_health === 'low').length} icon="🔴"/><StatCard label="Avg Score" value={Math.round(data.reduce((acc, curr) => acc + Number(curr.profitability_score || 0), 0) / (data.length || 1))} icon="🎯"/><StatCard label="Products" value={data.length} icon="📦"/></StatGrid>
+  <Card className="p-6 bg-slate-900/50 border-slate-800 overflow-hidden"><h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-6">Product Economics Waterfall</h3><div className="overflow-x-auto"><table className="w-full text-left"><thead className="bg-slate-800/50 text-[10px] font-bold text-slate-500 uppercase tracking-widest"><tr><th className="px-4 py-3">Product</th><th className="px-4 py-3 text-right">Price</th><th className="px-4 py-3 text-right">Cost</th><th className="px-4 py-3 text-right">Unit Profit</th><th className="px-4 py-3 text-right">Margin %</th><th className="px-4 py-3">Health</th><th className="px-4 py-3">Role</th><th className="px-4 py-3">Score</th></tr></thead><tbody className="divide-y divide-slate-800">{data.map(item => { const product = Array.isArray(item.products) ? item.products[0] : item.products; const cost = Number(item.cost_price ?? product?.cost_price ?? 0); const hasCost = cost > 0; return <tr key={item.id} className="text-sm"><td className="px-4 py-3"><div className="font-medium text-slate-200">{product?.name || 'Unknown'}</div><div className="text-[10px] text-slate-500 font-mono">{product?.sku}</div></td><td className="px-4 py-3 text-right text-slate-100 font-bold">{formatCurrency(Number(item.current_price || 0))}</td><td className="px-4 py-3 text-right text-slate-400">{hasCost ? formatCurrency(cost) : <span className="text-[10px] text-rose-500 font-bold uppercase">Missing Cost</span>}</td><td className="px-4 py-3 text-right text-emerald-400 font-bold">{hasCost ? `+${formatCurrency(Number(item.gross_profit_per_unit || 0))}` : '—'}</td><td className="px-4 py-3 text-right text-slate-300 font-mono">{hasCost ? `${Number(item.margin_percent || 0).toFixed(1)}%` : '—'}</td><td className="px-4 py-3"><Badge variant={item.margin_health === 'healthy' ? 'success' : item.margin_health === 'watch' ? 'warning' : 'danger'}>{String(item.margin_health || 'unknown').toUpperCase()}</Badge></td><td className="px-4 py-3 text-[10px] text-slate-400 uppercase font-black">{String(item.product_role || 'unknown').replace(/_/g, ' ')}</td><td className="px-4 py-3 font-bold text-slate-300">{item.profitability_score}</td></tr>; })}{data.length === 0 && <tr><td colSpan={8} className="py-20 text-center text-slate-500">No economics data calculated.</td></tr>}</tbody></table></div></Card></div>;
+}

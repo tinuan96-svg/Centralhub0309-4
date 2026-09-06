@@ -1,0 +1,4 @@
+-- WhatsApp send token resilience is implemented in the Edge Function.
+-- This migration intentionally contains no secrets.
+-- Store-level access tokens may be rotated independently; the Edge Function
+-- retries with WHATSAPP_ACCESS_TOKEN when a stored token is rejected by Meta.

@@ -1,0 +1,9 @@
+android/
+ios/
+node_modules/
+.artifacts/
+.bolt/
+.claude/
+.idea/
+.next/
+out/

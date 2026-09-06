@@ -1,0 +1,6 @@
+
+> nextjs@0.1.0 lint
+> next lint
+
+Failed to load config "next/core-web-vitals" to extend from.
+Referenced from: /home/runner/work/Centralhub.Network/Centralhub.Network/.eslintrc.json

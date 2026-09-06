@@ -1,0 +1,17 @@
+# Supabase configuration file
+project_id = "icnvrpnzjjcbvgcqgiua"
+
+[functions.whatsapp-webhook]
+verify_jwt = false
+
+# whatsapp-send performs its own Supabase auth check so browser calls can reach
+# the function and receive a useful 401/403 instead of being rejected by the
+# Edge gateway before the function can validate the session.
+[functions.whatsapp-send]
+verify_jwt = false
+
+[functions.whatsapp-retry-worker]
+verify_jwt = false
+
+[functions.competitor-price-scanner]
+verify_jwt = false

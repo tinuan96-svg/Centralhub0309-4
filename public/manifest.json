@@ -1,0 +1,18 @@
+{
+  "name": "CentralHub Admin",
+  "short_name": "CentralHub",
+  "description": "Multi-Store E-commerce Management System",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0D1117",
+  "theme_color": "#0D1117",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,7616 @@
+{
+  "brands": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "slug": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "logo_url": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "description": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "show_on_homepage": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "sort_order": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      }
+    }
+  },
+  "order_status_history": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "order_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `orders.id`.<fk table='orders' column='id'/>",
+        "nullable": false
+      },
+      "old_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "new_status": {
+        "type": "string",
+        "format": "text",
+        "description": "Order status: pending (created) → confirmed (paid) → processing (preparing) → shipped → delivered. Can be cancelled at any stage.",
+        "nullable": false
+      },
+      "inventory_action": {
+        "type": "string",
+        "format": "text",
+        "description": "The inventory action taken: reserve (pending), commit (shipped/delivered), release (cancelled), return (refunded), none (no action needed)",
+        "nullable": false
+      },
+      "inventory_action_completed": {
+        "type": "boolean",
+        "format": "boolean",
+        "description": "Whether the inventory action was successfully completed",
+        "nullable": false
+      },
+      "notes": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "created_by": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      }
+    }
+  },
+  "sync_status_dashboard": {
+    "columns": {
+      "last_success": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "last_failure": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "synced_today": {
+        "type": "integer",
+        "format": "int64",
+        "nullable": false
+      },
+      "pending_retries": {
+        "type": "integer",
+        "format": "int64",
+        "nullable": false
+      },
+      "recent_events": {
+        "format": "jsonb",
+        "nullable": false
+      }
+    }
+  },
+  "banners": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "section_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "mode": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "product_limit": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "is_active": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "label": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "icon": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "color": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "store_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "display_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      }
+    }
+  },
+  "whatsapp_conversations": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "contact_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `whatsapp_contacts.id`.<fk table='whatsapp_contacts' column='id'/>",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "handling_mode": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "assigned_agent_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "last_message_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "whatsapp_template_registry": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "meta_template_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "meta_template_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "category": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "language": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "variables": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "cart": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "user_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "quantity": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "sync_logs": {
+    "columns": {
+      "id": {
+        "type": "integer",
+        "format": "int64",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "from_store": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "to_store": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "table": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "record_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "action": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "success": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "duration": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "error": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "target_project_ref": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "target_api_base_url": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "sync_job_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "error_code": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "error_context": {
+        "format": "jsonb",
+        "nullable": false
+      }
+    }
+  },
+  "support_tickets": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "customer_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "conversation_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `whatsapp_conversations.id`.<fk table='whatsapp_conversations' column='id'/>",
+        "nullable": false
+      },
+      "category": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "priority": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "ai_summary": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "resolved_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "contact_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "description": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      }
+    }
+  },
+  "ai_usage_logs": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "feature": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "model": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "request_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "prompt_tokens": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "completion_tokens": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "total_tokens": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "duration_ms": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "metadata": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "supplier_invoice_items": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "invoice_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `supplier_invoices.id`.<fk table='supplier_invoices' column='id'/>",
+        "nullable": false
+      },
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "product_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "quantity": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "received_quantity": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "unit_cost": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "pack_size": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "packs": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "line_total": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "inventory_logs": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "product_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "sku": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "order_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `orders.id`.<fk table='orders' column='id'/>",
+        "nullable": false
+      },
+      "reference_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "reference_number": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "reference_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "change": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "old_quantity": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "new_quantity": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "movement_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "reason": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "notes": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "edited_by": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "device_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "product_suppliers": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "supplier_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `suppliers.id`.<fk table='suppliers' column='id'/>",
+        "nullable": false
+      },
+      "supplier_sku": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "cost_price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "lead_time_days": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "minimum_order_qty": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "is_preferred": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "last_purchase_date": {
+        "type": "string",
+        "format": "date",
+        "nullable": false
+      },
+      "last_purchase_price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "previous_cost_price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "last_price_update": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "supplier_product_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "supplier_barcode": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "pack_size": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "case_quantity": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "vat_rate": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "is_active": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      }
+    }
+  },
+  "supplier_price_lists": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "supplier_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `suppliers.id`.<fk table='suppliers' column='id'/>",
+        "nullable": false
+      },
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "supplier_product_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "supplier_sku": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "cost_price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "currency": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "moq": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "lead_time_days": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "valid_from": {
+        "type": "string",
+        "format": "date",
+        "nullable": false
+      },
+      "valid_until": {
+        "type": "string",
+        "format": "date",
+        "nullable": false
+      },
+      "is_active": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "notes": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "marketing_integrations": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "platform_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "account_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "access_token": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "refresh_token": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "last_sync_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "metadata": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "business_metrics": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "metric_key": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "metric_data": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "supplier_invoices": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "invoice_number": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "supplier_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `suppliers.id`.<fk table='suppliers' column='id'/>",
+        "nullable": false
+      },
+      "po_draft_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `po_drafts.id`.<fk table='po_drafts' column='id'/>",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "invoice_date": {
+        "type": "string",
+        "format": "date",
+        "nullable": false
+      },
+      "due_date": {
+        "type": "string",
+        "format": "date",
+        "nullable": false
+      },
+      "subtotal": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "tax_amount": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "shipping_cost": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "total_amount": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "amount_paid": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "currency": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "notes": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "orders": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "user_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "order_number": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "customer_name": {
+        "type": "string",
+        "format": "character varying",
+        "nullable": false
+      },
+      "customer_email": {
+        "type": "string",
+        "format": "character varying",
+        "nullable": false
+      },
+      "customer_phone": {
+        "type": "string",
+        "format": "character varying",
+        "nullable": false
+      },
+      "delivery_address": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "delivery_city": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "delivery_postcode": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "subtotal": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "delivery_fee": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "total": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "payment_method": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "payment_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "order_status": {
+        "type": "string",
+        "format": "character varying",
+        "description": "Order processing status: pending → confirmed (auto on payment) → processing → shipped → delivered. Can be cancelled at any stage.",
+        "nullable": false
+      },
+      "payment_reference": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "notes": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "inventory_synced_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "inventory_sync_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Reference to the store where this order was placed\n\nNote:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "fulfillment_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "packed_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "ready_to_ship_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "fulfillment_notes": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "company_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "packing_cost": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "packing_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "product_cost_total": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "platform_fee": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "total_revenue": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "gross_profit": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "profit_margin": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "cost_per_kg": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "is_backorder": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "backorder_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "expected_fulfillment_date": {
+        "type": "string",
+        "format": "date",
+        "nullable": false
+      },
+      "gateway_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "gateway_fee_estimated": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "gateway_fee_actual": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "expected_payout": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "actual_payout": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "payout_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "margin_after_gateway": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "total_net": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "total_vat": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "total_gross": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "vat_breakdown": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "product_cost_net": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "packing_cost_net": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "shipping_cost_net": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "gateway_fee_net": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "total_cost_net": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "is_deleted": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "deleted_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "tracking_number": {
+        "type": "string",
+        "format": "character varying",
+        "nullable": false
+      },
+      "last_tracking_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "actual_delivery": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "carrier": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "estimated_delivery": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "label_printed": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "order_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "service_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "shipment_number": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "sync_origin": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "sync_updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "shipping_address_line1": {
+        "type": "string",
+        "format": "character varying",
+        "nullable": false
+      },
+      "shipping_address_line2": {
+        "type": "string",
+        "format": "character varying",
+        "nullable": false
+      },
+      "shipping_city": {
+        "type": "string",
+        "format": "character varying",
+        "nullable": false
+      },
+      "shipping_county": {
+        "type": "string",
+        "format": "character varying",
+        "nullable": false
+      },
+      "shipping_postcode": {
+        "type": "string",
+        "format": "character varying",
+        "nullable": false
+      },
+      "shipping_country": {
+        "type": "string",
+        "format": "character varying",
+        "nullable": false
+      },
+      "total_amount": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "shipment_status": {
+        "type": "string",
+        "format": "character varying",
+        "nullable": false
+      },
+      "courier_name": {
+        "type": "string",
+        "format": "character varying",
+        "nullable": false
+      },
+      "tracking_url": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "shipment_label_url": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "shipment_booked_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "dispatched_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "delivered_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "customer_note": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "sync_status": {
+        "type": "string",
+        "format": "character varying",
+        "nullable": false
+      },
+      "last_synced_at": {
+        "type": "string",
+        "format": "timestamp without time zone",
+        "nullable": false
+      },
+      "guest_email": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "shipping_address": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "items": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "shipping_cost": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "confirmed_order_number": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "stock_deducted": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "mollie_payment_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "order_cost": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "order_profit": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "order_margin": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "has_backorder_items": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "payment_fee": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "warehouse_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "total_weight_kg": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "picking_duration": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "picking_started_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "picking_completed_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "picked_by_user": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "locked_by": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "locked_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "parcel_count": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "shipment_error_message": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "centralhub_order_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "sync_state": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "sync_error": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      }
+    }
+  },
+  "store_staff": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "user_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "role": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "customer_intelligence": {
+    "columns": {
+      "customer_key": {
+        "type": "string",
+        "format": "text",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "customer_email": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "customer_phone": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "recency_days": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "frequency": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "monetary_value": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "rfm_score": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "lifetime_value": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "lifetime_profit": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "lifecycle_stage": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "churn_probability": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "risk_level": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "avg_reorder_interval_days": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "health_score": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "last_order_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "order_count": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "last_calculated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "product_warehouse_locations": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "warehouse_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "rack_location": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "bin_location": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "storage_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "store_bank_accounts": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "bank_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "account_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "account_number": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "currency": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "current_balance": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "last_synced_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "is_active": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "sync_queue": {
+    "columns": {
+      "id": {
+        "type": "integer",
+        "format": "int64",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "table_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "record_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "operation": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "payload": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "retry_count": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "processed_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "error": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      }
+    }
+  },
+  "intelligence_audit_log": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "recommendation_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `intelligence_recommendations.id`.<fk table='intelligence_recommendations' column='id'/>",
+        "nullable": false
+      },
+      "user_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "action": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "error_message": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "previous_value": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "result_value": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "entity_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "entity_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "malluspices_orders": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "order_number": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "customer_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "customer_email": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "customer_phone": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "delivery_address": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "delivery_city": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "delivery_postcode": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "subtotal": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "delivery_fee": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "total": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "payment_method": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "payment_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "order_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "notes": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "shipment_number": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "carrier": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "service_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "estimated_delivery": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "actual_delivery": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "label_printed": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "source_payload": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "synced_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "customers": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "display_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "phone": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "phone_number": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "whatsapp_user_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "last_message_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "whatsapp_templates": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "channel_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "meta_template_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "language": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "category": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "components": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "rejection_reason": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "last_synced_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "current_orders_sheet": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "user_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "order_number": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "customer_name": {
+        "type": "string",
+        "format": "character varying",
+        "nullable": false
+      },
+      "customer_email": {
+        "type": "string",
+        "format": "character varying",
+        "nullable": false
+      },
+      "customer_phone": {
+        "type": "string",
+        "format": "character varying",
+        "nullable": false
+      },
+      "delivery_address": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "delivery_city": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "delivery_postcode": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "subtotal": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "delivery_fee": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "total": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "payment_method": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "payment_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "order_status": {
+        "type": "string",
+        "format": "character varying",
+        "nullable": false
+      },
+      "payment_reference": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "notes": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "inventory_synced_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "inventory_sync_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "fulfillment_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "packed_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "ready_to_ship_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "fulfillment_notes": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "company_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "packing_cost": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "packing_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "product_cost_total": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "platform_fee": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "total_revenue": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "gross_profit": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "profit_margin": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "cost_per_kg": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "is_backorder": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "backorder_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "expected_fulfillment_date": {
+        "type": "string",
+        "format": "date",
+        "nullable": false
+      },
+      "gateway_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "gateway_fee_estimated": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "gateway_fee_actual": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "expected_payout": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "actual_payout": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "payout_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "margin_after_gateway": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "total_net": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "total_vat": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "total_gross": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "vat_breakdown": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "product_cost_net": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "packing_cost_net": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "shipping_cost_net": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "gateway_fee_net": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "total_cost_net": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "is_deleted": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "deleted_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "tracking_number": {
+        "type": "string",
+        "format": "character varying",
+        "nullable": false
+      },
+      "last_tracking_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "actual_delivery": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "carrier": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "estimated_delivery": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "label_printed": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "order_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "service_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "shipment_number": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "malluspices_row_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "malluspices_payload": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "malluspices_synced_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "central_inventory": {
+    "columns": {
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "stock_quantity": {
+        "type": "integer",
+        "format": "int32",
+        "description": "Total available stock quantity. Must always be >= reserved_quantity.",
+        "nullable": false
+      },
+      "reserved_quantity": {
+        "type": "integer",
+        "format": "int32",
+        "description": "Stock reserved for pending orders. Cannot exceed stock_quantity.",
+        "nullable": false
+      },
+      "low_stock_threshold": {
+        "type": "integer",
+        "format": "int32",
+        "description": "Threshold for low stock alerts. When (stock_quantity - reserved_quantity) <= this value, stock is considered low.",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "product_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "location_code": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "warehouse_zone": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "bin_location": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "parent_product_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "variant_group_key": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      }
+    }
+  },
+  "order_notifications": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "order_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `orders.id`.<fk table='orders' column='id'/>",
+        "nullable": false
+      },
+      "order_number": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "phone": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "channel": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "error": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "message_sid": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "app_config": {
+    "columns": {
+      "key": {
+        "type": "string",
+        "format": "text",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "value": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      }
+    }
+  },
+  "order_whatsapp_template_rules": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "order_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "template_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "language": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "enabled": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "automation_execution_log": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "workflow_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "action_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "mode": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "idempotency_key": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "entity_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "entity_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "metadata": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "error_message": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "execution_duration_ms": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "customer_lifecycle_config": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "stage": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "min_recency_days": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "max_recency_days": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "min_frequency": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "min_monetary_value": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "priority": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "is_active": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "system_intelligence_settings": {
+    "columns": {
+      "key": {
+        "type": "string",
+        "format": "text",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "value": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "description": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_by": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      }
+    }
+  },
+  "inventory_movements": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "order_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "supplier_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "warehouse_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "change_amount": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "old_stock": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "new_stock": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "action_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "notes": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "order_number": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "order_sync_queue": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "order_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `orders.id`.<fk table='orders' column='id'/>",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "payload": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "attempts": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "next_retry_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "last_error": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "sent_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "inventory_forecasts": {
+    "columns": {
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "avg_daily_sales": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "sales_velocity_30d": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "days_of_cover": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "risk_level": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "confidence_level": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "recommended_reorder_qty": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "calculated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "marketing_attribution_results": {
+    "columns": {
+      "order_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>\nThis is a Foreign Key to `orders.id`.<fk table='orders' column='id'/>",
+        "nullable": false
+      },
+      "customer_key": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "attribution_model": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "attributed_revenue": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "attributed_profit": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "utm_source": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "utm_medium": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "utm_campaign": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "touchpoint_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "product_variants": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "variant_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "sku_suffix": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "attributes": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "price_adjustment": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "stock": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "weight_grams": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "dimensions_cm": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "is_active": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "cost_price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "sku": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "barcode": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "unit_value": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "unit_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "pack_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "pack_quantity": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "sort_order": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "image_url": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "vat_rate": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "warehouse_location": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "expiry_date": {
+        "type": "string",
+        "format": "date",
+        "nullable": false
+      },
+      "discounted_price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "attribute": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      }
+    }
+  },
+  "backorder_plans": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "plan_date": {
+        "type": "string",
+        "format": "date",
+        "nullable": false
+      },
+      "total_estimated_spend": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "total_products": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "total_packs": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "surplus_units": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "products": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "stock": {
+        "type": "integer",
+        "format": "int32",
+        "description": "LEGACY FIELD - DO NOT USE. Use central_inventory table instead for accurate stock management.",
+        "nullable": false
+      },
+      "product_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "brand": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "warehouse_location": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "weight": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "gtin": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "unit": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "centralhub_product_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "slug": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "main_category": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "sub_category": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "tax_rate": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "cost_price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "department": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "category": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "subcategory": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "weight_kg": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "weight_grams": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "sku": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "backorder": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "pack_size": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "pack_unit": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "reorder_frequency": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "expiry_date": {
+        "type": "string",
+        "format": "date",
+        "nullable": false
+      },
+      "reorder_level": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "is_active": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "image_url": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "image_main": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "gallery_images": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "description": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "original_price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "profit_margin_percent": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "is_deal": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "allow_backorder": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "seo_title": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "seo_meta_description": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "source_product_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "sync_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "approval_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "approved_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "synced_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "sale_price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "is_published": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "is_archived": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "brand_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `brands.id`.<fk table='brands' column='id'/>",
+        "nullable": false
+      },
+      "tags": {
+        "type": "array",
+        "format": "text[]",
+        "nullable": false
+      },
+      "custom_attributes": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "is_deleted": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "category_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `categories.id`.<fk table='categories' column='id'/>",
+        "nullable": false
+      },
+      "enable_stock_tracking": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "storage_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "vat_rate": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "seo_meta_title": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "admin_notes": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "rich_description": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "length_cm": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "width_cm": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "height_cm": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "parent_product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "variant_group_key": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "min_margin": {
+        "type": "number",
+        "format": "numeric",
+        "description": "Safety floor for pricing suggestions.",
+        "nullable": false
+      },
+      "target_margin": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      }
+    }
+  },
+  "suppliers": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "code": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "contact_email": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "contact_phone": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "address": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "city": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "country": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "payment_terms": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "credit_limit": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "currency": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "average_delivery_days": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "minimum_order_value": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "notes": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "is_active": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "rating": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "purchase_days": {
+        "type": "array",
+        "format": "text[]",
+        "nullable": false
+      },
+      "import_instructions": {
+        "format": "jsonb",
+        "nullable": false
+      }
+    }
+  },
+  "shipment_sync_logs": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "order_number": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "shipment_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "event_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "new_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "sync_time": {
+        "type": "string",
+        "format": "interval",
+        "nullable": false
+      },
+      "result": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "error_message": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "product_affinity": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "product_a_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "product_b_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "co_purchase_count": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "whatsapp_webhook_events": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "event_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "provider": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "event_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "payload": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "processing_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "processed_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "error_message": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "centralhub_webhook_events": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "external_event_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "raw_payload": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "process_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "error_message": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "processed_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "intelligence_recommendation_groups": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "title": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "summary": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "primary_impact_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "priority_score": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "confidence_level": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "recommendation_ids": {
+        "type": "array",
+        "format": "uuid[]",
+        "nullable": false
+      },
+      "is_active": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "customer_product_interest": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "customer_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "conversation_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "interest_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "warehouses": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "code": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "location": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "is_active": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "webhook_logs": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "event_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "product_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "product_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "attempt": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "status_code": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "response_body": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "success": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "response": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      }
+    }
+  },
+  "shipment_events": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "shipment_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `shipments.id`.<fk table='shipments' column='id'/>",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "location": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "description": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "event_time": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "metadata": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "store_products": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "name_override": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "description_override": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "price_override": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "stock_override": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "image_override": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "is_active": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "deleted_products_audit": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "sku": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "deleted_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "deleted_by": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "source": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "snapshot": {
+        "format": "jsonb",
+        "nullable": false
+      }
+    }
+  },
+  "view_inventory_activity_log": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "product_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "sku": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "order_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `orders.id`.<fk table='orders' column='id'/>",
+        "nullable": false
+      },
+      "reference_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "reference_number": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "reference_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "change": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "old_quantity": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "new_quantity": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "movement_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "reason": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "notes": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "edited_by": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "device_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "live_product_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "live_sku": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "user_email": {
+        "type": "string",
+        "format": "character varying",
+        "nullable": false
+      },
+      "store_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      }
+    }
+  },
+  "order_items": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "order_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `orders.id`.<fk table='orders' column='id'/>",
+        "nullable": false
+      },
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "product_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "product_image": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "quantity": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "unit_price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "total_price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "cost_price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "brand": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "weight": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "unit": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "picked_quantity": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "last_scanned_gtin": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "picked_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "skip_reason": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "picked_by": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "sku": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      }
+    }
+  },
+  "product_stock_view": {
+    "columns": {
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "product_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "slug": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "sku": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "gtin": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "brand": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "category": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "subcategory": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "unit": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "sale_price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "cost_price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "tax_rate": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "vat_rate": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "image_url": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "is_active": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "is_published": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "is_archived": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "stock_quantity": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "reserved_quantity": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "available_stock": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "low_stock_threshold": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "location_code": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "warehouse_zone": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "bin_location": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "inventory_updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "competitor_prices": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "competitor_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `competitors.id`.<fk table='competitors' column='id'/>",
+        "nullable": false
+      },
+      "price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "product_url": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "auto_scan_enabled": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "last_scanned_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "scan_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "scan_error": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "source_product_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "next_scan_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "scan_frequency": {
+        "type": "string",
+        "format": "interval",
+        "nullable": false
+      },
+      "match_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "match_confidence": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "extraction_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "source_brand": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "source_size": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "source_variant": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "source_currency": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "last_successful_scan_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "match_method": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "brand_match": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "size_match": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "product_type_match": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "ai_used": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "ai_model": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      }
+    }
+  },
+  "order_whatsapp_notifications": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "order_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `orders.id`.<fk table='orders' column='id'/>",
+        "nullable": false
+      },
+      "order_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "template_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "language": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "phone_number": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "wa_message_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "error_message": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "sent_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "delivered_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "read_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "shipment_sync_queue": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "event_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "order_number": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "shipment_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `shipments.id`.<fk table='shipments' column='id'/>",
+        "nullable": false
+      },
+      "payload": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "retry_count": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "error_message": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "processed_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "promotion_simulations": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "base_price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "proposed_price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "expected_volume_uplift": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "projected_revenue": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "projected_profit": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "break_even_uplift": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "stockout_risk": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_by": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "user_profiles": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "email": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "phone": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "display_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "avatar_url": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "provider": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "address": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "city": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "postcode": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "profile_role": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "is_active": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "full_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "phone_verified": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "preferred_channel": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      }
+    }
+  },
+  "centralhub_delivery_dedupe": {
+    "columns": {
+      "ordering_key": {
+        "type": "string",
+        "format": "text",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "payload_hash": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "source_updated_at": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "first_seen_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "last_result": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "last_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      }
+    }
+  },
+  "whatsapp_outbound_log": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "wa_message_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "message_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `whatsapp_messages.id`.<fk table='whatsapp_messages' column='id'/>",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "recipient_phone": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "template_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "error_code": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "error_message": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "delivered_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "read_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "failed_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "po_drafts": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "supplier_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `suppliers.id`.<fk table='suppliers' column='id'/>",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "draft_items": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "recommended_items": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "total_amount": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "estimated_delivery_date": {
+        "type": "string",
+        "format": "date",
+        "nullable": false
+      },
+      "trigger_reason": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "approved_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "converted_to_po_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "batch_window_end": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "merged_trigger_ids": {
+        "type": "array",
+        "format": "text[]",
+        "nullable": false
+      },
+      "skipped_items": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "delivery_date": {
+        "type": "string",
+        "format": "date",
+        "nullable": false
+      }
+    }
+  },
+  "product_economics": {
+    "columns": {
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "current_price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "cost_price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "gross_profit_per_unit": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "margin_percent": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "margin_health": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "product_role": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "profitability_score": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "units_sold_30d": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "last_calculated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "product_sync_logs": {
+    "columns": {
+      "id": {
+        "type": "integer",
+        "format": "int64",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "action": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "success": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "error": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "whatsapp_channels": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "waba_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "phone_number_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "display_phone_number": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "business_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "access_token": {
+        "type": "string",
+        "format": "text",
+        "description": "Meta Permanent Access Token for this specific store app",
+        "nullable": false
+      },
+      "verify_token": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      }
+    }
+  },
+  "sales_recommendations": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "conversation_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "recommendation_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "reason": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "customer_care_settings": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "ai_enabled": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "ai_auto_reply": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "default_handling_mode": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "greeting_message": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "custom_knowledge": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "escalation_rules": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "backorder_items": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "order_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `orders.id`.<fk table='orders' column='id'/>",
+        "nullable": false
+      },
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "quantity_ordered": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "quantity_fulfilled": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "priority_score": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "expected_fulfillment_date": {
+        "type": "string",
+        "format": "date",
+        "nullable": false
+      },
+      "notes": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "assigned_po_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      }
+    }
+  },
+  "competitors": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "website_url": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "logo_url": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "centralhub_order_sync_requests": {
+    "columns": {
+      "id": {
+        "type": "integer",
+        "format": "int64",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "idempotency_key": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "order_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "order_number": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "request_hash": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "response": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "status_code": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "request_id": {
+        "type": "integer",
+        "format": "int64",
+        "nullable": false
+      },
+      "operation": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "source_table": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "order_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "payment_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "shipment_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "fulfillment_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "request_url": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "request_body": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "order_snapshot": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "request_body_text": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      }
+    }
+  },
+  "intelligence_recommendations": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "recommendation_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "entity_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "entity_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "title": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "description": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "reason": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "proposed_action": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "expected_impact": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "confidence": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "risk_level": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "metadata": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "is_stale": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "source_snapshot": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "actioned_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "expires_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "shipping_rates_cache": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "carrier": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "service_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "from_postcode": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "to_postcode": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "weight_grams": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "cost": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "expires_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "whatsapp_contacts": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "phone_number": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "display_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "last_message_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "whatsapp_user_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "bank_transactions": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "bank_account_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `store_bank_accounts.id`.<fk table='store_bank_accounts' column='id'/>",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `stores.id`.<fk table='stores' column='id'/>",
+        "nullable": false
+      },
+      "transaction_date": {
+        "type": "string",
+        "format": "date",
+        "nullable": false
+      },
+      "description": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "amount": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "balance": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "reference": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "merchant": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "category": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "source": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "is_reconciled": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "reconciled_with_order_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `orders.id`.<fk table='orders' column='id'/>",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "supplier_price_list_history": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "supplier_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `suppliers.id`.<fk table='suppliers' column='id'/>",
+        "nullable": false
+      },
+      "file_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "total_items": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "increased_prices": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "decreased_prices": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "new_items": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "applied_by": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "whatsapp_messages": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "conversation_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `whatsapp_conversations.id`.<fk table='whatsapp_conversations' column='id'/>",
+        "nullable": false
+      },
+      "wa_message_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "direction": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "message_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "message_text": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "media_url": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "sender_phone": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "ai_generated": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "ai_model": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "message_templates": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "content": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "category": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "is_active": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "products_sync_staging": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "stock": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "product_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "brand": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "warehouse_location": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "weight": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "gtin": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "unit": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "centralhub_product_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "slug": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "main_category": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "sub_category": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "tax_rate": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "cost_price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "department": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "category": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "subcategory": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "weight_kg": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "weight_grams": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "sku": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "backorder": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "pack_size": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "pack_unit": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "reorder_frequency": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "expiry_date": {
+        "type": "string",
+        "format": "date",
+        "nullable": false
+      },
+      "reorder_level": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "is_active": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "image_url": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "image_main": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "gallery_images": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "description": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "original_price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "profit_margin_percent": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "is_deal": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "allow_backorder": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "seo_title": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "seo_meta_description": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "source_product_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "sync_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "approval_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "approved_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "synced_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "sale_price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "is_published": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "is_archived": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "brand_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "tags": {
+        "type": "array",
+        "format": "text[]",
+        "nullable": false
+      },
+      "custom_attributes": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "is_deleted": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "category_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "enable_stock_tracking": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "storage_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "vat_rate": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "seo_meta_title": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "admin_notes": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "rich_description": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "length_cm": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "width_cm": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "height_cm": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "parent_product_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "variant_group_key": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "min_margin": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "target_margin": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      }
+    }
+  },
+  "expenses": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "amount_gross": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "invoice_date": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "payment_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "description": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "product_supplier_map": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "supplier_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `suppliers.id`.<fk table='suppliers' column='id'/>",
+        "nullable": false
+      },
+      "supplier_product_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "supplier_sku": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "is_primary": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "last_cost_price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "moq": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "lead_time_days": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "notes": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "users": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "email": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "phone": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "address": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "city": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "postcode": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "store_deletion_audit": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "store_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "deleted_by": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "deleted_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "record_counts": {
+        "format": "jsonb",
+        "nullable": false
+      }
+    }
+  },
+  "product_slug_history": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "centralhub_product_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "old_slug": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "new_slug": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "material_purchase_order_items": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "purchase_order_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "material_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "quantity": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "cost_per_unit": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "total": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "received_quantity": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "stores": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "slug": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "color": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "max_display_stock": {
+        "type": "integer",
+        "format": "int32",
+        "description": "Maximum stock quantity to display on store frontend. Used for stock masking to prevent duplicate content detection. Real stock is maintained in central inventory.",
+        "nullable": false
+      },
+      "domain": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "visibility": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "bucket_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "project_ref": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "api_base_url": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      }
+    }
+  },
+  "product_supplier_mappings": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "supplier_price_list_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `supplier_price_lists.id`.<fk table='supplier_price_lists' column='id'/>",
+        "nullable": false
+      },
+      "supplier_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `suppliers.id`.<fk table='suppliers' column='id'/>",
+        "nullable": false
+      },
+      "match_confidence": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "match_method": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "is_verified": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "is_preferred": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "last_purchase_date": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "total_purchased_quantity": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "pricing_rules": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      }
+    }
+  },
+  "sender_profiles": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "company_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "contact_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "address_line1": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "address_line2": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "city": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "postcode": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "country": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "phone": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "email": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "is_default": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "site": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "business_targets": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "store_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": false
+      },
+      "name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "target_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "target_value": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "period_start": {
+        "type": "string",
+        "format": "date",
+        "nullable": false
+      },
+      "period_end": {
+        "type": "string",
+        "format": "date",
+        "nullable": false
+      },
+      "is_active": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "categories": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "slug": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "show_on_homepage": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "icon": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "sort_order": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "parent_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `categories.id`.<fk table='categories' column='id'/>",
+        "nullable": false
+      }
+    }
+  },
+  "shipments": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "order_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `orders.id`.<fk table='orders' column='id'/>",
+        "nullable": false
+      },
+      "carrier": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "service_type": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "tracking_number": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "label_url": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "description": "Shipment status: not_shipped → ready_to_ship (created with label) → in_transit → out_for_delivery → delivered. Can be cancelled/returned/failed at any stage.",
+        "nullable": false
+      },
+      "shipping_cost": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "weight_grams": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "sender_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "sender_address": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "sender_city": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "sender_postcode": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "sender_phone": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "recipient_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "recipient_address": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "recipient_city": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "recipient_postcode": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "recipient_phone": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "recipient_email": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "carrier_reference": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "estimated_delivery": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "actual_delivery": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "label_printed": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "error_message": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "metadata": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "recipient_company_name": {
+        "type": "string",
+        "format": "text",
+        "description": "Company name for B2B shipments (different from recipient contact name)",
+        "nullable": false
+      },
+      "shipment_number": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "tracking_url": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "booked_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "order_number": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "last_tracked_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "tracking_error": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "tracking_retry_count": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      }
+    }
+  },
+  "backorder_plan_items": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "plan_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `backorder_plans.id`.<fk table='backorder_plans' column='id'/>",
+        "nullable": false
+      },
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "supplier_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `suppliers.id`.<fk table='suppliers' column='id'/>",
+        "nullable": false
+      },
+      "supplier_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "product_name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "units_needed": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "pack_size": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "packs_to_order": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "surplus_units": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "cost_per_pack": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "total_cost": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "triggered_by_orders": {
+        "type": "array",
+        "format": "text[]",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "notifications": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "order_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "user_phone": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "channel": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "message": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "twilio_sid": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "error_msg": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "product_sync_audit": {
+    "columns": {
+      "id": {
+        "type": "integer",
+        "format": "int64",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "target": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "product_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "source_event": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "request_id": {
+        "type": "integer",
+        "format": "int64",
+        "nullable": false
+      },
+      "payload": {
+        "format": "jsonb",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "product_expiry": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "batch_id": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "expiry_date": {
+        "type": "string",
+        "format": "date",
+        "nullable": false
+      },
+      "quantity": {
+        "type": "integer",
+        "format": "int32",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  },
+  "competitor_catalog_items": {
+    "columns": {
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "nullable": false
+      },
+      "competitor_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `competitors.id`.<fk table='competitors' column='id'/>",
+        "nullable": false
+      },
+      "matched_product_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Note:\nThis is a Foreign Key to `products.id`.<fk table='products' column='id'/>",
+        "nullable": false
+      },
+      "name": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "price": {
+        "type": "number",
+        "format": "numeric",
+        "nullable": false
+      },
+      "product_url": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "image_url": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "created_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      },
+      "match_status": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "match_method": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "brand_match": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "size_match": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "product_type_match": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "ai_used": {
+        "type": "boolean",
+        "format": "boolean",
+        "nullable": false
+      },
+      "ai_model": {
+        "type": "string",
+        "format": "text",
+        "nullable": false
+      },
+      "matched_at": {
+        "type": "string",
+        "format": "timestamp with time zone",
+        "nullable": false
+      }
+    }
+  }
+}

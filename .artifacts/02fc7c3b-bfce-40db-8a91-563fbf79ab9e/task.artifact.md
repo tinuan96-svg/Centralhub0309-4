@@ -1,0 +1,22 @@
+- [ ] Phase 1: Build & Dependencies
+    - [ ] Run `npm ci` and diagnose issues
+    - [ ] Run `npm run lint` and fix fatal errors
+    - [ ] Run `npx tsc --noEmit` and identify type errors
+    - [ ] Run `npm run build`
+- [ ] Phase 2: Database Type System
+    - [ ] Generate/Reconstruct `lib/supabase.ts`
+    - [ ] Fix TypeScript errors in application code
+- [ ] Phase 3: Functional Repairs
+    - [ ] Fix `ordering_key` NULL violations
+    - [ ] Fix UUID validation for product IDs
+    - [ ] Fix slug NULL errors
+    - [ ] Fix MalluSpices type mismatch
+    - [ ] Disable legacy product sync paths
+- [ ] Phase 4: Security Hardening
+    - [ ] Audit RLS policies
+    - [ ] Remove anonymous write access
+    - [ ] Restrict `SECURITY DEFINER` functions
+    - [ ] Enforce store isolation
+- [ ] Phase 5: Final Verification
+    - [ ] Run full validation suite
+    - [ ] Verify production build
