@@ -7,52 +7,118 @@ export interface QualityIssue {
 }
 
 export const dataQualityService = {
-  /**
-   * Scan system for missing data that impacts intelligence confidence.
-   */
+  /** Scan the source and derived data that materially affects BI decisions. */
   async checkDataQuality(): Promise<QualityIssue[]> {
     const issues: QualityIssue[] = [];
+    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    // 1. Check for missing product costs
+    // Product cost must be strictly positive for margin/pricing decisions.
     const { count: missingCosts } = await supabase
       .from('products')
       .select('*', { count: 'exact', head: true })
-      .is('cost_price', null);
+      .eq('is_deleted', false)
+      .eq('is_active', true)
+      .or('cost_price.is.null,cost_price.lte.0');
 
-    if (missingCosts && missingCosts > 0) {
-      issues.push({ module: 'Finance', issue: `${missingCosts} products missing cost price`, severity: 'critical' });
+    if ((missingCosts || 0) > 0) {
+      issues.push({ module: 'Finance', issue: `${missingCosts} active products have missing or zero cost price`, severity: 'critical' });
     }
 
-    // 2. Check for stale inventory
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    // Paid orders must have an authoritative order-level COGS snapshot.
+    const { count: paidOrdersMissingCost } = await supabase
+      .from('orders')
+      .select('*', { count: 'exact', head: true })
+      .eq('payment_status', 'paid')
+      .eq('is_deleted', false)
+      .gt('total', 0)
+      .or('product_cost_net.is.null,product_cost_net.lte.0');
+
+    if ((paidOrdersMissingCost || 0) > 0) {
+      issues.push({
+        module: 'Finance',
+        issue: `${paidOrdersMissingCost} paid orders do not have a positive authoritative product-cost snapshot`,
+        severity: 'critical',
+      });
+    }
 
     const { count: staleInventory } = await supabase
       .from('central_inventory')
       .select('*', { count: 'exact', head: true })
-      .lt('updated_at', thirtyDaysAgo.toISOString());
+      .lt('updated_at', thirtyDaysAgo);
 
-    if (staleInventory && staleInventory > 0) {
-      issues.push({ module: 'Inventory', issue: `${staleInventory} items have not been updated in 30 days`, severity: 'warning' });
+    if ((staleInventory || 0) > 0) {
+      issues.push({ module: 'Inventory', issue: `${staleInventory} inventory rows have not been updated in 30 days`, severity: 'warning' });
     }
 
-    // 3. Check for unlinked campaign stores
+    // Global intelligence cache must cover the complete active catalogue.
+    const [activeProductResult, economicsResult, forecastResult, staleEconomicsResult, staleForecastResult] = await Promise.all([
+      supabase.from('products').select('*', { count: 'exact', head: true }).eq('is_deleted', false).eq('is_active', true),
+      supabase.from('product_economics').select('*', { count: 'exact', head: true }).is('store_id', null),
+      supabase.from('inventory_forecasts').select('*', { count: 'exact', head: true }).is('store_id', null),
+      supabase.from('product_economics').select('*', { count: 'exact', head: true }).is('store_id', null).lt('last_calculated_at', fortyEightHoursAgo),
+      supabase.from('inventory_forecasts').select('*', { count: 'exact', head: true }).is('store_id', null).lt('calculated_at', fortyEightHoursAgo),
+    ]);
+
+    const activeProducts = activeProductResult.count || 0;
+    const economicsRows = economicsResult.count || 0;
+    const forecastRows = forecastResult.count || 0;
+
+    if (activeProducts > 0 && economicsRows < activeProducts) {
+      issues.push({
+        module: 'Product Economics',
+        issue: `Economics cache covers ${economicsRows}/${activeProducts} active products`,
+        severity: 'critical',
+      });
+    }
+
+    if (activeProducts > 0 && forecastRows < activeProducts) {
+      issues.push({
+        module: 'Inventory Intelligence',
+        issue: `Forecast cache covers ${forecastRows}/${activeProducts} active products`,
+        severity: 'critical',
+      });
+    }
+
+    if ((staleEconomicsResult.count || 0) > 0) {
+      issues.push({ module: 'Product Economics', issue: `${staleEconomicsResult.count} global economics rows are older than 48 hours`, severity: 'warning' });
+    }
+
+    if ((staleForecastResult.count || 0) > 0) {
+      issues.push({ module: 'Inventory Intelligence', issue: `${staleForecastResult.count} global forecasts are older than 48 hours`, severity: 'warning' });
+    }
+
+    // Ready pricing advice should not survive beyond the normal competitor freshness window.
+    const { count: staleReadyPricing } = await supabase
+      .from('pricing_suggestions')
+      .select('*', { count: 'exact', head: true })
+      .eq('recommendation_status', 'ready')
+      .lt('generated_at', new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString());
+
+    if ((staleReadyPricing || 0) > 0) {
+      issues.push({
+        module: 'Pricing',
+        issue: `${staleReadyPricing} ready pricing suggestions are older than the 72-hour market-data window`,
+        severity: 'critical',
+      });
+    }
+
+    // Campaign linkage is useful but non-blocking for core financial decisions.
     try {
-      const { data: campaigns, error: campErr } = await supabase.from('campaigns').select('id');
-      const { data: links, error: linkErr } = await supabase.from('campaign_stores').select('campaign_id');
+      const { data: campaigns, error: campaignError } = await supabase.from('campaigns').select('id');
+      const { data: links, error: linkError } = await supabase.from('campaign_stores').select('campaign_id');
 
-      if (!campErr && !linkErr) {
-        const linkedIds = new Set(links?.map(l => l.campaign_id));
-        const unlinkedCount = campaigns?.filter(c => !linkedIds.has(c.id)).length || 0;
-
+      if (!campaignError && !linkError) {
+        const linkedIds = new Set((links || []).map((link: any) => link.campaign_id));
+        const unlinkedCount = (campaigns || []).filter((campaign: any) => !linkedIds.has(campaign.id)).length;
         if (unlinkedCount > 0) {
           issues.push({ module: 'Marketing', issue: `${unlinkedCount} campaigns are not linked to any store`, severity: 'warning' });
         }
       }
-    } catch (err) {
-      console.warn('[DataQuality] Skipping campaign check as table may be missing');
+    } catch {
+      console.warn('[DataQuality] Campaign linkage check unavailable');
     }
 
     return issues;
-  }
+  },
 };
