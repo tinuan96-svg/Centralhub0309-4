@@ -77,34 +77,30 @@ export class StoreService {
       name?: string;
       slug?: string;
       max_display_stock?: number;
+      visibility?: boolean;
     }
   ): Promise<Store | null> {
     const { data, error } = await supabase
       .from('stores')
       .update(updates)
       .eq('id', storeId)
-      .select()
+      .select(STORE_FIELDS)
       .maybeSingle();
 
     if (error) {
       console.error('Error updating store:', error);
-      return null;
+      throw error;
     }
 
     return data;
   }
 
-  static async deleteStore(storeId: string): Promise<boolean> {
-    const { error } = await supabase
-      .from('stores')
-      .delete()
-      .eq('id', storeId);
-
-    if (error) {
-      console.error('Error deleting store:', error);
-      throw error;
-    }
-
-    return true;
+  /**
+   * Store deletion is intentionally not exposed here. CentralHub holds historic
+   * orders, finance, analytics and customer records linked to stores. Use the
+   * visibility flag to disable a store without destroying historical data.
+   */
+  static async setStoreVisibility(storeId: string, visibility: boolean): Promise<Store | null> {
+    return this.updateStore(storeId, { visibility });
   }
 }
