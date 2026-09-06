@@ -1,5 +1,5 @@
-import InventoryExpiryClient from './InventoryExpiryClient';
+import { redirect } from 'next/navigation';
 
-export default function Page({ params, searchParams }: { params: any; searchParams: any }) {
-  return <InventoryExpiryClient params={params} searchParams={searchParams} />;
+export default function Page() {
+  redirect('/inventory-management/expiry');
 }
