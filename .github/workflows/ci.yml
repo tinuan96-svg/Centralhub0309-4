@@ -35,6 +35,9 @@ jobs:
       - name: Route integrity audit
         run: npm run audit:routes
 
+      - name: Feature continuity audit
+        run: npm run audit:features
+
       - name: Typecheck
         run: npx tsc --noEmit
 
@@ -60,5 +63,6 @@ jobs:
             !.env
             !.env.*
             !route-audit-output.txt
+            !feature-continuity-audit-output.txt
           include-hidden-files: true
           retention-days: 1
