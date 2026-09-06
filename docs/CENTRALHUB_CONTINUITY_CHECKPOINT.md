@@ -42,6 +42,8 @@ The CI route audit now protects these pages from silently disappearing from the 
 - Store removal must remain non-destructive so historic orders, finance, analytics and customer records are preserved.
 - App releases must stage privately and require explicit publish actions; uploads must not auto-publish.
 - CI must pass lint, route integrity, TypeScript typecheck and production build before a source snapshot is treated as verified.
+- Next.js and `eslint-config-next` must remain pinned to `16.3.4`; this removes the broken Next 15.5.x Bolt/WebContainer runtime and must not be replaced by a `node_modules` patch.
+- App release artifacts must use resumable TUS uploads with progress and retry support; uploading must never publish automatically.
 
 ## Verification
 

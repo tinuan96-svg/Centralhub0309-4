@@ -30,7 +30,7 @@ if (!routes.size) {
   process.exit(1);
 }
 
-const server = spawn(process.execPath, [path.join(root, 'node_modules/next/dist/bin/next'), 'start', '-p', String(port)], {
+const server = spawn(process.execPath, [path.join(root, 'node_modules/next/dist/bin/next'), 'start', '-H', '127.0.0.1', '-p', String(port)], {
   cwd: root,
   env: { ...process.env, PORT: String(port) },
   stdio: ['ignore', 'pipe', 'pipe'],

@@ -44,6 +44,9 @@ jobs:
       - name: Feature continuity audit
         run: npm run audit:features
 
+      - name: Runtime compatibility audit
+        run: npm run audit:runtime
+
       - name: Typecheck
         run: npx tsc --noEmit
 
@@ -55,6 +58,9 @@ jobs:
 
       - name: Post-build smoke audit
         run: npm run audit:smoke
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://icnvrpnzjjcbvgcqgiua.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
 
       - name: Export verified source artifact
         if: github.event_name == 'push' && contains(github.event.head_commit.message, '[export-source]')

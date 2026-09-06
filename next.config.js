@@ -9,9 +9,6 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   productionBrowserSourceMaps: false,
-  experimental: {
-    staticGenerationRetryCount: 3,
-  },
 };
 
 module.exports = nextConfig;
