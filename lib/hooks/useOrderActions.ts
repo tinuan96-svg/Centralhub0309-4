@@ -78,12 +78,26 @@ export function useOrderActions(onSuccess?: () => void) {
     try {
       const { success, error } = await OrderService.refundOrder(orderId, reason);
       if (success) {
+        const { data: syncData, error: syncError } = await supabase.functions.invoke('update-order-status', {
+          body: {
+            orderId,
+            status: 'refunded',
+            notes: reason || 'Order refunded',
+          },
+        });
+
+        if (syncError || syncData?.success === false) {
+          const syncMessage = syncData?.error || syncData?.message || syncError?.message || 'Source-store refund sync failed';
+          alert(`Refund saved in CentralHub, but source-store sync needs attention: ${syncMessage}`);
+        }
+
         onSuccess?.();
       } else {
         alert(`Failed to refund order: ${error}`);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      alert(`Error: ${e.message || 'An unexpected error occurred during refund'}`);
     } finally {
       setIsActionLoading(false);
     }
