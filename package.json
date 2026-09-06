@@ -10,10 +10,11 @@
     "start": "next start",
     "lint": "eslint .",
     "audit:routes": "node scripts/route-audit.mjs",
+    "audit:features": "node scripts/feature-continuity-audit.mjs",
     "audit:smoke": "node scripts/route-smoke.mjs",
     "cap:sync": "npx cap sync",
     "cap:open": "npx cap open android",
-    "validate:production": "npm run lint && npm run audit:routes && npx tsc --noEmit && npm run build && npm run audit:smoke"
+    "validate:production": "npm run lint && npm run audit:routes && npm run audit:features && npx tsc --noEmit && npm run build && npm run audit:smoke"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",
