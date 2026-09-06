@@ -2,177 +2,225 @@ import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-// Reverse mapping: CentralHub status -> remote store status
-const chToRemoteStatusMap: Record<string, string> = {
-  pending_payment: "pending",
-  confirmed: "confirmed",
-  picking: "picking",
-  packing: "processing",
-  packed: "packed",
-  ready_to_ship: "ready_to_ship",
-  shipment_booked: "shipment_booked",
-  shipped: "shipped",
-  out_for_delivery: "out_for_delivery",
-  delivered: "delivered",
-  completed: "completed",
-  cancelled: "cancelled",
-  refunded: "refunded",
+const statusMap: Record<string, string> = {
+  pending_payment: "pending", paid: "paid", confirmed: "confirmed",
+  picking: "picking", picked: "picked", packing: "processing", packed: "packed",
+  ready_to_ship: "ready_to_ship", shipment_booked: "shipment_booked",
+  collected: "collected", shipped: "shipped", at_local_depot: "at_local_depot",
+  out_for_delivery: "out_for_delivery", delivered: "delivered", completed: "completed",
+  cancelled: "cancelled", refunded: "refunded", delivery_attempted: "delivery_attempted",
+  ready_for_collection: "ready_for_collection", delivery_rescheduled: "delivery_rescheduled",
+  returned: "returned", failed: "failed",
 };
 
-Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 200, headers: corsHeaders });
+function reply(body: any, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+function message(error: any) {
+  return error?.message || error?.details || String(error || "Unknown error");
+}
+
+function normalizeSlug(value: string) {
+  const slug = String(value || "").toLowerCase();
+  if (slug === "keralagroceries") return "keralagrocery";
+  if (slug === "tamilretail.com") return "tamilretail";
+  return slug;
+}
+
+function toHex(buffer: ArrayBuffer) {
+  return Array.from(new Uint8Array(buffer)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function signedTamilRequest(action: string, params: Record<string, any>) {
+  const secret = Deno.env.get("CENTRALHUB_WEBHOOK_SECRET") || "";
+  if (!secret) throw new Error("CentralHub signed gateway is not configured");
+
+  const payload = JSON.stringify({ action, params });
+  const timestamp = Date.now().toString();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = toHex(await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(`${timestamp}.${payload}`),
+  ));
+
+  const response = await fetch(
+    "https://gokapknjocmgciwnxnxr.supabase.co/functions/v1/centralhub-orders",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timestamp, payload, signature }),
+    },
+  );
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data?.success === false) {
+    throw new Error(data?.error || `TamilRetail gateway failed (${response.status})`);
   }
+  return data;
+}
+
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
+  if (req.method !== "POST") return reply({ success: false, error: "Method not allowed" }, 405);
+
+  const central = createClient(
+    Deno.env.get("SUPABASE_URL") || "",
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "",
+  );
+
+  let orderId: string | undefined;
+  const markSync = async (state: "synced" | "failed", error?: string | null) => {
+    if (!orderId) return;
+    const update: Record<string, any> = { sync_state: state, sync_error: error || null };
+    if (state === "synced") update.last_synced_at = new Date().toISOString();
+    await central.from("orders").update(update).eq("id", orderId);
+  };
 
   try {
-    const { orderId, status, notes } = await req.json();
+    const body = await req.json().catch(() => ({}));
+    orderId = body?.orderId;
+    const requestedStatus = body?.status;
+    const notes = body?.notes || null;
+    if (!orderId || !requestedStatus) return reply({ success: false, error: "orderId and status are required" }, 400);
 
-    if (!orderId || !status) {
-      return new Response(
-        JSON.stringify({ success: false, error: "orderId and status are required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const centralHubUrl = Deno.env.get("SUPABASE_URL") || "";
-    const centralHubKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-    const centralHub = createClient(centralHubUrl, centralHubKey);
-
-    // 1. Get the order and store info
-    const { data: order, error: orderError } = await centralHub
+    const { data: order, error: orderError } = await central
       .from("orders")
-      .select("id, store_id, order_number, payment_status, tracking_number, courier_name, shipment_status, shipment_label_url, shipment_number")
+      .select("id,store_id,order_number,payment_status,tracking_number,courier_name,shipment_status,shipment_label_url,shipment_number")
       .eq("id", orderId)
       .single();
+    if (orderError || !order) return reply({ success: false, error: "Order not found" }, 404);
 
-    if (orderError || !order) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Order not found" }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const { data: store, error: storeError } = await centralHub
+    const { data: store, error: storeError } = await central
       .from("stores")
       .select("slug")
       .eq("id", order.store_id)
       .single();
-
     if (storeError || !store) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Store not found for this order" }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      await markSync("failed", "Store not found for this order");
+      return reply({ success: false, error: "Store not found for this order" }, 404);
     }
 
-    // 2. Identify the remote store credentials
-    let remoteUrl: string | undefined;
-    let remoteKey: string | undefined;
+    const slug = normalizeSlug(store.slug);
+    const remoteStatus = statusMap[requestedStatus] || requestedStatus;
+    const configs: Record<string, { url?: string; key?: string; shipmentFields: boolean }> = {
+      malluspices: {
+        url: Deno.env.get("MALLUSPICES_SUPABASE_URL"),
+        key: Deno.env.get("MALLUSPICES_SUPABASE_SERVICE_ROLE_KEY"),
+        shipmentFields: true,
+      },
+      pocketgrocery: {
+        url: Deno.env.get("POCKET_SUPABASE_URL"),
+        key: Deno.env.get("POCKET_SUPABASE_SERVICE_ROLE_KEY"),
+        shipmentFields: false,
+      },
+      keralagrocery: {
+        url: Deno.env.get("SOURCE3_SUPABASE_URL") || Deno.env.get("KERALA_SUPABASE_URL"),
+        key: Deno.env.get("SOURCE3_SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("KERALA_SUPABASE_SERVICE_ROLE_KEY"),
+        shipmentFields: false,
+      },
+      tamilretail: {
+        shipmentFields: false,
+      },
+    };
 
-    if (store.slug === "malluspices") {
-      remoteUrl = Deno.env.get("MALLUSPICES_SUPABASE_URL");
-      remoteKey = Deno.env.get("MALLUSPICES_SUPABASE_SERVICE_ROLE_KEY");
-    } else if (store.slug === "pocketgrocery") {
-      remoteUrl = Deno.env.get("POCKET_SUPABASE_URL");
-      remoteKey = Deno.env.get("POCKET_SUPABASE_SERVICE_ROLE_KEY");
-    } else if (store.slug === "keralagrocery" || store.slug === "keralagroceries") {
-      remoteUrl = Deno.env.get("SOURCE3_SUPABASE_URL") || Deno.env.get("KERALA_SUPABASE_URL");
-      remoteKey = Deno.env.get("SOURCE3_SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("KERALA_SUPABASE_SERVICE_ROLE_KEY");
+    const config = configs[slug];
+    if (!config) {
+      const error = `Unsupported remote store: ${slug}`;
+      await markSync("failed", error);
+      return reply({ success: false, store: slug, error }, 400);
     }
 
-    // 3. Push to remote if credentials exist
-    if (remoteUrl && remoteKey) {
-      const remoteSupabase = createClient(remoteUrl, remoteKey);
-
-      // Map CentralHub status to remote store's expected status
-      const remoteStatus = chToRemoteStatusMap[status] || status;
-
-      // Resilience: Update order_status and status columns separately or with fallback
-      // to avoid failing the whole query if one column doesn't exist
-      const updatePayload: any = {
-        updated_at: new Date().toISOString(),
-      };
-
-      // Update the main status field
-      updatePayload.order_status = remoteStatus;
-
-      // Also push payment_status so the remote store knows payment was confirmed
-      if (order.payment_status === "paid") {
-        updatePayload.payment_status = "paid";
-      }
-
-      // Push shipment data fields if present on the CentralHub order
-      if (order.tracking_number) updatePayload.tracking_number = order.tracking_number;
-      if (order.courier_name) updatePayload.courier_name = order.courier_name;
-      if (order.shipment_status) updatePayload.shipment_status = order.shipment_status;
-      if (order.shipment_label_url) updatePayload.shipment_label_url = order.shipment_label_url;
-      if (order.shipment_number) updatePayload.shipment_number = order.shipment_number;
-
-      // Look up the remote order by order_number
-      const { data: remoteOrder, error: remoteFetchError } = await remoteSupabase
-        .from("orders")
-        .select("id, order_number")
-        .eq("order_number", order.order_number)
-        .maybeSingle();
-
-      if (remoteFetchError) {
-        console.error(`Failed to find remote order by order_number "${order.order_number}": ${remoteFetchError.message}`);
-        return new Response(
-          JSON.stringify({ success: false, error: `Remote order lookup failed: ${remoteFetchError.message}` }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      if (!remoteOrder) {
-        console.warn(`Order ${order.order_number} not found on remote store ${store.slug} — skipping remote update`);
-        return new Response(
-          JSON.stringify({ success: true, message: `Order ${order.order_number} not found on ${store.slug} — local update only` }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      // First attempt: try updating both columns (standard for CH-compatible stores)
-      const { error: remoteError1 } = await remoteSupabase
-        .from("orders")
-        .update({ ...updatePayload, status: remoteStatus })
-        .eq("id", remoteOrder.id);
-
-      if (remoteError1) {
-        console.warn(`Initial remote update failed (possibly missing 'status' column): ${remoteError1.message}. Retrying with only 'order_status'...`);
-
-        // Second attempt: retry without the 'status' alias column
-        const { error: remoteError2 } = await remoteSupabase
-          .from("orders")
-          .update(updatePayload)
-          .eq("id", remoteOrder.id);
-
-        if (remoteError2) {
-          console.error(`Final remote update failed: ${remoteError2.message}`);
-          return new Response(
-            JSON.stringify({ success: false, error: `Remote update failed: ${remoteError2.message}` }),
-            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
-      }
-
-      return new Response(
-        JSON.stringify({ success: true, message: `Status '${remoteStatus}' pushed to ${store.slug} for order ${order.order_number}` }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    if (slug === "tamilretail" && (!config.url || !config.key)) {
+      const result = await signedTamilRequest("update_status", {
+        orderId: order.id,
+        orderNumber: order.order_number,
+        status: remoteStatus,
+        paymentStatus: order.payment_status,
+      });
+      await markSync("synced");
+      return reply({
+        success: true,
+        store: slug,
+        transport: "signed_gateway",
+        order_id: order.id,
+        remote_order_id: result.remote_order_id || null,
+        status: remoteStatus,
+        notes,
+      });
     }
 
-    return new Response(
-      JSON.stringify({ success: true, message: "No remote store configured — local update only" }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-  } catch (err: any) {
-    return new Response(
-      JSON.stringify({ success: false, error: err.message || "Unknown error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    if (!config.url || !config.key) {
+      const error = `Remote credentials are not configured for ${slug}`;
+      await markSync("failed", error);
+      return reply({ success: false, store: slug, error }, 503);
+    }
+
+    const remote = createClient(config.url, config.key);
+    let remoteOrder: any = null;
+
+    const byId = await remote.from("orders").select("id,order_number").eq("id", order.id).maybeSingle();
+    if (byId.error) throw byId.error;
+    remoteOrder = byId.data;
+
+    if (!remoteOrder) {
+      const byNumber = await remote.from("orders").select("id,order_number").eq("order_number", order.order_number).maybeSingle();
+      if (byNumber.error) throw byNumber.error;
+      remoteOrder = byNumber.data;
+    }
+
+    if (!remoteOrder) {
+      const error = `Order ${order.order_number} was not found on ${slug}`;
+      await markSync("failed", error);
+      return reply({ success: false, store: slug, error }, 404);
+    }
+
+    const update: Record<string, any> = {
+      order_status: remoteStatus,
+      updated_at: new Date().toISOString(),
+    };
+    if (order.payment_status) update.payment_status = order.payment_status;
+    if (config.shipmentFields) {
+      if (order.tracking_number) update.tracking_number = order.tracking_number;
+      if (order.courier_name) update.courier_name = order.courier_name;
+      if (order.shipment_status) update.shipment_status = order.shipment_status;
+      if (order.shipment_label_url) update.shipment_label_url = order.shipment_label_url;
+      if (order.shipment_number) update.shipment_number = order.shipment_number;
+    }
+
+    const firstPayload = { ...update, status: remoteStatus };
+    let result = await remote.from("orders").update(firstPayload).eq("id", remoteOrder.id);
+    if (result.error) {
+      result = await remote.from("orders").update(update).eq("id", remoteOrder.id);
+    }
+    if (result.error) throw result.error;
+
+    await markSync("synced");
+    return reply({
+      success: true,
+      store: slug,
+      transport: "direct_service_role",
+      order_id: order.id,
+      remote_order_id: remoteOrder.id,
+      status: remoteStatus,
+      notes,
+    });
+  } catch (error: any) {
+    const text = message(error);
+    await markSync("failed", text);
+    return reply({ success: false, error: text }, 500);
   }
 });
