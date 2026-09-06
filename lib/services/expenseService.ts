@@ -42,6 +42,42 @@ const manualExpenseType = (category?: string | null) => {
   return 'operating';
 };
 
+async function resolvePrivateExpenseUrl(value: string | null | undefined): Promise<string | null> {
+  if (!value) return null;
+
+  if (/^https?:\/\//i.test(value)) {
+    try {
+      const url = new URL(value);
+      if (url.pathname.includes('/storage/v1/object/sign/')) return value;
+      const marker = '/storage/v1/object/public/';
+      const idx = url.pathname.indexOf(marker);
+      if (idx >= 0) {
+        const rest = url.pathname.slice(idx + marker.length);
+        const slash = rest.indexOf('/');
+        if (slash > 0) {
+          const bucket = rest.slice(0, slash);
+          const objectPath = decodeURIComponent(rest.slice(slash + 1));
+          if (bucket === 'invoices') {
+            const { data, error } = await supabase.storage.from('invoices').createSignedUrl(objectPath, 60 * 15);
+            if (!error) return data.signedUrl;
+          }
+        }
+      }
+    } catch {
+      // Legacy external URLs are returned unchanged.
+    }
+    return value;
+  }
+
+  const objectPath = value.startsWith('invoices/') ? value.slice('invoices/'.length) : value;
+  const { data, error } = await supabase.storage.from('invoices').createSignedUrl(objectPath, 60 * 15);
+  if (error) {
+    console.warn('[ExpenseService] Could not create signed receipt URL:', error.message);
+    return null;
+  }
+  return data.signedUrl;
+}
+
 export const expenseService = {
   async getAllExpenses(filters: { status?: string; category?: string; storeId?: string } = {}) {
     const [manualResult, ledgerResult, storeResult, creditorResult] = await Promise.all([
@@ -145,6 +181,7 @@ export const expenseService = {
       const { data: store } = await supabase.from('stores').select('name').eq('id', data.store_id).maybeSingle();
       storeName = store?.name || 'Store';
     }
+    const signedFileUrl = await resolvePrivateExpenseUrl(data.file_url ?? null);
 
     return {
       id: data.id,
@@ -157,7 +194,7 @@ export const expenseService = {
       notes: data.notes ?? null,
       store_id: data.store_id ?? null,
       store_name: storeName,
-      file_url: data.file_url ?? null,
+      file_url: signedFileUrl,
       created_at: data.created_at,
       updated_at: data.created_at ?? null,
       source: 'manual' as const,
