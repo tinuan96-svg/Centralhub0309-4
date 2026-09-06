@@ -8,12 +8,19 @@ export interface VerificationCriteria {
   maxAgeHours: number;
 }
 
+// match_confidence is stored canonically on a 0-1 scale in CentralHub.
 const DEFAULT_CRITERIA: VerificationCriteria = {
-  minConfidence: 80,
+  minConfidence: 0.8,
   requireBrandMatch: true,
   requireSizeMatch: true,
   requireProductTypeMatch: true,
   maxAgeHours: 72,
+};
+
+const normalizeConfidence = (value: unknown) => {
+  const numeric = Number(value || 0);
+  // Backward compatibility for any legacy 0-100 values.
+  return numeric > 1 ? numeric / 100 : numeric;
 };
 
 export class CompetitorVerificationService {
@@ -25,11 +32,12 @@ export class CompetitorVerificationService {
     criteria: Partial<VerificationCriteria> = {}
   ) {
     const config = { ...DEFAULT_CRITERIA, ...criteria };
+    const minimumConfidence = normalizeConfidence(config.minConfidence);
     const now = Date.now();
 
     const verified = prices.filter(p => {
       // 1. Identity Verification
-      const hasConfidence = (p.match_confidence || 0) >= config.minConfidence;
+      const hasConfidence = normalizeConfidence(p.match_confidence) >= minimumConfidence;
       const brandValid = !config.requireBrandMatch || p.brand_match === true;
       const sizeValid = !config.requireSizeMatch || p.size_match === true;
       const typeValid = !config.requireProductTypeMatch || p.product_type_match === true;
@@ -37,11 +45,12 @@ export class CompetitorVerificationService {
       // 2. Freshness Check
       const scanTime = p.last_scanned_at ? new Date(p.last_scanned_at).getTime() : 0;
       const ageHours = (now - scanTime) / (1000 * 60 * 60);
-      const isFresh = ageHours <= config.maxAgeHours;
+      const isFresh = ageHours >= 0 && ageHours <= config.maxAgeHours;
 
       // 3. Quality Checks
       const isSuccess = p.scan_status === 'success';
       const isNotConditional = !p.is_conditional;
+      const hasUsablePrice = Number.isFinite(Number(p.price)) && Number(p.price) > 0;
 
       return (
         hasConfidence &&
@@ -50,7 +59,8 @@ export class CompetitorVerificationService {
         typeValid &&
         isFresh &&
         isSuccess &&
-        isNotConditional
+        isNotConditional &&
+        hasUsablePrice
       );
     });
 
