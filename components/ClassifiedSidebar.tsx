@@ -38,7 +38,7 @@ const sections: NavSection[] = [
   { key: '10-marketing', label: 'Marketing', icon: '📣', description: 'Campaigns, promotions, audiences and customer growth', items: [
     { href: '/marketing', label: 'Marketing Overview' }, { href: '/marketing/campaigns', label: 'Campaigns' }, { href: '/marketing/promotions', label: 'Promotions' }, { href: '/marketing/segments', label: 'Segments' }, { href: '/marketing/calendar', label: 'Marketing Calendar' },
     { href: '/marketing/whatsapp', label: 'WhatsApp Marketing' }, { href: '/marketing/email', label: 'Email Marketing' }, { href: '/marketing/social', label: 'Social Media' }, { href: '/marketing/product-feeds', label: 'Product Feeds' }, { href: '/marketing/tracking', label: 'Tracking' }, { href: '/marketing/audiences', label: 'Audiences' },
-    { href: '/marketing/creative-library', label: 'Creative Library' }, { href: '/marketing/budgets', label: 'Marketing Budgets' }, { href: '/marketing/analytics', label: 'Marketing Analytics' }, { href: '/marketing/apps', label: 'App Marketing & Stores' }, { href: '/marketing/customer-journey', label: 'Customer Journey' }, { href: '/marketing/alerts', label: 'Marketing Alerts' }, { href: '/marketing/ai', label: 'AI Marketing & SEO' }, { href: '/marketing/integrations', label: 'Marketing Integrations' }, { href: '/marketing/settings', label: 'Marketing Settings' },
+    { href: '/marketing/creative-library', label: 'Creative Library' }, { href: '/marketing/budgets', label: 'Marketing Budgets' }, { href: '/marketing/analytics', label: 'Marketing Analytics' }, { href: '/marketing/apps', label: 'App Marketing & Stores' }, { href: '/marketing/apps/releases', label: 'App Releases' }, { href: '/marketing/customer-journey', label: 'Customer Journey' }, { href: '/marketing/alerts', label: 'Marketing Alerts' }, { href: '/marketing/ai', label: 'AI Marketing & SEO' }, { href: '/marketing/integrations', label: 'Marketing Integrations' }, { href: '/marketing/settings', label: 'Marketing Settings' },
   ] },
   { key: '07-intelligence', label: 'Intelligence & Decisions', icon: '🧠', description: 'Analysis, competitors and commercial decisions', items: [
     { href: '/analytics', label: 'Analytics Intelligence' },
@@ -50,7 +50,7 @@ const sections: NavSection[] = [
     { href: '/finance', label: 'Finance Overview' }, { href: '/banking', label: 'Bank Accounts & Cashflow' }, { href: '/finance/ledger', label: 'Chart of Accounts & Ledger' }, { href: '/finance/transactions', label: 'Bank Reconciliation' }, { href: '/finance/payables', label: 'Supplier Payables' }, { href: '/expenses', label: 'Business Expenses' }, { href: '/finance/p-and-l', label: 'Profit & Loss' }, { href: '/finance/profitability', label: 'Profitability' }, { href: '/finance/alerts', label: 'Financial Alerts' }, { href: '/finance/vat', label: 'VAT Control' },
   ] },
   { key: '09-system', label: 'Administration & System', icon: '⚙️', description: 'Users, configuration and audit controls', items: [
-    { href: '/settings', label: 'System Settings' }, { href: '/settings/notifications', label: 'Notifications & Phone Alerts' }, { href: '/settings/users', label: 'User Management' }, { href: '/inventory-management/reports/audit', label: 'Audit Logs' },
+    { href: '/settings', label: 'System Settings' }, { href: '/settings/notifications', label: 'Notifications & Phone Alerts' }, { href: '/site-health', label: 'Site Health' }, { href: '/settings/users', label: 'User Management' }, { href: '/inventory-management/reports/audit', label: 'Audit Logs' },
   ] },
 ];
 
