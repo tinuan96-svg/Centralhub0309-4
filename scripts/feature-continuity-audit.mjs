@@ -14,7 +14,8 @@ const requiredFiles = [
   'app/customer-care/page.tsx',
   'app/dashboard/page.tsx',
   'app/finance/vat/page.tsx',
-  'app/inventory/expiry/page.tsx',
+  'app/inventory-management/expiry/page.tsx',
+  'app/inventory-management/expiry/ExpiryClient.tsx',
   'app/inventory/visibility/page.tsx',
   'app/marketing/apps/page.tsx',
   'app/marketing/apps/releases/page.tsx',
@@ -29,9 +30,12 @@ const requiredFiles = [
   'lib/services/orderService.ts',
   'lib/services/pushNotificationService.ts',
   'lib/server/webPush.ts',
+  'lib/storage/resumableUpload.ts',
   'app/api/push/subscribe/route.ts',
   'app/api/push/send/route.ts',
   'app/api/push/test/route.ts',
+  'supabase/functions/app-release-manager/index.ts',
+  'supabase/functions/marketing-provider-config/index.ts',
   'supabase/migrations/20260906185000_add_pwa_push_subscriptions.sql',
 ];
 
@@ -92,14 +96,52 @@ const contentChecks = [
     includes: ["functions.invoke('sync-orders'", 'syncOrderFromSource'],
   },
   {
+    label: 'Expiry management remains wired to central inventory and permanent expiry write-off history',
+    file: 'app/inventory-management/expiry/ExpiryClient.tsx',
+    includes: ['central_inventory', 'inventory_expiry_writeoffs', 'historicalWriteoffValue', 'Recorded Expiry Losses'],
+  },
+  {
+    label: 'App Release Manager uses resilient resumable upload rather than a one-shot storage upload',
+    file: 'app/marketing/apps/releases/page.tsx',
+    includes: ['uploadReleaseArtifactResumable', 'upload_pending', 'PUBLISH', 'resumable 6 MB chunks'],
+  },
+  {
+    label: 'Resumable release uploader keeps TUS create, resume, chunk and retry behaviour',
+    file: 'lib/storage/resumableUpload.ts',
+    includes: ['/storage/v1/upload/resumable', "'Tus-Resumable'", "method: 'HEAD'", "method: 'PATCH'", 'RETRY_DELAYS', 'localStorage'],
+  },
+  {
+    label: 'Release backend remains admin-gated and production publishing requires explicit confirmation',
+    file: 'supabase/functions/app-release-manager/index.ts',
+    includes: ['requireAdmin', 'app-release-artifacts', "confirmation !== 'PUBLISH'", 'marketing_provider_configs'],
+  },
+  {
+    label: 'Provider credential manager remains encrypted and admin-gated',
+    file: 'supabase/functions/marketing-provider-config/index.ts',
+    includes: ['requireAdmin', 'MARKETING_TOKEN_ENCRYPTION_KEY', 'AES-GCM', 'marketing_provider_configs'],
+  },
+  {
     label: 'Route audit guards continuity-critical pages in both desktop and mobile navigation',
     file: 'scripts/route-audit.mjs',
-    includes: ['/analytics', '/site-health', '/finance/vat', '/settings/notifications', '/marketing/apps/releases', '/inventory/visibility'],
+    includes: ['/analytics', '/site-health', '/finance/vat', '/settings/notifications', '/marketing/apps/releases', '/inventory/visibility', '/inventory-management/expiry', '/orders', '/suppliers', '/pricing'],
   },
   {
     label: 'PWA push subscription migration is tracked in source control',
     file: 'supabase/migrations/20260906185000_add_pwa_push_subscriptions.sql',
     includes: ['push_subscriptions', 'enable row level security', 'Users can insert their push subscriptions'],
+  },
+];
+
+const forbiddenChecks = [
+  {
+    label: 'App Release Manager must not regress to one-shot Supabase upload',
+    file: 'app/marketing/apps/releases/page.tsx',
+    excludes: ['.upload(release.artifact_path'],
+  },
+  {
+    label: 'Release uploader must not persist long-lived provider secrets',
+    file: 'lib/storage/resumableUpload.ts',
+    excludes: ['service_account_json', 'private_key', 'MARKETING_TOKEN_ENCRYPTION_KEY'],
   },
 ];
 
@@ -119,8 +161,19 @@ for (const check of contentChecks) {
   }
 }
 
+for (const check of forbiddenChecks) {
+  if (!exists(check.file)) {
+    failures.push(`${check.label}: ${check.file} is missing`);
+    continue;
+  }
+  const text = read(check.file);
+  for (const forbidden of check.excludes) {
+    if (text.includes(forbidden)) failures.push(`${check.label}: ${check.file} contains forbidden regression marker ${JSON.stringify(forbidden)}`);
+  }
+}
+
 const report = [
-  `CentralHub feature continuity audit checked ${requiredFiles.length} files and ${contentChecks.length} behaviour markers.`,
+  `CentralHub feature continuity audit checked ${requiredFiles.length} files, ${contentChecks.length} behaviour markers and ${forbiddenChecks.length} regression bans.`,
   failures.length ? 'Feature continuity audit: FAIL' : 'Feature continuity audit: PASS',
   ...failures.map((failure) => `- ${failure}`),
 ].join('\n');
