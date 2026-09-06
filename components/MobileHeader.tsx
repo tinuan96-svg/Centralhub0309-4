@@ -181,6 +181,7 @@ export default function MobileHeader() {
         { href: '/marketing/social', label: 'Social Media' },
         { href: '/marketing/analytics', label: 'Analytics' },
         { href: '/marketing/apps', label: 'App Marketing & Stores' },
+        { href: '/marketing/apps/releases', label: 'App Releases' },
         { href: '/marketing/settings', label: 'Settings' },
       ],
     },
@@ -189,6 +190,7 @@ export default function MobileHeader() {
       icon: '🧠',
       key: '11 — business intelligence',
       subItems: [
+        { href: '/analytics', label: 'Analytics Intelligence' },
         { href: '/business-intelligence/executive', label: 'Executive BI' },
         { href: '/business-intelligence/price-opportunities', label: 'Price Opportunities' },
         { href: '/business-intelligence/promotion-simulator', label: 'Promotion Simulator' },
@@ -217,6 +219,8 @@ export default function MobileHeader() {
       key: '13 — settings',
       subItems: [
         { href: '/settings', label: 'System Overview' },
+        { href: '/settings/notifications', label: 'Notifications & Phone Alerts' },
+        { href: '/site-health', label: 'Site Health' },
         { href: '/settings/users', label: 'User Management' },
         { href: '/inventory-management/reports/audit', label: 'Audit Logs' },
       ],
