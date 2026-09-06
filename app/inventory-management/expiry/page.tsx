@@ -1,5 +1,5 @@
-import ExpiryClient from "./ExpiryClient";
+import ExpiryClient from './ExpiryClient';
 
-export default function Page({ params, searchParams }: { params: any; searchParams: any }) {
-  return <ExpiryClient params={params} searchParams={searchParams} />;
+export default function Page() {
+  return <ExpiryClient />;
 }
