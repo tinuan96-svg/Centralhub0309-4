@@ -74,7 +74,7 @@ const contentChecks = [
   {
     label: 'Push subscription API enforces logged-in Supabase user ownership',
     file: 'app/api/push/subscribe/route.ts',
-    includes: ['getAuthenticatedUser', 'push_subscriptions', 'user.id'],
+    includes: ['getUserFromRequest', 'push_subscriptions', 'user.id'],
   },
   {
     label: 'Internal push send API requires a shared secret before sending alerts',
