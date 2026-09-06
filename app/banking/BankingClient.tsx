@@ -1,16 +1,26 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { BankSyncService, BankAccount, BankTransaction } from '@/lib/services/banking/bankSyncService';
+import { BankSyncService, BankAccount, BankTransaction, CashflowSummary } from '@/lib/services/banking/bankSyncService';
 import { ReconciliationService } from '@/lib/services/banking/reconciliationService';
 import { formatCurrency } from '@/lib/utils/currency';
 import { useStore } from '@/lib/store/useStore';
+import FinanceReconciliationPanel from './FinanceReconciliationPanel';
+
+const EMPTY_CASHFLOW: CashflowSummary = {
+  incoming: 0,
+  outgoing: 0,
+  transactionCount: 0,
+  reconciledCount: 0,
+  unreconciledCount: 0,
+};
 
 export default function BankingPage({ params, searchParams }: { params: any; searchParams: any }) {
   const { stores } = useStore();
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<BankTransaction[]>([]);
+  const [cashflowSummary, setCashflowSummary] = useState<CashflowSummary>(EMPTY_CASHFLOW);
   const [isAddAccountOpen, setIsAddAccountOpen] = useState(false);
   const [newAccount, setNewAccount] = useState({ bank_name: 'Monzo', account_name: '', store_id: '' });
   const [isLoading, setIsLoading] = useState(true);
@@ -40,7 +50,17 @@ export default function BankingPage({ params, searchParams }: { params: any; sea
     }
   }, []);
 
+  const loadCashflowSummary = useCallback(async () => {
+    try {
+      setCashflowSummary(await BankSyncService.getCashflowSummary(30));
+    } catch (error) {
+      console.error('Failed to load cashflow summary:', error);
+      setCashflowSummary(EMPTY_CASHFLOW);
+    }
+  }, []);
+
   useEffect(() => { loadAccounts(); }, [loadAccounts]);
+  useEffect(() => { loadCashflowSummary(); }, [loadCashflowSummary]);
   useEffect(() => { if (selectedAccountId) loadTransactions(selectedAccountId); }, [selectedAccountId, loadTransactions]);
 
   const handleAddAccount = async (event: React.FormEvent) => {
@@ -48,13 +68,14 @@ export default function BankingPage({ params, searchParams }: { params: any; sea
     try {
       await BankSyncService.createBankAccount({
         ...newAccount,
+        store_id: newAccount.store_id || null,
         currency: 'GBP',
         current_balance: 0,
         is_active: true,
       } as Partial<BankAccount>);
       setIsAddAccountOpen(false);
       setNewAccount({ bank_name: 'Monzo', account_name: '', store_id: '' });
-      await loadAccounts();
+      await Promise.all([loadAccounts(), loadCashflowSummary()]);
     } catch (error) {
       console.error('Failed to add bank account:', error);
       alert('Error adding bank account.');
@@ -91,7 +112,10 @@ export default function BankingPage({ params, searchParams }: { params: any; sea
       if (result.success) {
         alert('Transactions reconciled successfully!');
         setReconcilingTx(null);
-        if (selectedAccountId) await loadTransactions(selectedAccountId);
+        await Promise.all([
+          selectedAccountId ? loadTransactions(selectedAccountId) : Promise.resolve(),
+          loadCashflowSummary(),
+        ]);
       } else {
         alert(`Error: ${result.error}`);
       }
@@ -102,6 +126,15 @@ export default function BankingPage({ params, searchParams }: { params: any; sea
 
   const selectedAccount = accounts.find((account) => account.id === selectedAccountId);
   const totalCash = accounts.reduce((sum, account) => sum + (Number(account.current_balance) || 0), 0);
+  const netCashflow = cashflowSummary.incoming - cashflowSummary.outgoing;
+  const cashHealth = totalCash <= 0
+    ? { label: 'No Available Cash', dot: 'bg-amber-500', text: 'text-amber-300' }
+    : netCashflow < 0
+      ? { label: 'Cashflow Pressure', dot: 'bg-rose-500', text: 'text-rose-300' }
+      : { label: 'Healthy Balance', dot: 'bg-emerald-500', text: 'text-emerald-300' };
+  const accountLabel = selectedAccount
+    ? `${selectedAccount.bank_name || 'Bank'} - ${selectedAccount.account_name || 'Account'}`
+    : 'Select a bank account';
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
@@ -153,7 +186,10 @@ export default function BankingPage({ params, searchParams }: { params: any; sea
           </div>
 
           <div className="bg-gradient-to-br from-indigo-900/40 to-slate-900 border border-slate-800 rounded-3xl p-6">
-            <h2 className="text-lg font-bold text-white uppercase tracking-tight mb-6 text-indigo-400">Cashflow Overview</h2>
+            <div className="flex items-start justify-between gap-3 mb-6">
+              <h2 className="text-lg font-bold text-white uppercase tracking-tight text-indigo-400">Cashflow Overview</h2>
+              <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Last 30 days</span>
+            </div>
             <div className="space-y-6">
               <div className="p-4 bg-slate-800/50 rounded-2xl border border-slate-700">
                 <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mb-1">Total Available Cash</p>
@@ -162,28 +198,40 @@ export default function BankingPage({ params, searchParams }: { params: any; sea
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-4 bg-emerald-500/5 rounded-2xl border border-emerald-500/20">
                   <p className="text-[10px] text-emerald-500/70 uppercase font-black tracking-widest mb-1">Incoming</p>
-                  <p className="text-lg font-black text-emerald-400">--</p>
+                  <p className="text-lg font-black text-emerald-400">{formatCurrency(cashflowSummary.incoming)}</p>
                 </div>
                 <div className="p-4 bg-rose-500/5 rounded-2xl border border-rose-500/20">
                   <p className="text-[10px] text-rose-500/70 uppercase font-black tracking-widest mb-1">Outgoing</p>
-                  <p className="text-lg font-black text-rose-400">--</p>
+                  <p className="text-lg font-black text-rose-400">{formatCurrency(cashflowSummary.outgoing)}</p>
                 </div>
               </div>
               <div className="p-5 bg-slate-800/50 rounded-2xl border border-slate-700">
-                <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mb-3">Health Status</p>
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Health Status</p>
+                  <p className={`text-[10px] font-black ${netCashflow >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{netCashflow >= 0 ? '+' : ''}{formatCurrency(netCashflow)} net</p>
+                </div>
                 <div className="flex items-center gap-3">
-                  <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-                  <p className="text-sm font-bold text-white uppercase tracking-tighter">Healthy Balance</p>
+                  <div className={`w-3 h-3 rounded-full ${cashHealth.dot}`} />
+                  <p className={`text-sm font-bold uppercase tracking-tighter ${cashHealth.text}`}>{cashHealth.label}</p>
                 </div>
               </div>
             </div>
           </div>
         </div>
 
+        <FinanceReconciliationPanel
+          transactions={transactions}
+          accountLabel={accountLabel}
+          onMatchOrders={handleStartReconciliation}
+        />
+
         <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
-          <div className="p-6 border-b border-slate-800">
-            <h2 className="text-lg font-bold text-white uppercase tracking-tight">Recent Transactions</h2>
-            <p className="text-xs text-slate-500 mt-1">{selectedAccount?.bank_name || 'Loading bank...'} - {selectedAccount?.account_name || ''}</p>
+          <div className="p-6 border-b border-slate-800 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold text-white uppercase tracking-tight">Recent Transactions</h2>
+              <p className="text-xs text-slate-500 mt-1">{accountLabel}</p>
+            </div>
+            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{cashflowSummary.unreconciledCount} unmatched across active accounts</p>
           </div>
 
           <div className="hidden fold-inner:block overflow-x-auto">
@@ -237,6 +285,9 @@ export default function BankingPage({ params, searchParams }: { params: any; sea
                   <span className="px-2 py-0.5 bg-slate-800 text-slate-400 text-[9px] font-black rounded border border-slate-700 uppercase tracking-widest">{tx.category || 'General'}</span>
                   <span className={`inline-flex px-2 py-0.5 rounded text-[8px] font-black uppercase border ${tx.is_reconciled ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>{tx.is_reconciled ? 'Reconciled' : 'Unmatched'}</span>
                 </div>
+                {!tx.is_reconciled && tx.category === 'Gateway Payout' && (
+                  <button onClick={() => handleStartReconciliation(tx)} className="w-full text-[9px] font-black uppercase bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-xl transition-all">Match Orders</button>
+                )}
               </div>
             ))}
           </div>
