@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { uploadReleaseArtifactResumable, type ResumableUploadProgress } from '@/lib/storage/resumableUpload';
 
 type Store = { id: string; name: string; slug?: string | null };
 type AppRow = {
@@ -25,6 +26,7 @@ type Release = {
   release_notes: string | null;
   artifact_file_name: string;
   artifact_path: string;
+  artifact_size: number | null;
   status: string;
   target_track: string | null;
   rollout_fraction: number | null;
@@ -49,8 +51,10 @@ type Overview = {
   error?: string;
 };
 
+const MAX_RELEASE_BYTES = 1024 * 1024 * 1024;
 const providerLabel = (id: string) => id === 'google_play' ? 'Google Play' : id === 'app_store_connect' ? 'App Store Connect' : id;
 const expectedProvider = (platform: string) => platform === 'ios' ? 'app_store_connect' : 'google_play';
+const safeReleaseFileName = (value: string) => value.replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 160);
 
 export default function AppReleasesPage() {
   const [stores, setStores] = useState<Store[]>([]);
@@ -66,6 +70,7 @@ export default function AppReleasesPage() {
   const [productionConfirmation, setProductionConfirmation] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
+  const [uploadProgress, setUploadProgress] = useState<ResumableUploadProgress | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -129,6 +134,7 @@ export default function AppReleasesPage() {
     setStoreId(nextStoreId);
     setAppId('');
     setFile(null);
+    setUploadProgress(null);
     setMessage('');
     setError('');
     await loadOverview(nextStoreId);
@@ -151,42 +157,75 @@ export default function AppReleasesPage() {
       setError('iOS releases require both version and build number.');
       return;
     }
+    if (!file.size || file.size > MAX_RELEASE_BYTES) {
+      setError(`Release files must be between 1 byte and ${formatBytes(MAX_RELEASE_BYTES)}.`);
+      return;
+    }
 
     setBusy('stage');
+    setUploadProgress({ bytesUploaded: 0, bytesTotal: file.size, percent: 0, resumed: false });
     setMessage('');
     setError('');
     try {
-      const created = await invoke({
-        action: 'create',
-        storeId,
-        appId: selectedApp.id,
-        fileName: file.name,
-        fileSize: file.size,
-        contentType: file.type || 'application/octet-stream',
-        versionName: versionName.trim(),
-        buildNumber: buildNumber.trim(),
-        releaseNotes: releaseNotes.trim(),
-        targetTrack: selectedApp.platform === 'android' ? targetTrack : undefined,
-        rolloutFraction: selectedApp.platform === 'android' ? Math.max(0.01, Math.min(1, rolloutPercent / 100)) : undefined,
-      });
+      const safeName = safeReleaseFileName(file.name);
+      const matchingPending = overview.releases.find(release =>
+        release.app_id === selectedApp.id &&
+        release.status === 'upload_pending' &&
+        release.artifact_file_name === safeName &&
+        Number(release.artifact_size || 0) === file.size &&
+        (release.version_name || '') === versionName.trim() &&
+        (release.build_number || '') === buildNumber.trim()
+      );
 
-      const release = created.release as Release;
-      const bucket = created.bucket || 'app-release-artifacts';
-      const { error: uploadError } = await supabase.storage
-        .from(bucket)
-        .upload(release.artifact_path, file, { contentType: file.type || 'application/octet-stream', upsert: false });
+      let release: Release;
+      let bucket = 'app-release-artifacts';
 
-      if (uploadError) {
-        await invoke({ action: 'cancel', storeId, releaseId: release.id }).catch(() => undefined);
-        throw new Error(`Release record was created but the private file upload failed: ${uploadError.message}`);
+      if (matchingPending) {
+        release = matchingPending;
+        try {
+          await invoke({ action: 'mark_uploaded', storeId, releaseId: release.id });
+          setUploadProgress({ bytesUploaded: file.size, bytesTotal: file.size, percent: 100, resumed: true });
+          setMessage('The previously uploaded release file was already complete. CentralHub recovered it and staged it as Ready.');
+          setFile(null);
+          await loadOverview(storeId);
+          return;
+        } catch (recoveryError: any) {
+          const recoveryMessage = String(recoveryError?.message || '');
+          if (!recoveryMessage.toLowerCase().includes('not found')) throw recoveryError;
+        }
+      } else {
+        const created = await invoke({
+          action: 'create',
+          storeId,
+          appId: selectedApp.id,
+          fileName: file.name,
+          fileSize: file.size,
+          contentType: file.type || 'application/octet-stream',
+          versionName: versionName.trim(),
+          buildNumber: buildNumber.trim(),
+          releaseNotes: releaseNotes.trim(),
+          targetTrack: selectedApp.platform === 'android' ? targetTrack : undefined,
+          rolloutFraction: selectedApp.platform === 'android' ? Math.max(0.01, Math.min(1, rolloutPercent / 100)) : undefined,
+        });
+        release = created.release as Release;
+        bucket = created.bucket || bucket;
       }
 
+      await uploadReleaseArtifactResumable({
+        bucket,
+        objectPath: release.artifact_path,
+        file,
+        contentType: file.type || 'application/octet-stream',
+        onProgress: setUploadProgress,
+      });
+
       await invoke({ action: 'mark_uploaded', storeId, releaseId: release.id });
-      setMessage('Release file uploaded to private storage and staged as Ready. Nothing has been submitted to an app store yet.');
+      setMessage('Release file uploaded with resumable transfer and staged as Ready. Nothing has been submitted to an app store yet.');
       setFile(null);
       await loadOverview(storeId);
     } catch (e: any) {
-      setError(e?.message || 'Could not stage the release.');
+      setError(e?.message || 'Could not stage the release. The pending release is preserved so the same file can resume instead of starting over.');
+      await loadOverview(storeId).catch(() => undefined);
     } finally {
       setBusy('');
     }
@@ -220,7 +259,7 @@ export default function AppReleasesPage() {
       <div className="flex flex-wrap gap-2">
         <Link href="/marketing/apps" className="px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-sm">App analytics</Link>
         <Link href="/marketing/integrations" className="px-4 py-2 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-sm font-bold">Provider connections</Link>
-        <button onClick={() => loadOverview(storeId)} disabled={!storeId || loading} className="px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-sm disabled:opacity-50">Refresh</button>
+        <button onClick={() => loadOverview(storeId)} disabled={!storeId || loading || busy === 'stage'} className="px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-sm disabled:opacity-50">Refresh</button>
       </div>
     </div>
 
@@ -235,14 +274,14 @@ export default function AppReleasesPage() {
       <div className="grid md:grid-cols-2 gap-4">
         <label className="block">
           <span className="block text-[10px] uppercase tracking-widest font-black text-slate-500 mb-2">Store</span>
-          <select value={storeId} onChange={e => onStoreChange(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100">
+          <select value={storeId} onChange={e => onStoreChange(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100" disabled={busy === 'stage'}>
             <option value="">Select store</option>
             {stores.map(store => <option key={store.id} value={store.id}>{store.name}</option>)}
           </select>
         </label>
         <label className="block">
           <span className="block text-[10px] uppercase tracking-widest font-black text-slate-500 mb-2">Registered app</span>
-          <select value={appId} onChange={e => { setAppId(e.target.value); setFile(null); setMessage(''); }} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100" disabled={!overview.apps.length}>
+          <select value={appId} onChange={e => { setAppId(e.target.value); setFile(null); setUploadProgress(null); setMessage(''); }} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100" disabled={!overview.apps.length || busy === 'stage'}>
             {!overview.apps.length && <option value="">No registered apps for this store</option>}
             {overview.apps.map(app => <option key={app.id} value={app.id}>{app.display_name || app.package_identifier} · {app.platform}</option>)}
           </select>
@@ -267,18 +306,18 @@ export default function AppReleasesPage() {
       <div className="grid md:grid-cols-2 gap-4">
         <label className="block">
           <span className="block text-[10px] uppercase tracking-widest font-black text-slate-500 mb-2">Version name</span>
-          <input value={versionName} onChange={e => setVersionName(e.target.value)} placeholder="e.g. 1.4.0" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100" />
+          <input value={versionName} onChange={e => setVersionName(e.target.value)} placeholder="e.g. 1.4.0" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100" disabled={busy === 'stage'} />
         </label>
         <label className="block">
           <span className="block text-[10px] uppercase tracking-widest font-black text-slate-500 mb-2">Build number {selectedApp?.platform === 'ios' ? '(required)' : '(optional)'}</span>
-          <input value={buildNumber} onChange={e => setBuildNumber(e.target.value)} placeholder="e.g. 104" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100" />
+          <input value={buildNumber} onChange={e => setBuildNumber(e.target.value)} placeholder="e.g. 104" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100" disabled={busy === 'stage'} />
         </label>
       </div>
 
       {selectedApp?.platform === 'android' && <div className="grid md:grid-cols-2 gap-4">
         <label className="block">
           <span className="block text-[10px] uppercase tracking-widest font-black text-slate-500 mb-2">Target track</span>
-          <select value={targetTrack} onChange={e => setTargetTrack(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100">
+          <select value={targetTrack} onChange={e => setTargetTrack(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100" disabled={busy === 'stage'}>
             <option value="internal">Internal testing</option>
             <option value="alpha">Alpha</option>
             <option value="beta">Beta</option>
@@ -287,24 +326,33 @@ export default function AppReleasesPage() {
         </label>
         <label className="block">
           <span className="block text-[10px] uppercase tracking-widest font-black text-slate-500 mb-2">Rollout %</span>
-          <input type="number" min={1} max={100} value={rolloutPercent} onChange={e => setRolloutPercent(Number(e.target.value) || 1)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100" />
+          <input type="number" min={1} max={100} value={rolloutPercent} onChange={e => setRolloutPercent(Number(e.target.value) || 1)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100" disabled={busy === 'stage'} />
         </label>
       </div>}
 
       <label className="block">
         <span className="block text-[10px] uppercase tracking-widest font-black text-slate-500 mb-2">Release notes</span>
-        <textarea value={releaseNotes} onChange={e => setReleaseNotes(e.target.value)} rows={3} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100" placeholder="What changed in this version?" />
+        <textarea value={releaseNotes} onChange={e => setReleaseNotes(e.target.value)} rows={3} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100" placeholder="What changed in this version?" disabled={busy === 'stage'} />
       </label>
 
       <label className="block">
         <span className="block text-[10px] uppercase tracking-widest font-black text-slate-500 mb-2">Signed release file</span>
-        <input type="file" accept={selectedApp?.platform === 'ios' ? '.ipa' : '.aab'} onChange={e => setFile(e.target.files?.[0] || null)} className="block w-full text-sm text-slate-300 file:mr-4 file:rounded-xl file:border-0 file:bg-slate-800 file:px-4 file:py-2.5 file:text-slate-200" />
-        <p className="text-xs text-slate-600 mt-2">{selectedApp?.platform === 'ios' ? 'Use a signed .ipa.' : 'Use a signed Android App Bundle (.aab).'} Maximum private artifact size is controlled by CentralHub storage.</p>
+        <input type="file" accept={selectedApp?.platform === 'ios' ? '.ipa' : '.aab'} onChange={e => { setFile(e.target.files?.[0] || null); setUploadProgress(null); }} className="block w-full text-sm text-slate-300 file:mr-4 file:rounded-xl file:border-0 file:bg-slate-800 file:px-4 file:py-2.5 file:text-slate-200" disabled={busy === 'stage'} />
+        <p className="text-xs text-slate-600 mt-2">{selectedApp?.platform === 'ios' ? 'Use a signed .ipa.' : 'Use a signed Android App Bundle (.aab).'} Uploads use resumable 6 MB chunks with automatic retry; selecting the same file can resume an interrupted upload. Maximum size: {formatBytes(MAX_RELEASE_BYTES)}.</p>
       </label>
+
+      {uploadProgress && <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-4 space-y-2">
+        <div className="flex items-center justify-between gap-3 text-xs">
+          <span className="font-bold text-cyan-200">{uploadProgress.resumed ? 'Resumable upload recovered' : 'Resumable upload'}</span>
+          <span className="text-cyan-300 tabular-nums">{uploadProgress.percent.toFixed(1)}%</span>
+        </div>
+        <div className="h-2 rounded-full bg-slate-800 overflow-hidden"><div className="h-full bg-cyan-500 transition-all" style={{ width: `${Math.max(0, Math.min(100, uploadProgress.percent))}%` }} /></div>
+        <div className="text-[11px] text-slate-500">{formatBytes(uploadProgress.bytesUploaded)} of {formatBytes(uploadProgress.bytesTotal)} uploaded</div>
+      </div>}
 
       <div className="flex justify-end">
         <button onClick={stageRelease} disabled={!file || !selectedApp || Boolean(publishingBlocked) || busy === 'stage'} className="px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-black disabled:opacity-40">
-          {busy === 'stage' ? 'Uploading & staging…' : 'Upload & Stage Release'}
+          {busy === 'stage' ? `Uploading ${uploadProgress?.percent?.toFixed(1) || '0.0'}%…` : 'Upload & Stage Release'}
         </button>
       </div>
     </section>
@@ -326,6 +374,7 @@ export default function AppReleasesPage() {
               <div>
                 <div className="flex items-center gap-2 flex-wrap"><span className="font-bold text-slate-200">{release.artifact_file_name}</span><Status value={release.status} /></div>
                 <div className="text-xs text-slate-500 mt-1">{providerLabel(release.provider_id)} · {release.version_name || 'version pending'}{release.build_number ? ` (${release.build_number})` : ''}{release.target_track ? ` · ${release.target_track}` : ''} · {new Date(release.created_at).toLocaleString()}</div>
+                {release.status === 'upload_pending' && <div className="text-xs text-cyan-300 mt-2">Upload is pending. Re-select the same signed file above to resume safely.</div>}
                 {release.last_error && <div className="text-xs text-rose-300 mt-2">{release.last_error}</div>}
               </div>
               <div className="flex flex-wrap gap-2">
@@ -364,4 +413,12 @@ function Status({ value }: { value: string }) {
   const good = ['ready', 'submitted', 'released', 'succeeded'].includes(value);
   const warn = ['upload_pending', 'publishing', 'processing', 'queued', 'running'].includes(value);
   return <span className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase border ${good ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : warn ? 'bg-amber-500/10 border-amber-500/30 text-amber-300' : 'bg-rose-500/10 border-rose-500/30 text-rose-300'}`}>{value.replaceAll('_', ' ')}</span>;
+}
+
+function formatBytes(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const index = Math.min(units.length - 1, Math.floor(Math.log(value) / Math.log(1024)));
+  const amount = value / Math.pow(1024, index);
+  return `${amount >= 100 || index === 0 ? amount.toFixed(0) : amount.toFixed(1)} ${units[index]}`;
 }
