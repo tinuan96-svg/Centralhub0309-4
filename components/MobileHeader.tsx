@@ -180,6 +180,7 @@ export default function MobileHeader() {
         { href: '/marketing/email', label: 'Email' },
         { href: '/marketing/social', label: 'Social Media' },
         { href: '/marketing/analytics', label: 'Analytics' },
+        { href: '/marketing/apps', label: 'App Marketing & Stores' },
         { href: '/marketing/settings', label: 'Settings' },
       ],
     },
@@ -207,6 +208,7 @@ export default function MobileHeader() {
         { href: '/profit-analysis', label: 'Profit Analysis' },
         { href: '/banking', label: 'Banking & Cashflow' },
         { href: '/expenses', label: 'Business Expenses' },
+        { href: '/finance/vat', label: 'VAT Control' },
       ],
     },
     {
