@@ -1,0 +1,44 @@
+name: CentralHub dependency refresh
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    if: github.event.head_commit.message == 'chore: upgrade Next.js security baseline'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.1'
+          cache: npm
+
+      - name: Refresh lockfile and safe transitive dependencies
+        run: |
+          npm install
+          npm audit fix
+          npm audit --audit-level=high
+
+      - name: Commit generated lockfile
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          if git diff --cached --quiet; then
+            echo "Lockfile already current."
+          else
+            git commit -m "chore: refresh secure dependency lock"
+            git push origin HEAD:main
+          fi
