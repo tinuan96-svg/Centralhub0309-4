@@ -12,6 +12,7 @@ export default function StoresSettingsClient({ params, searchParams }: { params:
   const [editingStore, setEditingStore] = useState<Store | null>(null);
   const [formData, setFormData] = useState({ name: '', slug: '', max_display_stock: 50 });
   const [storeError, setStoreError] = useState<string | null>(null);
+  const [visibilityBusy, setVisibilityBusy] = useState<string | null>(null);
 
   useEffect(() => { loadStores(); }, []);
 
@@ -50,10 +51,21 @@ export default function StoresSettingsClient({ params, searchParams }: { params:
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (confirm('Are you sure you want to delete this store? This action may be irreversible if there are associated records.')) {
-      try { await StoreService.deleteStore(id); await loadStores(); }
-      catch { alert('Could not delete store. It might have active orders or products.'); }
+  const handleVisibility = async (store: Store) => {
+    const currentlyVisible = store.visibility !== false;
+    const action = currentlyVisible ? 'disable' : 'enable';
+    if (!confirm(`${action === 'disable' ? 'Disable' : 'Enable'} ${store.name}? ${action === 'disable' ? 'This keeps all historic orders, finance, analytics and customer records intact.' : 'The store will become active/visible again.'}`)) return;
+
+    setVisibilityBusy(store.id);
+    setStoreError(null);
+    try {
+      await StoreService.setStoreVisibility(store.id, !currentlyVisible);
+      await loadStores();
+    } catch (error: any) {
+      console.error('[StoreSettings] visibility:', error);
+      setStoreError(error?.message || `Could not ${action} store.`);
+    } finally {
+      setVisibilityBusy(null);
     }
   };
 
@@ -64,16 +76,28 @@ export default function StoresSettingsClient({ params, searchParams }: { params:
         <button onClick={() => handleOpenModal()} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">+ Add Store</button>
       </div>
 
+      <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3 text-xs text-slate-400">
+        Store removal is intentionally non-destructive. Disable a store to take it out of active use while preserving its historic operational and financial records.
+      </div>
+      {storeError && !showModal && <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-200">{storeError}</div>}
+
       {loading ? <div className="text-center py-12"><div className="inline-block w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" /></div> :
-        <div className="bg-slate-900/50 rounded-2xl border border-slate-800 overflow-hidden">
-          <table className="w-full text-left"><thead><tr className="bg-slate-800/50 text-slate-400 text-xs uppercase tracking-wider"><th className="px-6 py-4">Store Name</th><th className="px-6 py-4">Slug / URL</th><th className="px-6 py-4">Business Identity</th><th className="px-6 py-4">Max Display Stock</th><th className="px-6 py-4 text-right">Actions</th></tr></thead>
-          <tbody className="divide-y divide-slate-800">{stores.map(store => <tr key={store.id} className="hover:bg-slate-800/30 transition-colors">
-            <td className="px-6 py-4"><div className="font-medium text-white">{store.name}</div><div className="text-xs text-slate-500">ID: {store.id.split('-')[0]}...</div></td>
-            <td className="px-6 py-4 text-sm text-slate-400">/store/{store.slug}</td>
-            <td className="px-6 py-4"><div className="text-sm text-slate-300">{store.domain || 'Domain not set'}</div><div className="text-[10px] text-slate-500">Edit a store to view business identity</div></td>
-            <td className="px-6 py-4 text-sm text-slate-400">{store.max_display_stock || 'Unlimited'}</td>
-            <td className="px-6 py-4 text-right space-x-3"><button onClick={() => handleOpenModal(store)} className="text-blue-400 hover:text-blue-300 text-sm font-medium">Edit</button><button onClick={() => handleDelete(store.id)} className="text-rose-400 hover:text-rose-300 text-sm font-medium">Delete</button></td>
-          </tr>)}</tbody></table>
+        <div className="bg-slate-900/50 rounded-2xl border border-slate-800 overflow-x-auto">
+          <table className="w-full text-left min-w-[900px]"><thead><tr className="bg-slate-800/50 text-slate-400 text-xs uppercase tracking-wider"><th className="px-6 py-4">Store Name</th><th className="px-6 py-4">Slug / URL</th><th className="px-6 py-4">Status</th><th className="px-6 py-4">Business Identity</th><th className="px-6 py-4">Max Display Stock</th><th className="px-6 py-4 text-right">Actions</th></tr></thead>
+          <tbody className="divide-y divide-slate-800">{stores.map(store => {
+            const visible = store.visibility !== false;
+            return <tr key={store.id} className="hover:bg-slate-800/30 transition-colors">
+              <td className="px-6 py-4"><div className="font-medium text-white">{store.name}</div><div className="text-xs text-slate-500">ID: {store.id.split('-')[0]}...</div></td>
+              <td className="px-6 py-4 text-sm text-slate-400">/store/{store.slug}</td>
+              <td className="px-6 py-4"><span className={`inline-flex px-2 py-1 rounded-full border text-[10px] font-black uppercase tracking-wider ${visible ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-slate-700 bg-slate-800 text-slate-400'}`}>{visible ? 'Enabled' : 'Disabled'}</span></td>
+              <td className="px-6 py-4"><div className="text-sm text-slate-300">{store.domain || 'Domain not set'}</div><div className="text-[10px] text-slate-500">Edit a store to view business identity</div></td>
+              <td className="px-6 py-4 text-sm text-slate-400">{store.max_display_stock || 'Unlimited'}</td>
+              <td className="px-6 py-4 text-right space-x-3">
+                <button onClick={() => handleOpenModal(store)} className="text-blue-400 hover:text-blue-300 text-sm font-medium">Edit</button>
+                <button disabled={visibilityBusy === store.id} onClick={() => handleVisibility(store)} className={`${visible ? 'text-amber-400 hover:text-amber-300' : 'text-emerald-400 hover:text-emerald-300'} text-sm font-medium disabled:opacity-50`}>{visibilityBusy === store.id ? 'Saving…' : visible ? 'Disable' : 'Enable'}</button>
+              </td>
+            </tr>;
+          })}</tbody></table>
         </div>}
 
       {showModal && <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
