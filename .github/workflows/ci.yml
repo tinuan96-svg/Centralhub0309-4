@@ -48,3 +48,19 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: https://icnvrpnzjjcbvgcqgiua.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: Export verified source artifact
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[export-source]')
+        uses: actions/upload-artifact@v4
+        with:
+          name: centralhub-main-source-${{ github.sha }}
+          path: |
+            .
+            !node_modules/**
+            !.next/**
+            !.git/**
+            !.env
+            !.env.*
+            !route-audit-output.txt
+          include-hidden-files: true
+          retention-days: 1
