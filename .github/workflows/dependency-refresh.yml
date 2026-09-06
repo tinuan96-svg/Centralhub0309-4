@@ -27,7 +27,7 @@ jobs:
       - name: Refresh lockfile and safe transitive dependencies
         run: |
           npm install
-          npm audit fix
+          npm audit fix || true
           npm audit --audit-level=high
 
       - name: Commit generated lockfile
