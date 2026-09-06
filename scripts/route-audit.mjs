@@ -6,6 +6,20 @@ const appDir = path.join(root, 'app');
 const reportPath = path.join(root, 'route-audit-output.txt');
 const sourceDirs = [appDir, path.join(root, 'components'), path.join(root, 'lib')].filter(fs.existsSync);
 const routeFiles = new Set();
+const continuityCriticalRoutes = [
+  '/analytics',
+  '/site-health',
+  '/finance/vat',
+  '/settings/notifications',
+  '/marketing/apps',
+  '/marketing/apps/releases',
+  '/inventory/visibility',
+  '/settings/master-data/stores',
+];
+const navigationParityFiles = [
+  path.join(root, 'components', 'ClassifiedSidebar.tsx'),
+  path.join(root, 'components', 'MobileHeader.tsx'),
+];
 
 function walk(dir, visit) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -59,11 +73,28 @@ function exists(route) {
 }
 
 const missing = [...candidates.entries()].filter(([route]) => !exists(route)).sort();
+const missingCriticalPages = continuityCriticalRoutes.filter((route) => !exists(route));
+const navigationParityFailures = [];
+for (const file of navigationParityFiles) {
+  if (!fs.existsSync(file)) {
+    navigationParityFailures.push(`${path.relative(root, file)} is missing`);
+    continue;
+  }
+  const text = fs.readFileSync(file, 'utf8');
+  for (const route of continuityCriticalRoutes) {
+    if (!text.includes(route)) navigationParityFailures.push(`${route} missing from ${path.relative(root, file)}`);
+  }
+}
+
 const report = [
   `Discovered ${routeFiles.size} App Router pages and ${candidates.size} literal internal navigation targets.`,
   missing.length ? 'Missing frontend routes:' : 'Frontend route integrity: PASS',
   ...missing.map(([route, file]) => `- ${route} <- ${path.relative(root, file)}`),
+  missingCriticalPages.length ? 'Continuity-critical pages missing:' : 'Continuity-critical pages: PASS',
+  ...missingCriticalPages.map((route) => `- ${route}`),
+  navigationParityFailures.length ? 'Desktop/mobile navigation parity failures:' : 'Desktop/mobile navigation parity: PASS',
+  ...navigationParityFailures.map((failure) => `- ${failure}`),
 ].join('\n');
 fs.writeFileSync(reportPath, report + '\n');
 console.log(report);
-if (missing.length) process.exit(1);
+if (missing.length || missingCriticalPages.length || navigationParityFailures.length) process.exit(1);
