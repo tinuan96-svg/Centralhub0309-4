@@ -10,12 +10,16 @@ type PushEventType = 'ORDER_RECEIVED' | 'PAYMENT_CONFIRMED';
 function buildNotification(eventType: PushEventType, body: any) {
   const orderNumber = String(body.orderNumber || body.order_number || 'new order').trim();
   const customerName = String(body.customerName || body.customer_name || 'Customer').trim();
-  const orderTotal = body.orderTotal ?? body.order_total;
+  const rawOrderTotal = body.orderTotal ?? body.order_total;
+  const parsedOrderTotal = Number(String(rawOrderTotal ?? '').replace(/[^0-9.-]/g, ''));
+  const orderTotalText = Number.isFinite(parsedOrderTotal) && parsedOrderTotal > 0
+    ? ` — £${parsedOrderTotal.toFixed(2)}`
+    : '';
 
   if (eventType === 'ORDER_RECEIVED') {
     return {
       title: 'New order received',
-      message: `Order ${orderNumber} from ${customerName}${orderTotal ? ` — £${Number(orderTotal).toFixed(2)}` : ''}.`,
+      message: `Order ${orderNumber} from ${customerName}${orderTotalText}.`,
       url: '/orders',
       category: 'order_received',
     };
@@ -23,7 +27,7 @@ function buildNotification(eventType: PushEventType, body: any) {
 
   return {
     title: 'Order confirmed',
-    message: `Order ${orderNumber} has been confirmed${orderTotal ? ` — £${Number(orderTotal).toFixed(2)}` : ''}.`,
+    message: `Order ${orderNumber} has been confirmed${orderTotalText}.`,
     url: '/orders',
     category: 'order_confirmed',
   };
