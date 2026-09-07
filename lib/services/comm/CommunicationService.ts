@@ -27,10 +27,40 @@ export class CommunicationService {
   /**
    * Main entry point for triggering communications based on system events.
    */
+  private static async triggerPhonePush(params: CommTriggerParams): Promise<void> {
+    if (!['ORDER_RECEIVED', 'PAYMENT_CONFIRMED'].includes(params.eventType)) return;
+
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+
+      await fetch('/api/push/event', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          eventType: params.eventType,
+          storeId: params.storeId,
+          orderId: params.orderId,
+          orderNumber: params.variables.order_number,
+          customerName: params.variables.customer_name,
+          orderTotal: params.variables.order_total,
+        }),
+      });
+    } catch (error: any) {
+      console.warn('[CommunicationService] Automatic phone push failed:', error?.message || error);
+    }
+  }
+
   static async triggerEvent(params: CommTriggerParams): Promise<{ success: boolean; message?: string }> {
     const { eventType, storeId, variables, orderId, idempotencyKey } = params;
 
     try {
+      void this.triggerPhonePush(params);
+
       // Map CommEventType to canonical DB event key
       const eventKeyMap: Record<string, string> = {
         'ORDER_RECEIVED': 'order.received',
