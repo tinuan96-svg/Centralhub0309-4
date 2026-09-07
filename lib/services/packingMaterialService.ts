@@ -232,12 +232,9 @@ export class PackingMaterialService {
     if (error || !data) return [];
 
     const materialIds = [...new Set(data.map((row: any) => row.material_id).filter(Boolean))];
-    const [{ data: materials }, { data: packingRows }] = await Promise.all([
-      materialIds.length
-        ? supabase.from('packaging_materials').select('id,name').in('id', materialIds)
-        : Promise.resolve({ data: [] as any[] }),
-      Promise.resolve({ data: data }),
-    ]);
+    const { data: materials } = materialIds.length
+      ? await supabase.from('packaging_materials').select('id,name').in('id', materialIds)
+      : { data: [] as any[] };
     const names = new Map((materials || []).map((row: any) => [row.id, row.name]));
 
     return data.map((row: any) => ({
