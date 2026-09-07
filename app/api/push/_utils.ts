@@ -10,7 +10,12 @@ function getSupabaseAnonKey() {
 }
 
 function getServiceRoleKey() {
-  return process.env.CENTRALHUB_SUPABASE_SERVICE_ROLE_KEY || 'placeholder';
+  return (
+    process.env.CENTRALHUB_SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SECRET_KEY ||
+    ''
+  ).trim();
 }
 
 export function getAnonClient() {
@@ -18,7 +23,17 @@ export function getAnonClient() {
 }
 
 export function getServiceClient() {
-  return createClient(getSupabaseUrl(), getServiceRoleKey());
+  const serviceRoleKey = getServiceRoleKey();
+  if (!serviceRoleKey) {
+    throw new Error('Missing Supabase service-role key for the CentralHub server route.');
+  }
+
+  return createClient(getSupabaseUrl(), serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
 }
 
 export function jsonError(error: string, status = 400, details?: unknown) {
