@@ -237,6 +237,36 @@ async function signedTamilRequest(action: string, params: Record<string, any> = 
   return data;
 }
 
+async function notifyCentralHubPhonePush(params: { eventType: 'ORDER_RECEIVED' | 'PAYMENT_CONFIRMED'; orderId: string; orderNumber: string; customerName: string; orderTotal: number; storeId: string }) {
+  const siteUrl = (Deno.env.get('CENTRALHUB_SITE_URL') || 'https://centralhub.network').replace(/\/$/, '')
+  const serviceRoleKey = Deno.env.get('CENTRALHUB_SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+  if (!serviceRoleKey) return
+
+  const isReceived = params.eventType === 'ORDER_RECEIVED'
+  const title = isReceived ? 'New order received' : 'Order confirmed'
+  const message = isReceived
+    ? `Order ${params.orderNumber} from ${params.customerName} — £${Number(params.orderTotal || 0).toFixed(2)}.`
+    : `Order ${params.orderNumber} has been confirmed — £${Number(params.orderTotal || 0).toFixed(2)}.`
+
+  try {
+    const response = await fetch(`${siteUrl}/api/push/send`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${serviceRoleKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title,
+        message,
+        url: `/orders?order=${encodeURIComponent(params.orderId)}`,
+        category: isReceived ? 'order_received' : 'order_confirmed',
+        severity: 'info',
+        metadata: { source: 'sync-orders', event_type: params.eventType, order_id: params.orderId, store_id: params.storeId },
+      }),
+    })
+    if (!response.ok) console.error('[sync-orders] Phone push failed:', response.status, await response.text().catch(() => ''))
+  } catch (error: any) {
+    console.error('[sync-orders] Phone push request failed:', error?.message || error)
+  }
+}
+
 async function persistBundle(ch: any, storeSlug: string, bundle: Bundle, specificOrderId?: string) {
   const { data: store, error: storeError } = await ch
     .from("stores")
@@ -287,7 +317,7 @@ async function persistBundle(ch: any, storeSlug: string, bundle: Bundle, specifi
   const orderIds = orders.map((order: any) => order.id);
   const existingByIdResult = await ch
     .from("orders")
-    .select("id,order_number,inventory_sync_status")
+    .select("id,order_number,inventory_sync_status,order_status,payment_status")
     .in("id", orderIds);
   if (existingByIdResult.error) throw existingByIdResult.error;
   const existingById = new Map((existingByIdResult.data || []).map((order: any) => [order.id, order]));
@@ -296,13 +326,14 @@ async function persistBundle(ch: any, storeSlug: string, bundle: Bundle, specifi
   const existingByNumberResult = orderNumbers.length
     ? await ch
         .from("orders")
-        .select("id,order_number,inventory_sync_status")
+        .select("id,order_number,inventory_sync_status,order_status,payment_status")
         .eq("store_id", store.id)
         .in("order_number", orderNumbers)
     : { data: [], error: null };
   if (existingByNumberResult.error) throw existingByNumberResult.error;
   const existingByNumber = new Map((existingByNumberResult.data || []).map((order: any) => [order.order_number, order]));
 
+  const pushEvents: any[] = [];
   const validOrders: any[] = [];
   const validItems: any[] = [];
   const mismatches: any[] = [];
@@ -355,6 +386,21 @@ async function persistBundle(ch: any, storeSlug: string, bundle: Bundle, specifi
     const mapped = mapOrder(remoteOrder, store.id);
     mapped.id = targetOrderId;
     const existing = existingById.get(remoteOrder.id) || numberMatch;
+    const isNewOrder = !existing;
+    const becameConfirmed = Boolean(existing) && (
+      (existing.payment_status !== 'paid' && mapped.payment_status === 'paid') ||
+      (existing.order_status !== 'confirmed' && mapped.order_status === 'confirmed')
+    );
+    if (isNewOrder || becameConfirmed) {
+      pushEvents.push({
+        eventType: isNewOrder ? 'ORDER_RECEIVED' : 'PAYMENT_CONFIRMED',
+        orderId: targetOrderId,
+        orderNumber: mapped.order_number,
+        customerName: mapped.customer_name,
+        orderTotal: mapped.total,
+        storeId: store.id,
+      });
+    }
     if (existing?.inventory_sync_status === "synced") {
       mapped.inventory_sync_status = "synced";
       mapped.stock_deducted = true;
@@ -383,6 +429,10 @@ async function persistBundle(ch: any, storeSlug: string, bundle: Bundle, specifi
   if (validItems.length) {
     const upsertItems = await ch.from("order_items").upsert(validItems, { onConflict: "id" });
     if (upsertItems.error) throw upsertItems.error;
+  }
+
+  for (const event of pushEvents) {
+    await notifyCentralHubPhonePush(event);
   }
 
   for (const order of validOrders) {
