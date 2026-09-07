@@ -60,6 +60,14 @@ async function notifyCentralHubPhonePush(eventType: "ORDER_RECEIVED" | "PAYMENT_
   return await response.json().catch(() => ({ sent: true }));
 }
 
+
+async function isAuthorizedSyncRequest(req: Request) {
+  const configuredSecret = Deno.env.get("CENTRALHUB_PUSH_API_SECRET")?.trim() || "";
+  const authHeader = req.headers.get("authorization") || "";
+  const token = authHeader.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() || "";
+  return Boolean(configuredSecret && token === configuredSecret);
+}
+
 function isUuid(value: any): value is string {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
@@ -504,6 +512,9 @@ async function parseRequest(req: Request): Promise<SyncRequest> {
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
   if (!["GET", "POST"].includes(req.method)) return reply({ success: false, error: "Method not allowed" }, 405);
+  if (!(await isAuthorizedSyncRequest(req))) {
+    return reply({ success: false, error: "Unauthorized sync request" }, 401);
+  }
 
   try {
     const chUrl = Deno.env.get("SUPABASE_URL") || "";
