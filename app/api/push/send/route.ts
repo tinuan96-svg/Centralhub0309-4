@@ -6,12 +6,18 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 function hasInternalAccess(req: Request) {
-  const configuredSecret = process.env.CENTRALHUB_PUSH_API_SECRET?.trim();
-  if (!configuredSecret) return false;
+  const configuredSecrets = [
+    process.env.CENTRALHUB_PUSH_API_SECRET,
+    process.env.CENTRALHUB_SUPABASE_SERVICE_ROLE_KEY,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    process.env.SUPABASE_SECRET_KEY,
+  ].map((value) => value?.trim()).filter(Boolean);
+
+  if (!configuredSecrets.length) return false;
 
   const authHeader = req.headers.get('authorization') || '';
   const token = authHeader.match(/^Bearer\s+(.+)$/i)?.[1];
-  return token === configuredSecret;
+  return Boolean(token && configuredSecrets.includes(token));
 }
 
 export async function POST(req: Request) {
