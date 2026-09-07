@@ -6,7 +6,7 @@ import {
 import type { StoredPushSubscription } from '../../lib/server/webPush';
 
 export const config = {
-  schedule: '0 * * * *',
+  schedule: '*/15 * * * *',
 };
 
 const TIME_ZONE = 'Europe/London';
