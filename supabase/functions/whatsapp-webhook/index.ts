@@ -20,7 +20,7 @@ async function verifyMetaSignature(req: Request, payload: string, appSecret: str
 }
 
 async function notifyCentralHubPhonePush(params: { title: string; message: string; url: string; category: string; metadata?: Record<string, unknown> }) {
-  const siteUrl = (Deno.env.get('CENTRALHUB_SITE_URL') || 'https://centralhub.network').replace(/\\/$/, '')
+  const siteUrl = (Deno.env.get('CENTRALHUB_SITE_URL') || 'https://centralhub.network').replace(/\/$/, '')
   const serviceRoleKey = Deno.env.get('CENTRALHUB_SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
   if (!serviceRoleKey) return
 
