@@ -23,6 +23,43 @@ function errorMessage(error: any) {
   return error.message || error.details || String(error);
 }
 
+
+async function notifyCentralHubPhonePush(eventType: "ORDER_RECEIVED" | "PAYMENT_CONFIRMED", order: any) {
+  const secret = Deno.env.get("CENTRALHUB_PUSH_API_SECRET") || "";
+  if (!secret) return { sent: false, skipped: true, reason: "CENTRALHUB_PUSH_API_SECRET is not configured" };
+
+  const orderNumber = text(order.order_number) || "new order";
+  const customerName = text(order.customer_name) || "Customer";
+  const amount = money(order.total);
+  const amountText = amount > 0 ? ` — £${amount.toFixed(2)}` : "";
+  const confirmed = eventType === "PAYMENT_CONFIRMED";
+  const response = await fetch("https://centralhub.network/api/push/send", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${secret}`,
+    },
+    body: JSON.stringify({
+      title: confirmed ? "Order confirmed" : "New order received",
+      message: confirmed
+        ? `Order ${orderNumber} has been confirmed${amountText}.`
+        : `Order ${orderNumber} from ${customerName}${amountText}.`,
+      url: "/orders",
+      severity: "info",
+      category: confirmed ? "order_confirmed" : "order_received",
+      metadata: {
+        source: "supabase-sync-orders",
+        event_type: eventType,
+        order_id: order.id || null,
+        order_number: order.order_number || null,
+      },
+    }),
+  });
+
+  if (!response.ok) throw new Error(`CentralHub phone push failed (${response.status})`);
+  return await response.json().catch(() => ({ sent: true }));
+}
+
 function isUuid(value: any): value is string {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
@@ -287,7 +324,7 @@ async function persistBundle(ch: any, storeSlug: string, bundle: Bundle, specifi
   const orderIds = orders.map((order: any) => order.id);
   const existingByIdResult = await ch
     .from("orders")
-    .select("id,order_number,inventory_sync_status")
+    .select("id,order_number,inventory_sync_status,order_status,payment_status")
     .in("id", orderIds);
   if (existingByIdResult.error) throw existingByIdResult.error;
   const existingById = new Map((existingByIdResult.data || []).map((order: any) => [order.id, order]));
@@ -296,7 +333,7 @@ async function persistBundle(ch: any, storeSlug: string, bundle: Bundle, specifi
   const existingByNumberResult = orderNumbers.length
     ? await ch
         .from("orders")
-        .select("id,order_number,inventory_sync_status")
+        .select("id,order_number,inventory_sync_status,order_status,payment_status")
         .eq("store_id", store.id)
         .in("order_number", orderNumbers)
     : { data: [], error: null };
@@ -306,6 +343,7 @@ async function persistBundle(ch: any, storeSlug: string, bundle: Bundle, specifi
   const validOrders: any[] = [];
   const validItems: any[] = [];
   const mismatches: any[] = [];
+  const phonePushEvents: Array<{ eventType: "ORDER_RECEIVED" | "PAYMENT_CONFIRMED"; order: any }> = [];
   const canonicalIdsToReplace = new Set<string>();
 
   for (const remoteOrder of orders) {
@@ -355,6 +393,17 @@ async function persistBundle(ch: any, storeSlug: string, bundle: Bundle, specifi
     const mapped = mapOrder(remoteOrder, store.id);
     mapped.id = targetOrderId;
     const existing = existingById.get(remoteOrder.id) || numberMatch;
+    const paymentConfirmed = Boolean(
+      existing && (
+        (existing.payment_status !== "paid" && mapped.payment_status === "paid")
+        || (existing.order_status !== "confirmed" && mapped.order_status === "confirmed")
+      )
+    );
+    if (!existing) {
+      phonePushEvents.push({ eventType: "ORDER_RECEIVED", order: mapped });
+    } else if (paymentConfirmed) {
+      phonePushEvents.push({ eventType: "PAYMENT_CONFIRMED", order: mapped });
+    }
     if (existing?.inventory_sync_status === "synced") {
       mapped.inventory_sync_status = "synced";
       mapped.stock_deducted = true;
@@ -385,6 +434,15 @@ async function persistBundle(ch: any, storeSlug: string, bundle: Bundle, specifi
     if (upsertItems.error) throw upsertItems.error;
   }
 
+  const phonePushResults = [];
+  for (const event of phonePushEvents) {
+    try {
+      phonePushResults.push({ event_type: event.eventType, ...(await notifyCentralHubPhonePush(event.eventType, event.order)) });
+    } catch (error) {
+      phonePushResults.push({ event_type: event.eventType, sent: false, error: errorMessage(error) });
+    }
+  }
+
   for (const order of validOrders) {
     try {
       await ch.rpc("recalculate_order_profitability", { p_order_id: order.id });
@@ -408,6 +466,7 @@ async function persistBundle(ch: any, storeSlug: string, bundle: Bundle, specifi
     orders: validOrders.length,
     items: validItems.length,
     mismatched_orders: mismatches.length ? mismatches : undefined,
+    phone_push_events: phonePushResults.length ? phonePushResults : undefined,
   };
 }
 
