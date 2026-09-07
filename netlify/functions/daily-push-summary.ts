@@ -2,8 +2,8 @@ import { createClient } from '@supabase/supabase-js';
 import {
   getWebPushConfigStatus,
   sendWebPush,
-  StoredPushSubscription,
 } from '../../lib/server/webPush';
+import type { StoredPushSubscription } from '../../lib/server/webPush';
 
 export const config = {
   schedule: '0 * * * *',
