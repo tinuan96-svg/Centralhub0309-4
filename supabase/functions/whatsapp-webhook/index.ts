@@ -19,6 +19,30 @@ async function verifyMetaSignature(req: Request, payload: string, appSecret: str
   return expectedHash === signatureHash
 }
 
+async function notifyCentralHubPhonePush(params: { title: string; message: string; url: string; category: string; metadata?: Record<string, unknown> }) {
+  const siteUrl = (Deno.env.get('CENTRALHUB_SITE_URL') || 'https://centralhub.network').replace(/\\/$/, '')
+  const serviceRoleKey = Deno.env.get('CENTRALHUB_SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+  if (!serviceRoleKey) return
+
+  try {
+    const response = await fetch(`${siteUrl}/api/push/send`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${serviceRoleKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: params.title,
+        message: params.message,
+        url: params.url,
+        category: params.category,
+        severity: 'info',
+        metadata: { source: 'whatsapp-webhook', ...(params.metadata || {}) },
+      }),
+    })
+    if (!response.ok) console.error('[WhatsApp Webhook] Phone push failed:', response.status, await response.text().catch(() => ''))
+  } catch (error: any) {
+    console.error('[WhatsApp Webhook] Phone push request failed:', error?.message || error)
+  }
+}
+
 async function createFallbackEscalation(db: any, params: { storeId: string; conversationId: string; contactId: string; message: string }) {
   try {
     const { data: existing } = await db.from('support_tickets').select('id').eq('store_id', params.storeId).eq('conversation_id', params.conversationId).in('status', ['open', 'assigned', 'in_progress', 'waiting_customer', 'waiting_internal']).limit(1).maybeSingle()
@@ -169,6 +193,14 @@ serve(async (req) => {
       if (convError) throw convError
       const { error: messageError } = await db.from('whatsapp_messages').insert({ conversation_id: conv.id, wa_message_id: msg.id, direction: 'inbound', message_type: msg.type, message_text: msg.text?.body || (msg.type !== 'text' ? `[${msg.type.toUpperCase()}]` : null), media_url: msg.image?.id || msg.document?.id || msg.audio?.id || msg.voice?.id || null, sender_phone: from, status: 'received' })
       if (messageError) throw messageError
+
+      await notifyCentralHubPhonePush({
+        title: 'You have a message from customer',
+        message: `${profileName} sent a new WhatsApp message.`,
+        url: `/customer-care/inbox?conversation=${encodeURIComponent(conv.id)}`,
+        category: 'customer_message',
+        metadata: { store_id: storeId, conversation_id: conv.id, contact_id: contact.id, message_id: msg.id },
+      })
 
       if (msg.type === 'text') {
         // AI can involve multiple database calls plus OpenAI. Keep the Meta webhook
