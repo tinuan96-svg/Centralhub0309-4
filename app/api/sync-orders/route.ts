@@ -3,11 +3,25 @@ import { NextResponse } from "next/server";
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+
+function getSyncHeaders() {
+  const secret = process.env.CENTRALHUB_PUSH_API_SECRET?.trim();
+  if (!secret) return null;
+  return {
+    Authorization: `Bearer ${secret}`,
+    "Content-Type": "application/json",
+  };
+}
+
 export async function GET(req: Request) {
   if (process.env.NEXT_OUTPUT?.trim() === 'export') {
     return new Response('Not available in static export', { status: 404 });
   }
   try {
+    const syncHeaders = getSyncHeaders();
+    if (!syncHeaders) {
+      return NextResponse.json({ success: false, error: "Sync authorization is not configured." }, { status: 503 });
+    }
     const url = new URL(req.url);
     const orderId = url.searchParams.get('orderId');
     const storeSlug = url.searchParams.get('storeSlug');
@@ -18,10 +32,8 @@ export async function GET(req: Request) {
     if (storeSlug) queryString.set('storeSlug', storeSlug);
 
     const response = await fetch(`${functionUrl}?${queryString.toString()}`, {
-      headers: {
-        'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
-        'Content-Type': 'application/json',
-      },
+      headers: syncHeaders,
+
     });
 
     const data = await response.json();
@@ -37,15 +49,17 @@ export async function POST(req: Request) {
     return new Response('Not available in static export', { status: 404 });
   }
   try {
+    const syncHeaders = getSyncHeaders();
+    if (!syncHeaders) {
+      return NextResponse.json({ success: false, error: "Sync authorization is not configured." }, { status: 503 });
+    }
     const body = await req.json();
     const functionUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/sync-orders`;
 
     const response = await fetch(functionUrl, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
-        'Content-Type': 'application/json',
-      },
+      headers: syncHeaders,
+
       body: JSON.stringify(body),
     });
 
