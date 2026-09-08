@@ -198,9 +198,9 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
   }
 
   return (
-    <div className="flex h-[calc(100dvh-64px)] min-h-0 overflow-hidden relative bg-slate-950">
+    <div className="flex h-[calc(100dvh-64px)] w-full max-w-full min-h-0 overflow-hidden relative bg-slate-950">
       {/* Conversation list */}
-      <aside className={`${selectedConv ? 'hidden md:flex' : 'flex'} w-full md:w-80 min-h-0 border-r border-slate-800 flex-col bg-slate-900/50`}>
+      <aside className={`${selectedConv ? 'hidden md:flex' : 'flex'} w-full md:w-72 2xl:w-80 flex-none min-h-0 border-r border-slate-800 flex-col bg-slate-900/50`}>
         <div className="h-14 shrink-0 px-4 border-b border-slate-800 flex items-center justify-between bg-slate-900">
           <h2 className="text-lg font-bold text-white uppercase tracking-tight">Inbox</h2>
           <span className="text-xs text-slate-500">{conversations.length}</span>
@@ -227,7 +227,7 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
       </aside>
 
       {/* Chat */}
-      <main className={`${!selectedConv ? 'hidden md:flex' : 'flex'} min-w-0 min-h-0 flex-1 flex-col bg-slate-950`}>
+      <main className={`${!selectedConv ? 'hidden md:flex' : 'flex'} min-w-0 min-h-0 flex-1 basis-0 flex-col bg-slate-950`}>
         {selectedConv ? (
           <div className="flex min-h-0 h-full flex-col">
             {/* Fixed WhatsApp-style header */}
@@ -256,7 +256,7 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
                     <Button onClick={handleReturnToAI} variant="secondary" className="text-[10px] font-black h-9 px-3">AUTO</Button>
                   )}
                 </div>
-                <button type="button" onClick={() => setShowMobileProfile(true)} className="lg:hidden inline-flex items-center justify-center w-10 h-10 rounded-full text-slate-300 hover:bg-slate-800" aria-label="Customer details">
+                <button type="button" onClick={() => setShowMobileProfile(true)} className="2xl:hidden inline-flex items-center justify-center w-10 h-10 rounded-full text-slate-300 hover:bg-slate-800" aria-label="Customer details">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 </button>
                 <button type="button" onClick={() => setShowConversationList(true)} className="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-full text-slate-300 hover:bg-slate-800" aria-label="Conversation list">
@@ -321,7 +321,7 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
       </main>
 
       {/* Desktop profile / mobile sheet */}
-      <aside className={`${showMobileProfile ? 'fixed inset-0 z-50 flex' : 'hidden'} lg:flex lg:static w-full lg:w-80 border-l border-slate-800 bg-slate-900 flex-col p-4 overflow-y-auto`}>
+      <aside className={`${showMobileProfile ? 'fixed inset-0 z-50 flex' : 'hidden'} 2xl:flex 2xl:static w-full 2xl:w-80 border-l border-slate-800 bg-slate-900 flex-col p-4 overflow-y-auto`}>
         {selectedConv && (
           <div className="space-y-6 text-slate-200">
             <div className="flex justify-between items-center lg:hidden border-b border-slate-800 pb-4 mb-2">

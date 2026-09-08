@@ -252,10 +252,17 @@ serve(async (req) => {
         metadata: { store_id: storeId, store_name: storeName, conversation_id: conv.id, contact_id: contact.id, message_id: msg.id },
       })
 
-      if (msg.type === 'text') {
+      const mediaDetails = mediaCaption ? ' The caption says: "' + mediaCaption + '".' : ''
+      const aiInput = msg.type === 'text'
+        ? String(msg.text?.body || '').trim()
+        : mediaTypes.has(messageType)
+          ? '[MEDIA_EVENT] The customer sent a ' + messageType + ' message on WhatsApp.' + mediaDetails + ' Acknowledge that you received it, use the caption if useful, and ask what help is needed. Do not claim to see or hear the media contents unless they are explicitly provided.'
+          : ''
+
+      if (aiInput) {
         // AI can involve multiple database calls plus OpenAI. Keep the Meta webhook
         // response fast and let Supabase finish the AI work in the background.
-        const aiTask = processCustomerCareAI({ message: msg.text?.body || '', conversationId: conv.id, storeId, contactId: contact.id, customerPhone: from, from })
+        const aiTask = processCustomerCareAI({ message: aiInput, conversationId: conv.id, storeId, contactId: contact.id, customerPhone: from, from })
         if (typeof EdgeRuntime !== 'undefined' && typeof EdgeRuntime.waitUntil === 'function') {
           EdgeRuntime.waitUntil(aiTask)
         } else {

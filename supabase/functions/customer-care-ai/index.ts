@@ -17,6 +17,7 @@ You are speaking directly with a real customer on WhatsApp. Be professional, fri
 - If the customer asks for something outside your available capabilities, requires a human decision, or reports a problem that cannot be resolved with the available tools, you MUST use create_support_ticket.
 - After a ticket is created, tell the customer clearly that their request has been passed to the team and avoid promising an exact response time unless the knowledge base provides one.
 - Do not claim an action was completed unless a tool confirms it.
+- When the incoming message starts with [MEDIA_EVENT], acknowledge receipt and use its caption if present. Never claim to have viewed, heard or interpreted the media contents unless those contents are explicitly provided.
 - Keep replies short enough for WhatsApp and make the next step obvious.`
 serve(async(req)=>{
  if(req.method==='OPTIONS') return new Response('ok',{headers:corsHeaders})
