@@ -79,7 +79,7 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
     setWidth(window.innerWidth);
     const onResize = () => setWidth(window.innerWidth);
     window.addEventListener('resize', onResize);
-    const savedCollapse = localStorage.getItem('sidebar_classified_collapsed');
+    const savedCollapse = localStorage.getItem('sidebar_classified_collapsed_v2');
     if (savedCollapse === 'true' || savedCollapse === 'false') {
       setSidebarPreference(savedCollapse === 'true');
     }
@@ -100,7 +100,7 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
 
   // On the unfolded Fold, keep the sidebar compact by default. The header
   // toggle lets the user expand it when the full labels are needed.
-  const autoCollapsed = width < 1100;
+  const autoCollapsed = width < 1200;
   const collapsed = manualCollapsed || (sidebarPreference ?? autoCollapsed);
   const setCollapsed = (next: boolean) => {
     if (manualCollapsed) {
@@ -108,7 +108,7 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
       return;
     }
     setSidebarPreference(next);
-    localStorage.setItem('sidebar_classified_collapsed', String(next));
+    localStorage.setItem('sidebar_classified_collapsed_v2', String(next));
   };
   const toggle = (key: string) => setExpanded(v => v.includes(key) ? v.filter(x => x !== key) : [...v, key]);
   const active = (href: string) => href.includes('?') ? pathname === href.split('?')[0] : pathname === href || pathname.startsWith(href + '/');
