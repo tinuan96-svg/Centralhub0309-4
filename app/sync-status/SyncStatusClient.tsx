@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
+import { syncOrders } from '@/lib/services/orderSyncClient';
 
 interface OrderSyncStats {
   lastSync: string | null;
@@ -75,14 +76,14 @@ export default function SyncStatusPage({ params, searchParams }: { params: any; 
     setSyncNowLoading(true);
     setSyncNowResult(null);
     try {
-      const { data, error } = await supabase.functions.invoke('sync-orders');
-      if (error) throw error;
+      const data = await syncOrders();
 
-      if (data?.success) {
+      if (data.success && !(data.failures && data.failures.length > 0)) {
         setSyncNowResult({ ok: true, message: data.message || `Sync complete: ${data.imported || 0} orders imported.` });
         await loadData();
       } else {
-        setSyncNowResult({ ok: false, message: data?.error || 'Order sync failed' });
+        const failures = data.failures?.map((failure) => `${failure.store}: ${failure.error}`).join('; ');
+        setSyncNowResult({ ok: false, message: failures || data.error || data.message || 'Order sync failed' });
       }
     } catch (err) {
       setSyncNowResult({ ok: false, message: `Error: ${(err as Error).message}` });
@@ -103,11 +104,11 @@ export default function SyncStatusPage({ params, searchParams }: { params: any; 
     }
 
     try {
-      const { error } = await supabase.functions.invoke('sync-orders', { body: { storeSlug: 'health-check' } });
-      if (error && error.message?.includes('404')) {
-        steps.push({ label: 'Order Ingestion Service', status: 'fail', detail: 'Edge function not found.' });
+      const { data, error } = await supabase.functions.invoke('sync-orders-health');
+      if (error || !data?.success) {
+        steps.push({ label: 'Order Ingestion Service', status: 'fail', detail: data?.error || error?.message || 'Order sync service is unhealthy.' });
       } else {
-        steps.push({ label: 'Order Ingestion Service', status: 'pass', detail: 'Edge function is reachable.' });
+        steps.push({ label: 'Order Ingestion Service', status: 'pass', detail: 'Order sync service is reachable.' });
       }
     } catch (e) {
       steps.push({ label: 'Order Ingestion Service', status: 'warn', detail: 'Service connectivity could not be verified.' });
