@@ -37,7 +37,7 @@ export default function ReferenceDashboard({ report, selectedStoreId, timeRange 
     const date = orderDays.get(row.id);
     if (date) profitByDay.set(date, (profitByDay.get(date) || 0) + row.gross_profit);
   }
-  const momentum = [{ id: 'sales', name: 'Product sales', color: '#39e6ef', data: dates.map(date => ({ date, value: calendar.get(date)?.revenue || 0 })) }, ...(report.current.actualGrossProfit === null ? [] : [{ id: 'gross', name: 'Order gross profit', color: '#d38efa', data: dates.map(date => ({ date, value: profitByDay.get(date) || 0 })) }])];
+  const momentum = [{ id: 'sales', name: 'Product sales', color: '#39e6ef', data: dates.map(date => ({ date, value: calendar.get(date)?.revenue || 0 })) }, ...(report.current.actualGrossProfit === null ? [] : [{ id: 'gross', name: 'Order gross profit', color: '#93c5fd', data: dates.map(date => ({ date, value: profitByDay.get(date) || 0 })) }])];
   const ratio = (n: number, d: number) => d > 0 ? n / d * 100 : null;
   const delivered = paid.filter(o => ['delivered', 'completed'].includes(o.order_status)).length;
   const stocked = report.inventory.filter(i => numeric(i.stock_quantity) > 0).length;
@@ -45,9 +45,9 @@ export default function ReferenceDashboard({ report, selectedStoreId, timeRange 
   const recorded = report.current.costRows.filter(o => ['order_total', 'snapshot'].includes(o.cost_quality)).length;
   const repeat = [...buyers.values()].filter(n => n > 1).length;
   const paymentGroups = [
-    { label: 'Paid', value: report.orders.filter(o => o.payment_status === 'paid').length, color: '#ee42ef' },
-    { label: 'Awaiting', value: report.orders.filter(o => ['pending', 'pending_payment', 'unpaid'].includes(o.payment_status)).length, color: '#ecaff3' },
-    { label: 'Other', value: report.orders.filter(o => !['paid', 'pending', 'pending_payment', 'unpaid'].includes(o.payment_status)).length, color: '#a58bff' },
+    { label: 'Paid', value: report.orders.filter(o => o.payment_status === 'paid').length, color: '#38bdf8' },
+    { label: 'Awaiting', value: report.orders.filter(o => ['pending', 'pending_payment', 'unpaid'].includes(o.payment_status)).length, color: '#bae6fd' },
+    { label: 'Other', value: report.orders.filter(o => !['paid', 'pending', 'pending_payment', 'unpaid'].includes(o.payment_status)).length, color: '#93c5fd' },
   ];
   const scatter = stores.map(s => {
     const orders = paid.filter(o => (o.store_id || 'unassigned') === s.id);
@@ -71,7 +71,7 @@ export default function ReferenceDashboard({ report, selectedStoreId, timeRange 
     </div>
     <section className="ch-panel ch-model-financial-band" aria-label="Financial totals and key ratios">
       <div className="ch-model-total"><span className="ch-model-label">Product sales</span><strong key={report.current.totalRevenue} className="ch-value-arrival">{formatCurrency(report.current.totalRevenue)}</strong><MicroTrend values={momentum[0].data.map(d => d.value)} label="Daily product sales in GBP" /><dl><div><dt>Paid expenses</dt><dd>{formatCurrency(report.current.totalOverhead)}</dd></div><div><dt>Warehouse · global</dt><dd>{report.current.totalInventoryValue === null ? '—' : formatCurrency(report.current.totalInventoryValue)}</dd></div></dl></div>
-      <div className="ch-model-total"><span className="ch-model-label">Order gross profit</span><strong key={report.current.actualGrossProfit} className="ch-value-arrival">{report.current.actualGrossProfit === null ? '—' : formatCurrency(report.current.actualGrossProfit)}</strong>{momentum[1] && <MicroTrend values={momentum[1].data.map(d => d.value)} label="Daily order gross profit in GBP" color="#f04fed" />}<span className="ch-model-meta">{report.current.missingCosts ? 'Incomplete costs' : report.current.estimatedCosts ? 'Estimated costs included' : 'Before fees & overhead'}</span><dl><div><dt>After paid expenses</dt><dd>{report.current.netProfit === null ? '—' : formatCurrency(report.current.netProfit)}</dd></div></dl></div>
+      <div className="ch-model-total"><span className="ch-model-label">Order gross profit</span><strong key={report.current.actualGrossProfit} className="ch-value-arrival">{report.current.actualGrossProfit === null ? '—' : formatCurrency(report.current.actualGrossProfit)}</strong>{momentum[1] && <MicroTrend values={momentum[1].data.map(d => d.value)} label="Daily order gross profit in GBP" color="#38bdf8" />}<span className="ch-model-meta">{report.current.missingCosts ? 'Incomplete costs' : report.current.estimatedCosts ? 'Estimated costs included' : 'Before fees & overhead'}</span><dl><div><dt>After paid expenses</dt><dd>{report.current.netProfit === null ? '—' : formatCurrency(report.current.netProfit)}</dd></div></dl></div>
       <GradientRing label="Delivered" value={ratio(delivered, paid.length)} detail={`${delivered} / ${paid.length} paid orders`} />
       <GradientRing label="Recorded costs" value={ratio(recorded, paid.length)} detail={`${recorded} / ${paid.length} paid orders`} />
       <GradientRing label="Stock available" value={ratio(stocked, report.inventory.length)} detail="Current warehouse · all stores" />
