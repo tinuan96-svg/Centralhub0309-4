@@ -76,6 +76,34 @@ serve(async (req) => {
     }
     if (!finalStoreId) return json({ error: 'Store ID missing' }, 400)
 
+    // Meta rejects free-text messages once the customer-service window has
+    // expired. Check this before calling Graph so the inbox gets a precise,
+    // actionable error instead of a misleading send attempt.
+    if (conversationId && type !== 'template') {
+      const { data: latestInbound, error: latestInboundError } = await admin
+        .from('whatsapp_messages')
+        .select('created_at')
+        .eq('conversation_id', conversationId)
+        .eq('direction', 'inbound')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (!latestInboundError) {
+        const lastCustomerMessageAt = latestInbound?.created_at ? new Date(latestInbound.created_at).getTime() : 0
+        const windowExpired = !lastCustomerMessageAt || Date.now() - lastCustomerMessageAt > 24 * 60 * 60 * 1000
+        if (windowExpired) {
+          return json({
+            error: 'WhatsApp customer-service window is closed. Ask the customer to send a message first, or send an approved WhatsApp template.',
+            code: 'WHATSAPP_24H_WINDOW_EXPIRED',
+            window_expired: true,
+            last_customer_message_at: latestInbound?.created_at || null,
+          }, 409)
+        }
+      } else {
+        console.warn('[WhatsApp Send] Could not check customer-service window:', latestInboundError.message)
+      }
+    }
+
     if (!internal) {
       const metadata = { ...(user.app_metadata || {}), ...(user.user_metadata || {}) }
       let isAdmin = ['admin', 'superadmin', 'administrator'].includes(String(metadata.role || metadata.profile_role || '').toLowerCase())
