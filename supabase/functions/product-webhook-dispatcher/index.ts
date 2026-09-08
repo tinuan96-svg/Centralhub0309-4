@@ -7,8 +7,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey, x-product-sync-secret",
 };
 
-// Category and description are store-owned merchandising fields and are intentionally excluded.
-const PRODUCT_SELECT = "id,name,slug,brand,price,sale_price,cost_price,stock,unit,weight,weight_kg,weight_grams,is_active,is_published,is_archived,is_deleted,gtin,sku,pack_size,pack_unit,product_type,warehouse_location,backorder,allow_backorder,image_url,image_main,gallery_images,updated_at";
+// Category, description and images are store-owned merchandising fields and are intentionally excluded.
+const PRODUCT_SELECT = "id,name,slug,brand,price,sale_price,cost_price,stock,unit,weight,weight_kg,weight_grams,is_active,is_published,is_archived,is_deleted,gtin,sku,pack_size,pack_unit,product_type,warehouse_location,backorder,allow_backorder,updated_at";
 
 type Target = { slug: string; url: string; key: string };
 
@@ -77,9 +77,6 @@ function mapProduct(product: any, stockByProduct: Map<string, number>) {
     is_archived: product.is_archived ?? false,
     is_deleted: product.is_deleted ?? false,
     backorder: product.allow_backorder ?? product.backorder ?? false,
-    image_url: product.image_url || null,
-    image_main: product.image_main || null,
-    gallery_images: product.gallery_images || null,
     synced_at: new Date().toISOString(),
     source_updated_at: product.updated_at || new Date().toISOString(),
   } as Record<string, any>;
