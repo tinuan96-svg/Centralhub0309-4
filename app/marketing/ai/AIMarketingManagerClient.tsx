@@ -19,6 +19,74 @@ const Icons = {
 };
 
 type Tab = 'insights' | 'studio' | 'safety';
+type MarketingConnectionRow = {
+  id: string;
+  store_id: string;
+  provider_id: string;
+  status: string;
+  external_account_name: string | null;
+  last_sync_at: string | null;
+  health_score: number | null;
+  last_error: string | null;
+};
+
+type MarketingMetricRow = {
+  provider_id: string;
+  date: string;
+  spend: number | string | null;
+  conversion_value: number | string | null;
+  conversions: number | null;
+  impressions: number | null;
+  clicks: number | null;
+};
+
+type MarketingInsightRow = {
+  id: string;
+  title: string;
+  description: string;
+  priority: string | null;
+  status: string;
+  created_at: string;
+};
+
+type AnalyticsMetricRow = {
+  metric_date: string;
+  users: number | null;
+  sessions: number | null;
+  page_views: number | null;
+  product_views: number | null;
+  add_to_carts: number | null;
+  checkouts: number | null;
+  purchases: number | null;
+  revenue: number | string | null;
+  updated_at: string | null;
+};
+
+type MarketingSnapshot = {
+  loading: boolean;
+  error: string | null;
+  connections: MarketingConnectionRow[];
+  metrics: MarketingMetricRow[];
+  insights: MarketingInsightRow[];
+  webMetrics: AnalyticsMetricRow[];
+  checkedAt: string | null;
+};
+
+const PROVIDER_LABELS: Record<string, string> = {
+  google: 'Google',
+  google_ads: 'Google Ads',
+  meta: 'Meta',
+  facebook: 'Facebook',
+  instagram: 'Instagram',
+  tiktok: 'TikTok',
+};
+
+const formatGBP = (value: number) =>
+  new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 2 }).format(value);
+
+const formatCheckedAt = (value: string | null) =>
+  value ? new Date(value).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' }) : 'not available';
+
 
 export default function AIMarketingManagerClient({ params, searchParams }: { params: any; searchParams: any }) {
   const [activeTab, setActiveTab] = useState<Tab>('insights');
@@ -42,37 +110,16 @@ export default function AIMarketingManagerClient({ params, searchParams }: { par
     autoApproveLowRisk: false
   });
 
-  // Recommendations Mock Data
-  const [recommendations, setRecommendations] = useState([
-    {
-      id: '1',
-      type: 'budget',
-      title: 'Increase Meta ROAS',
-      description: 'Meta Ads ROAS dropped 34%. Increase budget for "Best Sellers" campaign by 15% to stabilize.',
-      impact: 'High',
-      action: 'Apply Budget Change',
-      status: 'pending'
-    },
-    {
-      id: '2',
-      type: 'audience',
-      title: 'Optimise Audience',
-      description: 'Frequency on "Re-targeting" set is > 4. Exclude recent buyers (last 7 days) to reduce ad fatigue.',
-      impact: 'Medium',
-      action: 'Update Audience',
-      status: 'pending'
-    },
-    {
-      id: '3',
-      type: 'product',
-      title: 'TikTok Trend Alert',
-      description: '"Organic Turmeric" search volume is up 200%. Launch a spark ad with existing UGC content.',
-      impact: 'Medium',
-      action: 'Create TikTok Ad',
-      status: 'pending'
-    }
-  ]);
 
+  const [marketingSnapshot, setMarketingSnapshot] = useState<MarketingSnapshot>({
+    loading: true,
+    error: null,
+    connections: [],
+    metrics: [],
+    insights: [],
+    webMetrics: [],
+    checkedAt: null
+  });
   useEffect(() => {
     const loadProducts = async () => {
       setLoading(true);
@@ -91,6 +138,79 @@ export default function AIMarketingManagerClient({ params, searchParams }: { par
       }
     };
     loadProducts();
+  }, [selectedStoreId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadMarketingSnapshot = async () => {
+      const since = new Date(Date.now() - 29 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      setMarketingSnapshot((previous) => ({ ...previous, loading: true, error: null }));
+
+      try {
+        const scope = (query: any) => selectedStoreId ? query.eq('store_id', selectedStoreId) : query;
+        const connectionsQuery = scope(
+          supabase
+            .from('marketing_connections')
+            .select('id,store_id,provider_id,status,external_account_name,last_sync_at,health_score,last_error')
+        ).order('updated_at', { ascending: false });
+        const metricsQuery = scope(
+          supabase
+            .from('marketing_metrics')
+            .select('provider_id,date,spend,conversion_value,conversions,impressions,clicks')
+            .gte('date', since)
+        ).order('date', { ascending: false });
+        const insightsQuery = scope(
+          supabase
+            .from('marketing_insights')
+            .select('id,title,description,priority,status,created_at')
+            .eq('status', 'new')
+        ).order('created_at', { ascending: false });
+        const webMetricsQuery = scope(
+          supabase
+            .from('analytics_daily_metrics')
+            .select('metric_date,users,sessions,page_views,product_views,add_to_carts,checkouts,purchases,revenue,updated_at')
+            .gte('metric_date', since)
+        ).order('metric_date', { ascending: false });
+
+        const [connectionsResult, metricsResult, insightsResult, webMetricsResult] = await Promise.all([
+          connectionsQuery,
+          metricsQuery,
+          insightsQuery,
+          webMetricsQuery
+        ]);
+
+        const firstError =
+          connectionsResult.error ||
+          metricsResult.error ||
+          insightsResult.error ||
+          webMetricsResult.error;
+
+        if (firstError) throw firstError;
+        if (cancelled) return;
+
+        setMarketingSnapshot({
+          loading: false,
+          error: null,
+          connections: (connectionsResult.data || []) as MarketingConnectionRow[],
+          metrics: (metricsResult.data || []) as MarketingMetricRow[],
+          insights: (insightsResult.data || []) as MarketingInsightRow[],
+          webMetrics: (webMetricsResult.data || []) as AnalyticsMetricRow[],
+          checkedAt: new Date().toISOString()
+        });
+      } catch (error: any) {
+        if (cancelled) return;
+        setMarketingSnapshot((previous) => ({
+          ...previous,
+          loading: false,
+          error: error?.message || 'Unable to read marketing data.',
+          checkedAt: new Date().toISOString()
+        }));
+      }
+    };
+
+    loadMarketingSnapshot();
+    return () => { cancelled = true; };
   }, [selectedStoreId]);
 
   const handleGenerate = async () => {
@@ -153,12 +273,82 @@ export default function AIMarketingManagerClient({ params, searchParams }: { par
     }
   };
 
-  const approveRecommendation = (id: string) => {
-    setRecommendations(prev =>
-      prev.map(r => r.id === id ? { ...r, status: 'approved' } : r)
-    );
-    alert('Recommendation Approved and Queue for Execution.');
+  const handleReviewInsight = async (insight: MarketingInsightRow) => {
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('marketing_insights')
+        .update({ status: 'viewed' })
+        .eq('id', insight.id);
+
+      if (error) throw error;
+
+      setMarketingSnapshot((previous) => ({
+        ...previous,
+        insights: previous.insights.filter((item) => item.id !== insight.id)
+      }));
+      alert('Insight marked as reviewed. No external budget or campaign change was made.');
+    } catch (error) {
+      console.error('Insight review failed:', error);
+      alert('Could not mark this insight as reviewed.');
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const paidTotals = marketingSnapshot.metrics.reduce(
+    (totals, row) => ({
+      spend: totals.spend + Number(row.spend || 0),
+      revenue: totals.revenue + Number(row.conversion_value || 0),
+      conversions: totals.conversions + Number(row.conversions || 0),
+      impressions: totals.impressions + Number(row.impressions || 0),
+      clicks: totals.clicks + Number(row.clicks || 0)
+    }),
+    { spend: 0, revenue: 0, conversions: 0, impressions: 0, clicks: 0 }
+  );
+
+  const providerTotalsMap: Record<string, { spend: number; revenue: number; conversions: number; impressions: number; clicks: number }> = {};
+  marketingSnapshot.metrics.forEach((row) => {
+    const provider = row.provider_id || 'unknown';
+    const totals = providerTotalsMap[provider] || { spend: 0, revenue: 0, conversions: 0, impressions: 0, clicks: 0 };
+    totals.spend += Number(row.spend || 0);
+    totals.revenue += Number(row.conversion_value || 0);
+    totals.conversions += Number(row.conversions || 0);
+    totals.impressions += Number(row.impressions || 0);
+    totals.clicks += Number(row.clicks || 0);
+    providerTotalsMap[provider] = totals;
+  });
+  const providerTotals = Object.entries(providerTotalsMap).sort(([, a], [, b]) => b.spend - a.spend);
+
+  const webTotals = marketingSnapshot.webMetrics.reduce(
+    (totals, row) => ({
+      users: totals.users + Number(row.users || 0),
+      sessions: totals.sessions + Number(row.sessions || 0),
+      pageViews: totals.pageViews + Number(row.page_views || 0),
+      productViews: totals.productViews + Number(row.product_views || 0),
+      addToCarts: totals.addToCarts + Number(row.add_to_carts || 0),
+      checkouts: totals.checkouts + Number(row.checkouts || 0),
+      purchases: totals.purchases + Number(row.purchases || 0),
+      revenue: totals.revenue + Number(row.revenue || 0)
+    }),
+    { users: 0, sessions: 0, pageViews: 0, productViews: 0, addToCarts: 0, checkouts: 0, purchases: 0, revenue: 0 }
+  );
+
+  const hasPaidData = marketingSnapshot.metrics.length > 0;
+  const hasWebData = marketingSnapshot.webMetrics.length > 0;
+  const paidRoas = paidTotals.spend > 0 ? (paidTotals.revenue / paidTotals.spend).toFixed(2) + 'x' : 'Not available';
+  const summaryText = marketingSnapshot.loading
+    ? 'Checking store-scoped connections, synced campaign metrics and verified website analytics.'
+    : marketingSnapshot.error
+      ? 'Marketing data could not be read from the database, so no analysis is being presented as fact.'
+      : hasPaidData
+        ? 'Verified paid-channel data has been loaded from synced provider metrics for the selected store scope.'
+        : marketingSnapshot.connections.length === 0
+          ? 'No store-owned paid marketing connection is recorded. Paid ROAS, ad trends and budget recommendations are withheld until a real provider sync exists.'
+          : 'A store-owned provider connection exists, but no paid campaign metrics have been synced yet.';
+  const websiteSummary = hasWebData
+    ? 'Verified website activity in the last 30 days: ' + webTotals.users.toLocaleString() + ' users, ' + webTotals.sessions.toLocaleString() + ' sessions and ' + webTotals.purchases.toLocaleString() + ' purchases.'
+    : 'No verified website activity rows are available for the last 30 days.';
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
@@ -197,63 +387,95 @@ export default function AIMarketingManagerClient({ params, searchParams }: { par
       <div className="space-y-6">
         {activeTab === 'insights' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* AI Summary Block */}
             <Card className="lg:col-span-3 p-6 bg-gradient-to-br from-blue-900/20 to-slate-900 border-blue-500/30">
               <div className="flex items-start gap-4">
                 <div className="w-12 h-12 bg-blue-500/20 rounded-2xl flex items-center justify-center border border-blue-500/50">
                   <Icons.Sparkles />
                 </div>
                 <div className="space-y-2 flex-1">
-                  <h3 className="text-lg font-black text-white uppercase tracking-tighter">Daily Intelligence Summary</h3>
-                  <p className="text-slate-300 leading-relaxed">
-                    Good morning. Based on last 24h data, Meta ROAS has seen a significant drop (-34%) primarily due to high frequency on retargeting sets.
-                    However, TikTok organic traffic for <span className="text-blue-400 font-bold">Organic Turmeric</span> is trending (+200%).
-                    I have prepared 3 actionable recommendations to stabilize your ROI and capitalize on this trend.
+                  <div className="flex flex-wrap items-center gap-3">
+                    <h3 className="text-lg font-black text-white uppercase tracking-tighter">Verified Intelligence Summary</h3>
+                    <Badge variant={marketingSnapshot.error ? 'danger' : marketingSnapshot.loading ? 'warning' : 'success'}>
+                      {marketingSnapshot.error ? 'DATA ERROR' : marketingSnapshot.loading ? 'CHECKING' : 'LIVE DATABASE'}
+                    </Badge>
+                  </div>
+                  <p className="text-slate-300 leading-relaxed">{summaryText}</p>
+                  <p className="text-slate-400 text-sm leading-relaxed">{websiteSummary}</p>
+                  <p className="text-[10px] text-slate-500 uppercase tracking-widest">
+                    Last checked: {formatCheckedAt(marketingSnapshot.checkedAt)}
                   </p>
                 </div>
               </div>
             </Card>
 
-            {/* Recommendation Cards */}
             <div className="lg:col-span-2 space-y-4">
-              <h4 className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">Active Recommendations</h4>
-              {recommendations.map(rec => (
-                <Card key={rec.id} className={`p-5 bg-slate-900/50 border-slate-800 hover:border-slate-700 transition-colors ${rec.status === 'approved' ? 'opacity-50' : ''}`}>
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center">
-                        {rec.type === 'budget' && <Icons.Zap />}
-                        {rec.type === 'audience' && <Icons.Target />}
-                        {rec.type === 'product' && <Icons.Sparkles />}
+              <h4 className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">Verified Recommendations</h4>
+              {marketingSnapshot.loading && (
+                <Card className="p-5 bg-slate-900/50 border-slate-800">
+                  <p className="text-sm text-slate-400">Loading recommendations from the database…</p>
+                </Card>
+              )}
+              {marketingSnapshot.error && (
+                <Card className="p-5 bg-red-950/20 border-red-500/30">
+                  <p className="text-sm text-red-200">Recommendations are hidden because the database read failed.</p>
+                </Card>
+              )}
+              {!marketingSnapshot.loading && !marketingSnapshot.error && marketingSnapshot.insights.length === 0 && (
+                <Card className="p-5 bg-slate-900/50 border-slate-800">
+                  <p className="text-sm font-bold text-white">No verified recommendations available.</p>
+                  <p className="text-xs text-slate-500 mt-2">Recommendations will appear only after a store-owned provider sync creates a real insight.</p>
+                </Card>
+              )}
+              {!marketingSnapshot.loading && !marketingSnapshot.error && marketingSnapshot.insights.map((insight) => (
+                <Card key={insight.id} className="p-5 bg-slate-900/50 border-slate-800">
+                  <div className="flex justify-between items-start gap-4 mb-4">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center shrink-0">
+                        <Icons.Sparkles />
                       </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                           <h5 className="font-bold text-white">{rec.title}</h5>
-                           <Badge variant={rec.impact === 'High' ? 'danger' : 'warning'}>{rec.impact} Impact</Badge>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h5 className="font-bold text-white">{insight.title}</h5>
+                          <Badge variant={insight.priority === 'high' || insight.priority === 'critical' ? 'danger' : 'warning'}>
+                            {(insight.priority || 'medium').toUpperCase()}
+                          </Badge>
                         </div>
-                        <p className="text-xs text-slate-500 mt-0.5">{rec.description}</p>
+                        <p className="text-xs text-slate-500 mt-1">{insight.description}</p>
                       </div>
                     </div>
                   </div>
                   <div className="flex justify-end">
                     <Button
-                      onClick={() => approveRecommendation(rec.id)}
-                      disabled={rec.status === 'approved'}
+                      onClick={() => handleReviewInsight(insight)}
+                      disabled={loading}
                       className="h-9 px-6 text-[10px] font-black uppercase tracking-widest"
                     >
-                      {rec.status === 'approved' ? 'Applied' : rec.action}
+                      Mark Reviewed
                     </Button>
                   </div>
                 </Card>
               ))}
             </div>
 
-            {/* Secondary Insights */}
             <div className="space-y-4">
-              <h4 className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">Channel Performance</h4>
-              <StatCard title="Meta ROAS" value="2.4x" change={-34} trend="down" />
-              <StatCard title="Google CPC" value="AED 1.20" change={12} trend="up" />
-              <StatCard title="TikTok CTR" value="4.8%" change={15} trend="up" />
+              <h4 className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">Verified Performance</h4>
+              <StatCard title="Paid ROAS" value={paidRoas} />
+              <StatCard title="Paid spend (GBP)" value={hasPaidData ? formatGBP(paidTotals.spend) : 'Not available'} />
+              <StatCard title="Website sessions (30d)" value={hasWebData ? webTotals.sessions.toLocaleString() : 'Not available'} />
+              <StatCard title="Website revenue (30d)" value={hasWebData ? formatGBP(webTotals.revenue) : 'Not available'} />
+              {providerTotals.length > 0 && (
+                <Card className="p-4 bg-slate-900/50 border-slate-800">
+                  <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-3">Synced paid channels</p>
+                  <div className="space-y-2">
+                    {providerTotals.slice(0, 4).map(([provider, totals]) => (
+                      <div key={provider} className="flex items-center justify-between gap-3 text-xs">
+                        <span className="text-slate-300">{PROVIDER_LABELS[provider] || provider}</span>
+                        <span className="text-white font-bold">{totals.spend > 0 ? (totals.revenue / totals.spend).toFixed(2) + 'x ROAS' : 'No spend'}</span>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
             </div>
           </div>
         )}
