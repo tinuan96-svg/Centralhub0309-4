@@ -175,7 +175,9 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
         conversationId: selectedConv.id
       });
       if (!res.success) {
-        alert(`Failed to send: ${res.error}`);
+        alert(res.windowExpired
+          ? `Not sent: ${res.error}\n\nSend an approved WhatsApp template, or ask the customer to message you first.`
+          : `Failed to send: ${res.error}`);
         return;
       }
       setMsgInput('');
