@@ -25,7 +25,7 @@ export default function IntegrationHealth() {
   const overallDot = hasError ? 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]' : hasWarning ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]' : allHealthy ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-slate-500';
 
   return (
-    <section className="bg-slate-900/40 backdrop-blur-xl border border-slate-800/50 rounded-[2.5rem] p-8 shadow-2xl space-y-8">
+    <section className="ch-legacy-widget bg-slate-900/40 backdrop-blur-xl border border-slate-800/50 rounded-[2.5rem] p-8 shadow-2xl space-y-8">
       <div className="flex items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-black text-white uppercase tracking-tighter">System Integrations</h2>

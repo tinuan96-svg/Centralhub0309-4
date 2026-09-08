@@ -9,7 +9,7 @@ type SortField = 'name' | 'orders' | 'value' | 'profit' | 'last_order';
 type SortDirection = 'asc' | 'desc';
 
 const STATUS_STYLES: Record<string, string> = {
-  pending_payment: 'bg-slate-100 text-slate-600 border-slate-200',
+  pending_payment: 'bg-slate-800 text-slate-400 border-slate-700',
   confirmed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   picking: 'bg-blue-50 text-blue-700 border-blue-200',
   packing: 'bg-orange-50 text-orange-700 border-orange-200',
@@ -21,7 +21,7 @@ const STATUS_STYLES: Record<string, string> = {
   delivered: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   completed: 'bg-green-50 text-green-700 border-green-200',
   cancelled: 'bg-red-50 text-red-700 border-red-200',
-  refunded: 'bg-slate-100 text-slate-600 border-slate-200',
+  refunded: 'bg-slate-800 text-slate-400 border-slate-700',
 };
 
 function fmtDate(dateStr: string) {
@@ -128,7 +128,7 @@ export default function CustomersPage({ params, searchParams }: { params: any; s
   return (
     <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
-        <h1 className="text-xl sm:text-2xl font-black text-slate-900 uppercase tracking-tighter">
+        <h1 className="text-xl sm:text-2xl font-black text-slate-100 uppercase tracking-tighter">
           Customers
         </h1>
         <button
@@ -139,29 +139,29 @@ export default function CustomersPage({ params, searchParams }: { params: any; s
         </button>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+      <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4 shadow-sm">
         <StoreScopeSelector value={selectedStoreId} onStoreChange={setSelectedStoreId} />
       </div>
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm">
+        <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4 sm:p-5 shadow-sm">
           <p className="text-[10px] sm:text-xs text-slate-400 font-black uppercase tracking-widest mb-1">
             Total Customers
           </p>
-          <p className="text-2xl sm:text-3xl font-black text-slate-900">
+          <p className="text-2xl sm:text-3xl font-black text-slate-100">
             {totals.count}
           </p>
         </div>
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm">
+        <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4 sm:p-5 shadow-sm">
           <p className="text-[10px] sm:text-xs text-slate-400 font-black uppercase tracking-widest mb-1">
             Total Orders
           </p>
-          <p className="text-2xl sm:text-3xl font-black text-slate-900">
+          <p className="text-2xl sm:text-3xl font-black text-slate-100">
             {totals.orders}
           </p>
         </div>
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm">
+        <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4 sm:p-5 shadow-sm">
           <p className="text-[10px] sm:text-xs text-slate-400 font-black uppercase tracking-widest mb-1">
             Total Revenue
           </p>
@@ -169,7 +169,7 @@ export default function CustomersPage({ params, searchParams }: { params: any; s
             {formatCurrency(totals.revenue)}
           </p>
         </div>
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm">
+        <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4 sm:p-5 shadow-sm">
           <p className="text-[10px] sm:text-xs text-slate-400 font-black uppercase tracking-widest mb-1">
             Total Profit
           </p>
@@ -180,14 +180,14 @@ export default function CustomersPage({ params, searchParams }: { params: any; s
       </div>
 
       {/* Search */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-3 sm:p-4">
+      <div className="bg-slate-900 border border-slate-700 rounded-2xl p-3 sm:p-4">
         <div className="relative">
           <input
             type="text"
             placeholder="Search by name, phone, city, or email..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-400"
+            className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-400"
           />
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">
             🔍
@@ -196,13 +196,13 @@ export default function CustomersPage({ params, searchParams }: { params: any; s
       </div>
 
       {/* Desktop table */}
-      <div className="hidden fold-inner:block bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+      <div className="hidden fold-inner:block bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] font-black uppercase tracking-widest">
+            <thead className="bg-slate-950 border-b border-slate-700 text-slate-500 text-[10px] font-black uppercase tracking-widest">
               <tr>
                 <th
-                  className="px-4 py-4 text-left cursor-pointer hover:text-slate-700"
+                  className="px-4 py-4 text-left cursor-pointer hover:text-slate-300"
                   onClick={() => toggleSort('name')}
                 >
                   Customer{sortArrow('name')}
@@ -211,7 +211,7 @@ export default function CustomersPage({ params, searchParams }: { params: any; s
                 <th className="px-4 py-4 text-left">Address</th>
                 <th className="px-4 py-4 text-left">City</th>
                 <th
-                  className="px-4 py-4 text-right cursor-pointer hover:text-slate-700"
+                  className="px-4 py-4 text-right cursor-pointer hover:text-slate-300"
                   onClick={() => toggleSort('orders')}
                 >
                   Orders{sortArrow('orders')}
@@ -219,19 +219,19 @@ export default function CustomersPage({ params, searchParams }: { params: any; s
                 <th className="px-4 py-4 text-left">Last Status</th>
                 <th className="px-4 py-4 text-left">Last Store</th>
                 <th
-                  className="px-4 py-4 text-right cursor-pointer hover:text-slate-700"
+                  className="px-4 py-4 text-right cursor-pointer hover:text-slate-300"
                   onClick={() => toggleSort('value')}
                 >
                   Total Value{sortArrow('value')}
                 </th>
                 <th
-                  className="px-4 py-4 text-right cursor-pointer hover:text-slate-700"
+                  className="px-4 py-4 text-right cursor-pointer hover:text-slate-300"
                   onClick={() => toggleSort('profit')}
                 >
                   Total Profit{sortArrow('profit')}
                 </th>
                 <th
-                  className="px-4 py-4 text-right cursor-pointer hover:text-slate-700"
+                  className="px-4 py-4 text-right cursor-pointer hover:text-slate-300"
                   onClick={() => toggleSort('last_order')}
                 >
                   Last Order{sortArrow('last_order')}
@@ -242,40 +242,40 @@ export default function CustomersPage({ params, searchParams }: { params: any; s
               {filtered.map((c) => (
                 <tr
                   key={c.key}
-                  className="hover:bg-slate-50 transition-colors"
+                  className="hover:bg-slate-950 transition-colors"
                 >
                   <td className="px-4 py-3">
-                    <p className="font-bold text-slate-900">{c.name}</p>
+                    <p className="font-bold text-slate-100">{c.name}</p>
                     {c.email && (
                       <p className="text-[10px] text-slate-400">{c.email}</p>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
+                  <td className="px-4 py-3 text-slate-400 whitespace-nowrap">
                     {c.phone || '—'}
                   </td>
-                  <td className="px-4 py-3 text-slate-600 max-w-[200px] truncate">
+                  <td className="px-4 py-3 text-slate-400 max-w-[200px] truncate">
                     {c.address || '—'}
                   </td>
-                  <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
+                  <td className="px-4 py-3 text-slate-400 whitespace-nowrap">
                     {c.city || '—'}
                   </td>
-                  <td className="px-4 py-3 text-right font-black text-slate-900">
+                  <td className="px-4 py-3 text-right font-black text-slate-100">
                     {c.total_orders}
                   </td>
                   <td className="px-4 py-3">
                     <span
                       className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-black uppercase border ${
                         STATUS_STYLES[c.last_order_status] ||
-                        'bg-slate-100 text-slate-500 border-slate-200'
+                        'bg-slate-800 text-slate-500 border-slate-700'
                       }`}
                     >
                       {c.last_order_status?.replace(/_/g, ' ') || '—'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
+                  <td className="px-4 py-3 text-slate-400 whitespace-nowrap">
                     {c.last_store_name || '—'}
                   </td>
-                  <td className="px-4 py-3 text-right font-bold text-slate-900">
+                  <td className="px-4 py-3 text-right font-bold text-slate-100">
                     {formatCurrency(c.total_value)}
                   </td>
                   <td className="px-4 py-3 text-right">
@@ -309,11 +309,11 @@ export default function CustomersPage({ params, searchParams }: { params: any; s
         {filtered.map((c) => (
           <div
             key={c.key}
-            className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3"
+            className="bg-slate-900 border border-slate-700 rounded-2xl p-4 space-y-3"
           >
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <p className="font-bold text-slate-900 truncate">{c.name}</p>
+                <p className="font-bold text-slate-100 truncate">{c.name}</p>
                 {c.email && (
                   <p className="text-[10px] text-slate-400 truncate">
                     {c.email}
@@ -323,7 +323,7 @@ export default function CustomersPage({ params, searchParams }: { params: any; s
               <span
                 className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-black uppercase border flex-shrink-0 ${
                   STATUS_STYLES[c.last_order_status] ||
-                  'bg-slate-100 text-slate-500 border-slate-200'
+                  'bg-slate-800 text-slate-500 border-slate-700'
                 }`}
               >
                 {c.last_order_status?.replace(/_/g, ' ') || '—'}
@@ -334,19 +334,19 @@ export default function CustomersPage({ params, searchParams }: { params: any; s
                 <p className="text-slate-400 font-bold uppercase text-[9px]">
                   Phone
                 </p>
-                <p className="text-slate-600">{c.phone || '—'}</p>
+                <p className="text-slate-400">{c.phone || '—'}</p>
               </div>
               <div>
                 <p className="text-slate-400 font-bold uppercase text-[9px]">
                   City
                 </p>
-                <p className="text-slate-600">{c.city || '—'}</p>
+                <p className="text-slate-400">{c.city || '—'}</p>
               </div>
               <div className="col-span-2">
                 <p className="text-slate-400 font-bold uppercase text-[9px]">
                   Address
                 </p>
-                <p className="text-slate-600 truncate">
+                <p className="text-slate-400 truncate">
                   {c.address || '—'}
                 </p>
               </div>
@@ -354,7 +354,7 @@ export default function CustomersPage({ params, searchParams }: { params: any; s
                 <p className="text-slate-400 font-bold uppercase text-[9px]">
                   Orders
                 </p>
-                <p className="text-slate-900 font-black text-base">
+                <p className="text-slate-100 font-black text-base">
                   {c.total_orders}
                 </p>
               </div>
@@ -362,7 +362,7 @@ export default function CustomersPage({ params, searchParams }: { params: any; s
                 <p className="text-slate-400 font-bold uppercase text-[9px]">
                   Last Store
                 </p>
-                <p className="text-slate-600 truncate">
+                <p className="text-slate-400 truncate">
                   {c.last_store_name || '—'}
                 </p>
               </div>
@@ -370,7 +370,7 @@ export default function CustomersPage({ params, searchParams }: { params: any; s
                 <p className="text-slate-400 font-bold uppercase text-[9px]">
                   Total Value
                 </p>
-                <p className="text-slate-900 font-bold">
+                <p className="text-slate-100 font-bold">
                   {formatCurrency(c.total_value)}
                 </p>
               </div>

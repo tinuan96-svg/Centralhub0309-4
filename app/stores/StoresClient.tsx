@@ -141,7 +141,7 @@ export default function StoresPage({ params, searchParams }: { params: any; sear
         </div>
 
         {stores.length === 0 ? (
-          <div className="bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-slate-800/50 p-12 text-center">
+          <div className="ch-card bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-slate-800/50 p-12 text-center">
             <div className="text-6xl mb-4">🏪</div>
             <h3 className="text-xl font-semibold text-slate-200 mb-2">
               No stores yet
@@ -164,7 +164,7 @@ export default function StoresPage({ params, searchParams }: { params: any; sear
                   return (
                     <div
                       key={store.id}
-                      className="bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-slate-800/50 p-6"
+                      className="ch-card bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-slate-800/50 p-6"
                     >
                       <div className="flex items-center justify-center h-48">
                         <div className="text-center">

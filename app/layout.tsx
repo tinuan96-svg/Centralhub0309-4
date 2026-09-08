@@ -1,5 +1,6 @@
 import './globals.css';
 import './fold-mobile-fixes.css';
+import './dashboard-theme.css';
 import AuthProvider from '@/components/AuthProvider';
 import MobileLayout from '@/components/MobileLayout';
 

@@ -1,24 +1,27 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useDashboardFilterStore } from '@/lib/store/dashboardFilterStore';
 
 export default function AuditLogWidget() {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const { selectedStoreId } = useDashboardFilterStore();
 
   useEffect(() => {
     (async () => {
       setLoading(true);
       // Fallback to inventory logs if activity_logs is empty or doesn't exist yet
-      const { data } = await supabase
+      const { data, error: queryError } = await supabase
         .from('inventory_logs')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(8);
 
+      setError(Boolean(queryError));
       setLogs(data || []);
       setLoading(false);
     })();
@@ -27,18 +30,19 @@ export default function AuditLogWidget() {
   if (loading) return <div className="h-64 bg-slate-800/20 border border-slate-800 rounded-3xl animate-pulse" />;
 
   return (
-    <section className="bg-slate-900/40 backdrop-blur-xl border border-slate-800/50 rounded-[2.5rem] p-8 shadow-2xl space-y-8">
+    <section className="ch-legacy-widget bg-slate-900/40 backdrop-blur-xl border border-slate-800/50 rounded-[2.5rem] p-8 shadow-2xl space-y-8">
       <div className="flex items-center justify-between">
         <div>
            <h2 className="text-xl font-black text-white uppercase tracking-tighter">Activity Ledger</h2>
-           <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Audit Trail & System Events</p>
+           <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Latest warehouse activity · all stores</p>
         </div>
-        <button className="text-[10px] font-black text-slate-500 hover:text-slate-300 uppercase tracking-widest transition-colors">
-          Download Logs
-        </button>
+        <Link href="/inventory-management/reports/audit" className="text-[10px] font-black text-slate-500 hover:text-slate-300 uppercase tracking-widest transition-colors">
+          Open audit log
+        </Link>
       </div>
 
       <div className="space-y-4">
+        {error && <p role="alert" className="ch-note ch-error">Activity could not be loaded.</p>}
         {logs.map((log, idx) => (
           <div key={log.id} className="flex items-start gap-4 group">
             <div className="pt-1">
@@ -59,7 +63,7 @@ export default function AuditLogWidget() {
             </div>
           </div>
         ))}
-        {logs.length === 0 && (
+        {!error && logs.length === 0 && (
            <div className="py-12 text-center opacity-30">
               <p className="text-[10px] font-black uppercase tracking-widest">No recent entries</p>
            </div>
@@ -67,9 +71,9 @@ export default function AuditLogWidget() {
       </div>
 
       <div className="pt-4 text-center">
-         <button className="text-[9px] font-black text-cyan-600 hover:text-cyan-500 uppercase tracking-widest transition-all">
-           View Full Audit History →
-         </button>
+         <Link href="/inventory-management/reports/audit" className="text-[9px] font-black text-cyan-600 hover:text-cyan-500 uppercase tracking-widest transition-all">
+           View full audit history →
+         </Link>
       </div>
     </section>
   );

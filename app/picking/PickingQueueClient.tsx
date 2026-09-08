@@ -257,7 +257,7 @@ export default function PickingQueueClient({ params, searchParams }: { params: a
       ) : (
         <>
           {/* Desktop Table View */}
-          <div className="hidden md:block bg-slate-900/40 border border-slate-800 rounded-2xl overflow-hidden">
+          <div className="ch-card hidden md:block bg-slate-900/40 border border-slate-800 rounded-2xl overflow-hidden">
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-800/50 border-b border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-400">
                 <tr>

@@ -206,27 +206,27 @@ export default function FinanceControlClient() {
       )}
 
       <section className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+        <div className="ch-card bg-slate-900 border border-slate-800 rounded-2xl p-4">
           <p className="label">Available bank cash</p>
           <p className="metric text-white">{formatCurrency(cash)}</p>
           <p className="hint">{accounts.length} active/linked accounts</p>
         </div>
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+        <div className="ch-card bg-slate-900 border border-slate-800 rounded-2xl p-4">
           <p className="label">Revenue</p>
           <p className="metric text-white">{loading ? '—' : formatCurrency(Number(summary?.revenue || 0))}</p>
           <p className="hint">Selected period</p>
         </div>
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+        <div className="ch-card bg-slate-900 border border-slate-800 rounded-2xl p-4">
           <p className="label">Net profit</p>
           <p className={`metric ${Number(summary?.net_profit || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>{loading ? '—' : formatCurrency(Number(summary?.net_profit || 0))}</p>
           <p className="hint">After operating costs</p>
         </div>
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+        <div className="ch-card bg-slate-900 border border-slate-800 rounded-2xl p-4">
           <p className="label">Supplier payables</p>
           <p className="metric text-amber-300">{formatCurrency(openPayables)}</p>
           <p className="hint">Open outstanding invoices</p>
         </div>
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+        <div className="ch-card bg-slate-900 border border-slate-800 rounded-2xl p-4">
           <p className="label">Needs review</p>
           <p className={`metric ${reviewCount ? 'text-amber-300' : 'text-emerald-300'}`}>{reviewCount}</p>
           <p className="hint">Unclassified bank transactions</p>
@@ -252,7 +252,7 @@ export default function FinanceControlClient() {
 
       {tab === 'overview' && (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-          <section className="xl:col-span-2 bg-slate-900 border border-slate-800 rounded-3xl p-5">
+          <section className="ch-card xl:col-span-2 bg-slate-900 border border-slate-800 rounded-3xl p-5">
             <div className="flex items-center justify-between mb-5">
               <div><h2 className="section-title">Profit & Loss</h2><p className="section-help">Accounting view for the selected period.</p></div>
               <span className="text-[9px] font-black uppercase tracking-widest text-cyan-400">{days} day view</span>
@@ -282,7 +282,7 @@ export default function FinanceControlClient() {
             </div>
           </section>
 
-          <section className="bg-slate-900 border border-slate-800 rounded-3xl p-5">
+          <section className="ch-card bg-slate-900 border border-slate-800 rounded-3xl p-5">
             <h2 className="section-title">Bank Position</h2>
             <p className="section-help">Current balances from CentralHub bank accounts.</p>
             <div className="space-y-3 mt-5">
@@ -299,7 +299,7 @@ export default function FinanceControlClient() {
       )}
 
       {tab === 'transactions' && (
-        <section className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden">
+        <section className="ch-card bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden">
           <div className="p-5 border-b border-slate-800">
             <h2 className="section-title">Bank Transactions</h2>
             <p className="section-help">Classify each movement so the accounting and pricing engines know what it represents.</p>
@@ -325,7 +325,7 @@ export default function FinanceControlClient() {
       )}
 
       {tab === 'payables' && (
-        <section className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden">
+        <section className="ch-card bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden">
           <div className="p-5 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div><h2 className="section-title">Supplier Payables</h2><p className="section-help">Due dates are calculated from supplier credit terms and invoice dates.</p></div>
             <a href="/suppliers/invoices" className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs font-black text-white">Open Supplier Invoices</a>

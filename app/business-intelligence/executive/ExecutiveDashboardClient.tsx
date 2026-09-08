@@ -159,7 +159,7 @@ export default function ExecutiveDashboardClient({ params, searchParams }: { par
 
   return (
     <div className="p-6 space-y-8">
-      <div className="bg-slate-900/40 border border-slate-800/50 rounded-2xl p-4 mb-4">
+      <div className="ch-card bg-slate-900/40 border border-slate-800/50 rounded-2xl p-4 mb-4">
         <StoreScopeSelector value={selectedStoreId} onStoreChange={setSelectedStoreId} />
       </div>
       <PageHeader

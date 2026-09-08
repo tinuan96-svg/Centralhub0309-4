@@ -69,7 +69,7 @@ export default function PackingQueueClient({ params, searchParams }: { params: a
 
   return (
     <div className="p-4 space-y-6 max-w-4xl mx-auto pb-32">
-       <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-2xl">
+       <div className="ch-card bg-slate-900/50 border border-slate-800 p-4 rounded-2xl">
          <StoreScopeSelector value={selectedStoreId} onStoreChange={setSelectedStoreId} />
        </div>
        <header>
@@ -89,7 +89,7 @@ export default function PackingQueueClient({ params, searchParams }: { params: a
        ) : (
           <>
             {/* Desktop Table View */}
-            <div className="hidden md:block bg-slate-900/40 border border-slate-800 rounded-2xl overflow-hidden">
+            <div className="ch-card hidden md:block bg-slate-900/40 border border-slate-800 rounded-2xl overflow-hidden">
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-800/50 border-b border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-400">
                   <tr>
@@ -130,7 +130,7 @@ export default function PackingQueueClient({ params, searchParams }: { params: a
                 <div
                   key={order.id}
                   onClick={() => router.push(`/packing/${order.id}`)}
-                  className="bg-slate-900/40 border border-slate-800 p-5 rounded-2xl active:scale-[0.98] transition-all flex justify-between items-center select-none touch-manipulation"
+                  className="ch-card bg-slate-900/40 border border-slate-800 p-5 rounded-2xl active:scale-[0.98] transition-all flex justify-between items-center select-none touch-manipulation"
                 >
                   <div className="space-y-1">
                      <div className="flex items-center gap-2">

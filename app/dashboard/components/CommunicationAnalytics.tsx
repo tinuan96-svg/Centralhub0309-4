@@ -1,84 +1,35 @@
 'use client';
-
 import { useState, useEffect } from 'react';
-import { whatsappService } from '@/lib/services/customer-care/whatsappService';
-import { useDashboardFilterStore } from '@/lib/store/dashboardFilterStore';
 import Link from 'next/link';
+import { supabase } from '@/lib/supabase';
+import { useDashboardFilterStore } from '@/lib/store/dashboardFilterStore';
+import { readReportRows } from '@/lib/dashboard/reporting';
+import { DonutChart, Panel } from '@/components/dashboard/Charts';
 
 export default function CommunicationAnalytics() {
-  const [stats, setStats] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<{ open: number; human: number; resolved: number; inbound: number; outbound: number } | null>(null);
+  const [error, setError] = useState(false);
   const { selectedStoreId } = useDashboardFilterStore();
-
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      const data = await whatsappService.getCustomerCareStats(selectedStoreId === 'all' ? undefined : selectedStoreId);
-      setStats(data);
-      setLoading(false);
-    })();
+    let cancelled = false; setStats(null); setError(false);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const scope = (q: any) => selectedStoreId === 'all' ? q : q.eq('store_id', selectedStoreId);
+    Promise.all([
+      readReportRows(() => scope(supabase.from('whatsapp_conversations').select('id,status,handling_mode').order('id')), 'Conversations'),
+      readReportRows(() => scope(supabase.from('support_tickets').select('id,resolved_at').gte('resolved_at', today.toISOString()).order('id')), 'Resolved tickets'),
+      readReportRows(() => {
+        let q = supabase.from('whatsapp_messages').select('id,direction,whatsapp_conversations!inner(store_id)').gte('created_at', today.toISOString()).order('id');
+        if (selectedStoreId !== 'all') q = q.eq('whatsapp_conversations.store_id', selectedStoreId);
+        return q;
+      }, 'Messages'),
+    ]).then(([convs, tickets, messages]) => { if (!cancelled) setStats({ open: convs.filter(c => c.status === 'open').length, human: convs.filter(c => c.status === 'open' && c.handling_mode === 'HUMAN').length, resolved: tickets.length, inbound: messages.filter(m => m.direction === 'inbound').length, outbound: messages.filter(m => m.direction === 'outbound').length }); }).catch(() => { if (!cancelled) setError(true); });
+    return () => { cancelled = true; };
   }, [selectedStoreId]);
-
-  if (loading) return <div className="h-64 bg-slate-800/20 border border-slate-800 rounded-3xl animate-pulse" />;
-
-  return (
-    <section className="bg-slate-900/40 backdrop-blur-xl border border-slate-800/50 rounded-[2.5rem] p-8 shadow-2xl space-y-8">
-      <div className="flex items-center justify-between">
-        <div>
-           <h2 className="text-xl font-black text-white uppercase tracking-tighter">Customer Communications</h2>
-           <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">WhatsApp & Meta Channels</p>
-        </div>
-        <Link href="/customer-care" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest border border-slate-700 transition-all">
-          Open Inbox →
-        </Link>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-         <div className="bg-slate-950/40 p-6 rounded-2xl border border-slate-800/50">
-            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Open Enquiries</p>
-            <div className="flex items-end gap-3">
-               <p className="text-4xl font-black text-white">{stats?.openConversations || 0}</p>
-               {stats?.humanTakeover > 0 && (
-                 <p className="text-[10px] text-amber-400 font-black uppercase mb-1">+{stats.humanTakeover} Human</p>
-               )}
-            </div>
-         </div>
-         <div className="bg-slate-950/40 p-6 rounded-2xl border border-slate-800/50">
-            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Resolved Today</p>
-            <p className="text-4xl font-black text-emerald-400">{stats?.resolvedToday || 0}</p>
-         </div>
-      </div>
-
-      <div className="space-y-6">
-         <div className="space-y-3">
-            <div className="flex justify-between text-[10px] font-black text-slate-500 uppercase tracking-widest">
-               <span>Inbound Velocity</span>
-               <span className="text-slate-300">{stats?.messagesReceivedToday || 0} msgs</span>
-            </div>
-            <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
-               <div className="h-full bg-cyan-500" style={{ width: '65%' }} />
-            </div>
-         </div>
-         <div className="space-y-3">
-            <div className="flex justify-between text-[10px] font-black text-slate-500 uppercase tracking-widest">
-               <span>Outbound Engagement</span>
-               <span className="text-slate-300">{stats?.messagesSentToday || 0} msgs</span>
-            </div>
-            <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
-               <div className="h-full bg-emerald-500" style={{ width: '45%' }} />
-            </div>
-         </div>
-      </div>
-
-      <div className="pt-6 border-t border-slate-800/50 flex items-center justify-between text-[10px] font-black uppercase tracking-widest">
-         <div className="flex items-center gap-4">
-            <span className="text-slate-500">Status:</span>
-            <span className="text-emerald-400 flex items-center gap-1.5">
-               <span className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse"></span> Meta Verified
-            </span>
-         </div>
-         <span className="text-slate-600">API Latency: 240ms</span>
-      </div>
-    </section>
-  );
+  return <Panel title="Customer communications" subtitle="Current conversations and today's message activity." action={<Link href="/customer-care/inbox" className="ch-link">Open inbox →</Link>}>
+    {error ? <p role="alert" className="ch-note ch-error">Message statistics could not be loaded.</p> : !stats ? <p className="ch-muted">Loading messages…</p> : <>
+      <div className="grid grid-cols-3 gap-3 mb-6">{[['Open enquiries', stats.open], ['With admin', stats.human], ['Tickets resolved today', stats.resolved]].map(([label, value]) => <div key={label}><p className="ch-muted">{label}</p><p className="ch-kpi-value mt-2">{value}</p></div>)}</div>
+      <DonutChart data={[{ label: 'Received today', value: stats.inbound, color: '#67e8f9' }, { label: 'Sent today', value: stats.outbound, color: '#a78bfa' }]} label="messages" />
+      <Link href="/customer-care/channels" className="ch-link mt-5">Review channel connections →</Link>
+    </>}
+  </Panel>;
 }

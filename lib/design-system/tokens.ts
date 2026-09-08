@@ -25,7 +25,7 @@ export const designTokens = {
       muted: 'text-[#8B949E]',
     },
     status: {
-      success: 'text-[#2EA043]',
+      success: 'text-emerald-300',
       successBg: 'bg-[#2EA043]/15',
       successBorder: 'border-[#2EA043]/30',
       warning: 'text-[#FFC107]',
@@ -40,7 +40,7 @@ export const designTokens = {
       pending: 'text-[#FFC107]',
       pendingBg: 'bg-[#FFC107]/15',
       pendingBorder: 'border-[#FFC107]/30',
-      paid: 'text-[#2EA043]',
+      paid: 'text-emerald-300',
       paidBg: 'bg-[#2EA043]/15',
       paidBorder: 'border-[#2EA043]/30',
       failed: 'text-[#F85149]',
@@ -48,16 +48,16 @@ export const designTokens = {
       failedBorder: 'border-[#F85149]/30',
     },
     profit: {
-      positive: 'text-[#2EA043]',
+      positive: 'text-emerald-300',
       negative: 'text-[#F85149]',
     },
   },
   spacing: {
-    page: 'px-6 py-4',
+    page: 'px-4 sm:px-6 py-5',
     section: 'space-y-6',
     card: 'p-6',
     cardSm: 'p-4',
-    grid: 'gap-6',
+    grid: 'gap-4',
     gridSm: 'gap-4',
   },
   borderRadius: {
@@ -81,11 +81,11 @@ export const designTokens = {
     pageTitle: 'text-2xl font-bold text-white',
     sectionTitle: 'text-xl font-semibold text-white',
     cardTitle: 'text-lg font-semibold text-white',
-    body: 'text-sm text-[#C9D1D9]',
+    body: 'text-base text-[#C9D1D9]',
     bodyMuted: 'text-sm text-[#8B949E]',
-    label: 'text-xs font-medium text-[#8B949E] uppercase tracking-wider',
-    metric: 'text-3xl font-bold text-cyan-400',
-    metricLabel: 'text-xs text-[#8B949E]',
+    label: 'text-sm font-medium text-slate-300',
+    metric: 'text-3xl font-semibold text-white tabular-nums tracking-tight',
+    metricLabel: 'text-sm text-slate-300',
     tableHeader: 'text-xs font-semibold text-[#C9D1D9] uppercase tracking-wider',
     tableCell: 'text-sm text-white',
     tableCellSecondary: 'text-sm text-[#8B949E]',
@@ -127,7 +127,7 @@ export const getButtonClasses = (variant: 'primary' | 'secondary' | 'danger' | '
 };
 
 export const getCardClasses = (variant: 'default' | 'glass' = 'default') => {
-  const base = `${designTokens.borderRadius.card} border ${designTokens.colors.border.default} ${designTokens.shadow.card}`;
+  const base = `ch-card ${designTokens.borderRadius.card} border ${designTokens.colors.border.default} ${designTokens.shadow.card}`;
 
   const variants = {
     default: `${designTokens.colors.background.card} backdrop-blur`,

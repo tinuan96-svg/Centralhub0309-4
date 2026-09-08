@@ -1,72 +1,28 @@
 'use client';
-
+import { CSSProperties } from 'react';
+import { Banknote, ChartNoAxesCombined, Coins, Package, ShoppingBag, Wallet } from 'lucide-react';
 import { useDashboardFilterStore } from '@/lib/store/dashboardFilterStore';
 import { formatCurrency } from '@/lib/utils/currency';
+import { PeriodSummary, percentChange } from '@/lib/dashboard/reporting';
 
-interface KpiData {
-  totalRevenue: number;
-  actualGrossProfit: number;
-  totalOverhead: number;
-  netProfit: number;
-  totalInventoryValue: number;
-  totalOrders: number;
-  pendingOrders: number;
-}
-
-interface KpiGridProps {
-  current: KpiData;
-  previous: KpiData | null;
-}
-
-export default function DashboardKpiGrid({ current, previous }: KpiGridProps) {
+export default function DashboardKpiGrid({ current, previous }: { current: PeriodSummary; previous: PeriodSummary | null }) {
   const { comparisonType } = useDashboardFilterStore();
-
-  const calculateChange = (cur: number, prev: number | undefined) => {
-    if (comparisonType === 'none' || prev === undefined || prev === 0) return null;
-    const percentage = ((cur - prev) / prev) * 100;
-    return {
-      percentage: Math.abs(percentage).toFixed(1),
-      isPositive: percentage >= 0
-    };
-  };
-
-  const KpiCard = ({ label, value, prev, icon, accent, invert = false, sub }: any) => {
-    const change = calculateChange(value, prev);
-    const showEmerald = invert ? !change?.isPositive : change?.isPositive;
-
-    return (
-      <div className={`group relative rounded-2xl bg-slate-900/40 backdrop-blur-xl border border-slate-800/50 p-5 hover:border-${accent}-500/50 hover:shadow-2xl hover:shadow-${accent}-500/10 transition-all duration-300 overflow-hidden`}>
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none">{label}</p>
-          <span className="text-xl opacity-50 group-hover:opacity-100 transition-opacity">{icon}</span>
-        </div>
-        <div className="flex flex-col gap-1">
-          <p className={`text-2xl font-black text-${accent}-400 truncate`}>
-            {typeof value === 'number' && label !== 'Orders' ? formatCurrency(value) : value}
-          </p>
-          <div className="flex items-center justify-between">
-            {change ? (
-              <div className={`flex items-center gap-1 text-[10px] font-bold ${showEmerald ? 'text-emerald-400' : 'text-rose-400'}`}>
-                <span>{change.isPositive ? '↑' : '↓'}</span>
-                <span>{change.percentage}%</span>
-                <span className="text-slate-600 ml-1 font-medium">vs prev</span>
-              </div>
-            ) : <div className="h-4" />}
-            {sub && <p className="text-[9px] font-black uppercase tracking-widest text-amber-500/80">{sub}</p>}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-      <KpiCard label="Revenue" value={current.totalRevenue} prev={previous?.totalRevenue} icon="💰" accent="amber" />
-      <KpiCard label="Gross Profit" value={current.actualGrossProfit} prev={previous?.actualGrossProfit} icon="💎" accent="emerald" />
-      <KpiCard label="Overhead" value={current.totalOverhead} prev={previous?.totalOverhead} icon="🏢" accent="rose" invert />
-      <KpiCard label="Net Profit" value={current.netProfit} prev={previous?.netProfit} icon="🏦" accent="indigo" />
-      <KpiCard label="Inventory Value" value={current.totalInventoryValue} icon="🏗️" accent="blue" />
-      <KpiCard label="Orders" value={current.totalOrders} prev={previous?.totalOrders} icon="📦" accent="cyan" sub={current.pendingOrders > 0 ? `${current.pendingOrders} PENDING` : null} />
-    </div>
-  );
+  const cards = [
+    { label: 'Product sales', value: current.totalRevenue, previous: previous?.totalRevenue, icon: Banknote, colour: '#67e8f9', note: 'Paid orders · excludes delivery' },
+    { label: 'Order gross profit', value: current.actualGrossProfit, previous: previous?.actualGrossProfit, icon: Coins, colour: '#6ee7b7', note: current.missingCosts ? 'Product costs incomplete' : current.estimatedCosts ? 'Includes estimated product costs' : 'Before fees and operating costs' },
+    { label: 'Paid expenses', value: current.totalOverhead, previous: previous?.totalOverhead, icon: Wallet, colour: '#fda4af', invert: true, note: 'Selected invoice dates' },
+    { label: 'After paid expenses', value: current.netProfit, previous: previous?.netProfit, icon: ChartNoAxesCombined, colour: '#c4b5fd', note: 'Gross profit less paid expenses' },
+    { label: 'Warehouse value', value: current.totalInventoryValue, icon: Package, colour: '#fcd34d', note: 'Current stock · all stores' },
+    { label: 'Paid orders', value: current.totalOrders, previous: previous?.totalOrders, icon: ShoppingBag, colour: '#93c5fd', count: true, note: current.pendingOrders + ' awaiting payment in period' },
+  ];
+  return <div className="ch-kpi-grid">{cards.map(card => {
+    const change = comparisonType === 'none' || card.value === null ? null : percentChange(card.value, card.previous);
+    const positive = change !== null && (card.invert ? change < 0 : change > 0);
+    return <article className="ch-panel ch-kpi" key={card.label} style={{ '--metric-accent': card.colour } as CSSProperties}>
+      <div className="flex items-start justify-between gap-2 mb-3"><p className="ch-kpi-label">{card.label}</p><span className="ch-kpi-icon"><card.icon size={18} aria-hidden="true" /></span></div>
+      <p className="ch-kpi-value">{card.value === null ? '—' : card.count ? card.value.toLocaleString('en-GB') : formatCurrency(card.value)}</p>
+      <p className="ch-comparison">{change === null ? card.label === 'Warehouse value' ? 'Current snapshot' : comparisonType === 'none' ? 'Selected period' : 'No comparable baseline' : <><span className={change === 0 ? 'text-slate-300' : positive ? 'text-emerald-300' : 'text-rose-300'}>{change > 0 ? '↗' : change < 0 ? '↘' : '—'} {Math.abs(change).toFixed(1)}%</span> vs {comparisonType === 'lastYear' ? 'last year' : 'previous period'}</>}</p>
+      <p className="text-xs text-slate-400 leading-relaxed mt-2">{card.note}</p>
+    </article>;
+  })}</div>;
 }

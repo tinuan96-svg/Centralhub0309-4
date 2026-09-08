@@ -904,7 +904,7 @@ export default function ShippingPage({ params, searchParams }: { params: any; se
             { label: 'Delivered', value: fullStats?.delivered || 0, color: 'text-emerald-400', icon: '✅' },
             { label: 'Total Value', value: stats.totalValue ? `£${stats.totalValue.toFixed(0)}` : '£0', color: 'text-emerald-500', icon: '💰' },
           ].map(s => (
-            <div key={s.label} className="bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-slate-800/50 p-3 sm:p-4 transition-all hover:border-slate-700">
+            <div key={s.label} className="ch-card bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-slate-800/50 p-3 sm:p-4 transition-all hover:border-slate-700">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[10px] text-slate-500 uppercase font-black tracking-widest">{s.label}</span>
                 <span className="text-lg sm:text-xl">{s.icon}</span>
@@ -917,7 +917,7 @@ export default function ShippingPage({ params, searchParams }: { params: any; se
         {/* Performance Metrics & Failed Queue */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
           {/* Performance KPIs */}
-          <div className="lg:col-span-2 bg-slate-900/50 rounded-3xl border border-slate-800 p-4 sm:p-6">
+          <div className="ch-card lg:col-span-2 bg-slate-900/50 rounded-3xl border border-slate-800 p-4 sm:p-6">
             <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] mb-4 sm:mb-6 flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-cyan-500 shadow-[0_0_10px_rgba(6,182,212,0.5)]"></span>
               Performance Metrics
@@ -969,7 +969,7 @@ export default function ShippingPage({ params, searchParams }: { params: any; se
         </div>
 
         {/* Orders table */}
-        <div className="bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-slate-800/50 p-4 sm:p-6">
+        <div className="ch-card bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-slate-800/50 p-4 sm:p-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 gap-3">
             <h2 className="text-lg sm:text-xl font-bold text-slate-100">Orders for Shipment</h2>
             <div className="flex flex-wrap gap-2">

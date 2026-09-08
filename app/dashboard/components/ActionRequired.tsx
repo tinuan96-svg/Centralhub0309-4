@@ -32,7 +32,7 @@ export default function ActionRequired() {
   if (alerts.length === 0) return null;
 
   return (
-    <section className="space-y-4">
+    <section className="ch-legacy-widget space-y-4">
       <div className="flex items-center gap-2">
          <span className="text-lg">⚡</span>
          <h2 className="text-lg font-black text-slate-200 uppercase tracking-tighter">Command Centre: Action Required</h2>

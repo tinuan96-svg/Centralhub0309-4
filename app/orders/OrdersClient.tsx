@@ -245,7 +245,7 @@ export default function OrdersPage({ params, searchParams }: { params: any; sear
                 <button onClick={() => { setSyncError(null); syncFromSources().then(() => loadOrders()); }} className="text-red-400 hover:text-red-200 underline ml-auto font-bold uppercase text-[10px]">Retry</button>
               </div>
             )}
-            <div className="flex gap-1 overflow-x-auto no-scrollbar bg-slate-900/50 p-1 rounded-2xl border border-slate-800/50">
+            <div className="ch-card flex gap-1 overflow-x-auto no-scrollbar bg-slate-900/50 p-1 rounded-2xl border border-slate-800/50">
                {[
                  {id:'operational', label:'📋 Ops'},
                  {id:'pending_payment', label:'⏳ Pending'},
@@ -269,7 +269,7 @@ export default function OrdersPage({ params, searchParams }: { params: any; sear
          </div>
       </div>
 
-      <div className="bg-slate-900/50 border border-slate-800 rounded-2xl sm:rounded-3xl p-3 sm:p-4 space-y-3 sm:space-y-4">
+      <div className="ch-card bg-slate-900/50 border border-slate-800 rounded-2xl sm:rounded-3xl p-3 sm:p-4 space-y-3 sm:space-y-4">
          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800/50 pb-4 mb-4">
             <StoreScopeSelector value={selectedStoreId} onStoreChange={setSelectedStoreId} />
          </div>
@@ -304,7 +304,7 @@ export default function OrdersPage({ params, searchParams }: { params: any; sear
           const profit = productRevenue - totalCost;
 
           return (
-            <div key={o.id} onClick={() => setDetailOrder(o)} className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4 space-y-3 active:bg-slate-800/40 transition-colors cursor-pointer shadow-md">
+            <div key={o.id} onClick={() => setDetailOrder(o)} className="ch-card bg-slate-900/50 border border-slate-800 rounded-2xl p-4 space-y-3 active:bg-slate-800/40 transition-colors cursor-pointer shadow-md">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm font-mono font-black text-slate-100 uppercase tracking-tighter truncate">#{o.order_number}</span>
                 {store && <StoreBadge store={store} size="sm" />}
