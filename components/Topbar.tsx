@@ -110,9 +110,9 @@ export default function Topbar() {
   const showBack = pathname !== '/' && pathname !== '/dashboard';
 
   return (
-    <header className={`${designTokens.layout.topbarHeight} ${designTokens.colors.background.overlay} backdrop-blur-xl border-b ${designTokens.colors.border.default} flex items-center justify-between px-6 sticky top-0 z-40 gap-4`}>
-      <div className="flex-1 flex items-center gap-6">
-        <h2 className={`text-lg font-black ${designTokens.colors.text.primary} flex items-center gap-2 uppercase tracking-tighter`}>
+    <header className={`${designTokens.layout.topbarHeight} ${designTokens.colors.background.overlay} backdrop-blur-xl border-b ${designTokens.colors.border.default} flex items-center justify-between px-4 sm:px-6 sticky top-0 z-40 gap-3 sm:gap-4 min-w-0`}>
+      <div className="min-w-0 flex-1 flex items-center gap-3 xl:gap-6">
+        <h2 className={`shrink-0 max-w-[11rem] truncate text-lg font-black ${designTokens.colors.text.primary} flex items-center gap-2 uppercase tracking-tighter`}>
           {pathname.includes('/packing') && <><span className="text-xl">📦</span> Packing</>}
           {pathname.includes('/orders') && <><span className="text-xl">🛒</span> Orders</>}
           {pathname.includes('/shipping') && <><span className="text-xl">🚚</span> Shipping</>}
@@ -123,13 +123,13 @@ export default function Topbar() {
           {pathname === '/' && <><span className="text-xl">⚡</span> CentralHub</>}
         </h2>
 
-        <div className="relative max-w-md flex-1 group">
+        <div className="relative min-w-0 max-w-md flex-1 group">
           <button
             onClick={() => setIsSearchOpen(true)}
-            className={`w-full flex items-center justify-between pl-10 pr-4 h-10 ${getInputClasses()} group-hover:border-slate-600 transition-all text-slate-500 text-sm`}
+            className={`w-full flex items-center justify-between pl-10 pr-4 h-10 ${getInputClasses()} group-hover:border-slate-600 transition-all text-slate-500 text-sm overflow-hidden whitespace-nowrap`}
           >
-            <span>Global Search (Orders, Products, SKU...)</span>
-            <span className="hidden sm:inline-block px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 text-[9px] font-black text-slate-400 uppercase tracking-widest">Ctrl K</span>
+            <span className="min-w-0 truncate whitespace-nowrap">Global Search (Orders, Products, SKU...)</span>
+            <span className="hidden sm:inline-block shrink-0 ml-2 px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 text-[9px] font-black text-slate-400 uppercase tracking-widest">Ctrl K</span>
           </button>
           <svg
             className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 group-focus-within:text-cyan-400 transition-colors"

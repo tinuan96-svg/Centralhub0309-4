@@ -1,7 +1,37 @@
 /*
- * Cover-display-only hardening.
+ * Fold display hardening.
  *
  * MobileLayout ends at 699px. The unfolded Fold starts at the fold-inner
  * breakpoint (700px) and uses the desktop shell, so no mobile overlay rule
  * should leak into the unfolded layout.
  */
+
+
+/* The unfolded Fold still uses the desktop shell, but it needs a denser
+ * desktop presentation than a full-size monitor. Keep the sidebar and header
+ * inside the viewport while preserving the existing expand/collapse control. */
+@media (min-width: 700px) and (max-width: 1199px) {
+  .centralhub-desktop-shell .centralhub-sidebar[data-collapsed="true"] {
+    flex: 0 0 72px;
+    width: 72px;
+  }
+
+  .centralhub-desktop-shell .centralhub-sidebar[data-collapsed="false"] {
+    flex: 0 0 clamp(220px, 28vw, 280px);
+    width: clamp(220px, 28vw, 280px);
+  }
+
+  .centralhub-desktop-shell > div > header {
+    padding-inline: 0.75rem;
+    gap: 0.75rem;
+  }
+
+  .centralhub-desktop-shell > div > header h2 {
+    max-width: 9rem;
+    font-size: 0.9rem;
+  }
+
+  .centralhub-desktop-shell > div > header .relative.max-w-md {
+    max-width: none;
+  }
+}

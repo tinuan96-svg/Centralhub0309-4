@@ -114,7 +114,7 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
   const active = (href: string) => href.includes('?') ? pathname === href.split('?')[0] : pathname === href || pathname.startsWith(href + '/');
 
   return (
-    <aside className={`${collapsed ? designTokens.layout.sidebarWidthCollapsed : designTokens.layout.sidebarWidth} ${designTokens.colors.background.main} border-r ${designTokens.colors.border.default} h-screen sticky top-0 flex flex-col transition-all duration-300 ease-in-out z-50`}>
+    <aside data-collapsed={collapsed ? 'true' : 'false'} className={`centralhub-sidebar ${collapsed ? designTokens.layout.sidebarWidthCollapsed : designTokens.layout.sidebarWidth} ${designTokens.colors.background.main} border-r ${designTokens.colors.border.default} h-screen sticky top-0 flex flex-col transition-all duration-300 ease-in-out z-50`}>
       <div className="p-4 border-b border-slate-800 flex items-center justify-between gap-2">
         {collapsed ? (
           <Link href="/dashboard" aria-label="CentralHub dashboard" className="font-black text-white text-sm">CH</Link>
