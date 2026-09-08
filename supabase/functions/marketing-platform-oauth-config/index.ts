@@ -29,7 +29,7 @@ Deno.serve(async req=>{
   if(req.method!=='POST')return json({error:'method_not_allowed'},405)
   let requestProviderId='google'
   try{
-    const db=await requireAdmin(req),body=await req.json().catch(()=>({})),action=String(body?.action||'get'),providerId=String(body?.providerId||'google').trim();requestProviderId=providerId
+    const body=await req.json().catch(()=>({}));requestProviderId=String(body?.providerId||'google').trim();const db=await requireAdmin(req),action=String(body?.action||'get'),providerId=requestProviderId
     if(!supported.has(providerId))return json({error:`Managed one-click OAuth is not enabled for ${providerId}`},400)
     const redirectUri=callback(providerId)
     if(action==='get'){
