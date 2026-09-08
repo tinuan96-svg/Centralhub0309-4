@@ -48,6 +48,15 @@ function json(data: Record<string, unknown>, status = 200) {
   });
 }
 
+function isPaidBusinessOrder(order: any, localDate: string) {
+  const orderDate = getLocalParts(new Date(order.created_at)).date;
+  const orderStatus = String(order.order_status || order.status || '').toLowerCase();
+  const paymentStatus = String(order.payment_status || '').toLowerCase();
+  return orderDate === localDate
+    && paymentStatus === 'paid'
+    && !['cancelled', 'refunded', 'failed', 'payment_failed', 'returned'].includes(orderStatus);
+}
+
 export default async function dailyPushSummary() {
   const now = new Date();
   const local = getLocalParts(now);
@@ -96,15 +105,12 @@ export default async function dailyPushSummary() {
     .from('orders')
     .select('*')
     .gte('created_at', queryStart)
+    .eq('payment_status', 'paid')
     .limit(5000);
 
   if (ordersError) return json({ success: false, error: ordersError.message }, 500);
 
-  const todaysOrders = (orders || []).filter((order: any) => {
-    const orderDate = getLocalParts(new Date(order.created_at)).date;
-    const orderStatus = String(order.order_status || order.status || '').toLowerCase();
-    return orderDate === local.date && !['cancelled', 'payment_failed'].includes(orderStatus);
-  });
+  const todaysOrders = (orders || []).filter((order: any) => isPaidBusinessOrder(order, local.date));
 
   const sales = todaysOrders.reduce((sum: number, order: any) =>
     sum + toAmount(order.total ?? order.total_amount ?? order.grand_total), 0);
@@ -120,8 +126,8 @@ export default async function dailyPushSummary() {
 
   const title = 'Today’s CentralHub summary';
   const message = [
-    `${local.date} summary`,
-    `Orders: ${todaysOrders.length}`,
+    `${local.date} paid-order summary`,
+    `Paid orders: ${todaysOrders.length}`,
     `Sales: ${formatMoney(sales)}`,
     `Profit: ${formatMoney(profit)}`,
   ].join(' • ');
@@ -138,8 +144,9 @@ export default async function dailyPushSummary() {
       is_read: false,
       metadata: {
         source: 'centralhub-daily-summary',
+        basis: 'payment_status_paid_only',
         summary_date: local.date,
-        order_count: todaysOrders.length,
+        paid_order_count: todaysOrders.length,
         sales,
         profit,
       },
@@ -181,7 +188,7 @@ export default async function dailyPushSummary() {
   return json({
     success: results.some((result) => result.ok),
     summary_date: local.date,
-    order_count: todaysOrders.length,
+    paid_order_count: todaysOrders.length,
     sales,
     profit,
     sent: results.filter((result) => result.ok).length,
