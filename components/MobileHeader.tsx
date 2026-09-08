@@ -211,6 +211,7 @@ export default function MobileHeader() {
         { href: '/banking', label: 'Banking & Cashflow' },
         { href: '/expenses', label: 'Business Expenses' },
         { href: '/finance/vat', label: 'VAT Control' },
+        { href: '/finance/mollie', label: 'Mollie Audit' },
       ],
     },
     {

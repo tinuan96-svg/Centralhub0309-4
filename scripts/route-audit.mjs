@@ -52,10 +52,12 @@ const continuityCriticalRoutes = [
   '/finance',
   '/banking',
   '/finance/transactions',
+  '/finance/mollie',
   '/finance/payables',
   '/finance/p-and-l',
   '/finance/profitability',
   '/finance/vat',
+  '/finance/mollie',
   '/settings/notifications',
   '/site-health',
 ];
