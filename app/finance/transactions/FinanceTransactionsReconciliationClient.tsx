@@ -85,11 +85,12 @@ const findTransactionMatch = (source: Tx, candidate: Tx) => {
   let best: { score: number; reason: string } | null = null;
   for (const sourceField of transactionFieldValues(source)) {
     for (const candidateField of transactionFieldValues(candidate)) {
-      const score = Math.max(
+      const exact = sourceField.value === candidateField.value;
+      const fuzzyField = sourceField.key !== 'reference' && candidateField.key !== 'reference';
+      const score = exact ? 1 : fuzzyField ? Math.max(
         levenshteinSimilarity(sourceField.value, candidateField.value),
         tokenSimilarity(sourceField.value, candidateField.value),
-      );
-      const exact = sourceField.value === candidateField.value;
+      ) : 0;
       const threshold = exact ? 1 : Math.min(sourceField.value.length, candidateField.value.length) >= 8 ? 0.78 : 0.88;
       if (score < threshold) continue;
       const reason = exact
@@ -262,7 +263,7 @@ export default function FinanceTransactionsReconciliationClient() {
   const uniqueClassifications = categories.filter(c => rows.some(x => (x.transaction_category || 'unknown') === c[0]));
   const pendingSource = pending ? rows.find(x => x.id === pending.sourceId) : null;
   const pendingPreviewMatches = pending?.matches.slice(0, 60) || [];
-  const pendingTargetMatches = pending?.matches.filter(x => needsClassificationUpdate(x, pending.category, pending.accounting)) || [];
+  const pendingTargetMatches = pending ? pending.matches.filter(x => needsClassificationUpdate(x, pending.category, pending.accounting)) : [];
   const pendingTargetCount = pendingTargetMatches.length + (pending ? 1 : 0);
 
   return <main className="p-4 sm:p-6 space-y-5 max-w-[1800px] mx-auto">
