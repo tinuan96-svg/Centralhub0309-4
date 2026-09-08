@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server';
 import { sendWebPush, getWebPushConfigStatus, StoredPushSubscription } from '@/lib/server/webPush';
+import { getFirebaseMessagingConfigStatus, sendFirebasePush } from '@/lib/server/firebaseMessaging';
 import { getServiceClient, getUserFromRequest, jsonError } from '../_utils';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+
+function isInvalidFirebaseToken(result: { status?: number; error?: string }) {
+  return result.status === 404 || /UNREGISTERED|registration-token-not-registered|not a valid FCM registration token/i.test(result.error || '');
+}
 
 export async function POST(req: Request) {
   if (process.env.NEXT_OUTPUT?.trim() === 'export') {
@@ -21,8 +26,7 @@ export async function POST(req: Request) {
   const supabase = getServiceClient();
   const createdAt = new Date().toISOString();
   const title = 'CentralHub phone notifications are working';
-  const message = 'This test reached your installed CentralHub web app on this device.';
-
+  const message = 'This test reached your CentralHub device.';
   const { data: notification, error: notificationError } = await supabase
     .from('system_notifications')
     .insert({
@@ -34,11 +38,11 @@ export async function POST(req: Request) {
       action_url: '/settings/notifications',
       is_read: false,
       metadata: {
-        source: 'centralhub-pwa-push-test',
+        source: 'centralhub-push-test',
         created_at: createdAt,
       },
     })
-    .select('id, title, message, action_url')
+    .select('id, title, message, action_url, severity, category')
     .single();
 
   if (notificationError) return jsonError(notificationError.message, 500);
@@ -51,22 +55,26 @@ export async function POST(req: Request) {
 
   if (subscriptionError) return jsonError(subscriptionError.message, 500);
 
-  if (!subscriptions?.length) {
-    return jsonError('No enabled phone notification subscription found for this user.', 404);
-  }
+  const { data: nativeDevices, error: nativeError } = await supabase
+    .from('native_push_devices')
+    .select('id, token')
+    .eq('user_id', user.id)
+    .eq('is_enabled', true);
 
-  const results = [];
-  for (const subscription of subscriptions as StoredPushSubscription[]) {
+  if (nativeError) return jsonError(nativeError.message, 500);
+
+  const webResults: any[] = [];
+  for (const subscription of (subscriptions || []) as StoredPushSubscription[]) {
     const result = await sendWebPush(subscription, {
       title: notification.title,
       body: notification.message,
       url: notification.action_url || '/settings/notifications',
       notificationId: notification.id,
-      tag: `centralhub-test-${notification.id}`,
+      tag: 'centralhub-test-' + notification.id,
       renotify: true,
     }, { ttl: 300, urgency: 'high' });
 
-    results.push({ id: subscription.id, ...result });
+    webResults.push({ id: subscription.id, ...result });
 
     if (result.status === 404 || result.status === 410) {
       await supabase
@@ -76,14 +84,44 @@ export async function POST(req: Request) {
     }
   }
 
-  const sent = results.filter((result) => result.ok).length;
+  const nativeResults: any[] = [];
+  if (getFirebaseMessagingConfigStatus().configured) {
+    for (const device of nativeDevices || []) {
+      const result = await sendFirebasePush(device.token, {
+        title: notification.title,
+        body: notification.message,
+        url: notification.action_url,
+        notificationId: notification.id,
+        category: notification.category,
+        severity: notification.severity,
+        storeId: null,
+      });
+
+      nativeResults.push({ id: device.id, ...result });
+
+      if (isInvalidFirebaseToken(result)) {
+        await supabase
+          .from('native_push_devices')
+          .update({ is_enabled: false, updated_at: new Date().toISOString() })
+          .eq('id', device.id);
+      }
+    }
+  }
+
+  const sent = webResults.filter((result) => result.ok).length
+    + nativeResults.filter((result) => result.ok).length;
+  const attempted = webResults.length + nativeResults.length;
 
   return NextResponse.json({
     success: sent > 0,
     notification_id: notification.id,
     sent,
-    attempted: results.length,
-    results,
-    error: sent > 0 ? undefined : 'Push provider rejected all registered subscriptions.',
+    attempted,
+    web_sent: webResults.filter((result) => result.ok).length,
+    native_sent: nativeResults.filter((result) => result.ok).length,
+    native_configured: getFirebaseMessagingConfigStatus().configured,
+    web_results: webResults,
+    native_results: nativeResults,
+    error: sent > 0 ? undefined : 'No configured push provider accepted the test.',
   }, { status: sent > 0 ? 200 : 502 });
 }
