@@ -7,6 +7,7 @@ import { Card, Button, Badge } from '@/lib/design-system';
 import { supabase } from '@/lib/supabase';
 import CreateTicketModal from '@/components/CreateTicketModal';
 import SalesOpportunitiesPanel from './SalesOpportunitiesPanel';
+import WhatsAppMessageContent from '@/components/customer-care/WhatsAppMessageContent';
 
 const formatDate = (date: string | null) => {
   if (!date) return '';
