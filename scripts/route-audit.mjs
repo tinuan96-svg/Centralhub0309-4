@@ -7,208 +7,59 @@ const reportPath = path.join(root, 'route-audit-output.txt');
 const sourceDirs = [appDir, path.join(root, 'components'), path.join(root, 'lib')].filter(fs.existsSync);
 const routeFiles = new Set();
 
-// These routes represent the continuity-critical business capabilities that have been
-// implemented and refined across CentralHub. If a future download/merge silently removes
-// one of them, CI must fail before the regression reaches production.
+// These routes represent continuity-critical business capabilities. Legacy routes may remain
+// here even after their UI has moved, so redirects cannot disappear silently.
 const continuityCriticalRoutes = [
-  '/dashboard',
-  '/stores',
-  '/settings/master-data/stores',
-  '/orders',
-  '/sync-status',
-  '/customers',
-  '/inventory',
-  '/inventory/visibility',
-  '/inventory/bulk',
-  '/inventory-audit',
-  '/inventory-management',
-  '/inventory-management/stock',
-  '/inventory-management/adjustments',
-  '/inventory-management/movements',
-  '/inventory-management/reports',
-  '/inventory-management/warehouses',
-  '/inventory-management/barcode',
-  '/inventory-management/packaging',
-  '/inventory-management/expiry',
-  '/inventory-management/sync',
-  '/inventory-management/purchase-orders',
-  '/inventory-management/grn',
-  '/procurement',
-  '/backorder-planning',
-  '/suppliers',
-  '/suppliers/invoices',
-  '/suppliers/pricing',
-  '/suppliers/comparison',
-  '/picking',
-  '/packing',
-  '/shipping',
-  '/shipping/tracking',
-  '/shipping/calculator',
-  '/customer-care/inbox',
-  '/customer-care/conversations',
-  '/customer-care/tickets',
-  '/customer-care/channels',
-  '/customer-care/ai-assistant',
-  '/customer-care/knowledge-base',
-  '/customer-care/templates',
-  '/customer-care/automations',
-  '/marketing',
-  '/marketing/campaigns',
-  '/marketing/promotions',
-  '/marketing/segments',
-  '/marketing/calendar',
-  '/marketing/whatsapp',
-  '/marketing/email',
-  '/marketing/social',
-  '/marketing/product-feeds',
-  '/marketing/tracking',
-  '/marketing/audiences',
-  '/marketing/creative-library',
-  '/marketing/budgets',
-  '/marketing/analytics',
-  '/marketing/apps',
-  '/marketing/apps/releases',
-  '/marketing/customer-journey',
-  '/marketing/alerts',
-  '/marketing/ai',
-  '/marketing/integrations',
-  '/marketing/settings',
-  '/marketing/intelligence',
-  '/analytics',
-  '/business-intelligence/executive',
-  '/business-intelligence/price-opportunities',
-  '/business-intelligence/promotion-simulator',
-  '/business-intelligence/inventory',
-  '/business-intelligence/revenue-margin',
-  '/business-intelligence/customers',
-  '/business-intelligence/ai-usage',
-  '/business-intelligence/automation',
-  '/competitors',
-  '/pricing',
-  '/pricing/approval',
-  '/finance',
-  '/profit-analysis',
-  '/banking',
-  '/finance/ledger',
-  '/finance/transactions',
-  '/finance/mollie',
-  '/finance/payables',
-  '/expenses',
-  '/finance/p-and-l',
-  '/finance/profitability',
-  '/finance/alerts',
-  '/finance/vat',
-  '/settings',
-  '/settings/notifications',
-  '/settings/users',
-  '/site-health',
-  '/inventory-management/reports/audit',
+  '/dashboard','/stores','/settings/master-data/stores','/orders','/sync-status','/customers',
+  '/inventory','/inventory/visibility','/inventory/bulk','/inventory-audit','/inventory-management',
+  '/inventory-management/stock','/inventory-management/adjustments','/inventory-management/movements',
+  '/inventory-management/reports','/inventory-management/warehouses','/inventory-management/barcode',
+  '/inventory-management/packaging','/inventory-management/expiry','/inventory-management/sync',
+  '/inventory-management/purchase-orders','/inventory-management/grn','/procurement','/backorder-planning',
+  '/suppliers','/suppliers/invoices','/suppliers/pricing','/suppliers/comparison','/picking','/packing',
+  '/shipping','/shipping/tracking','/shipping/calculator','/customer-care/inbox','/customer-care/conversations',
+  '/customer-care/tickets','/customer-care/channels','/customer-care/ai-assistant','/customer-care/knowledge-base',
+  '/customer-care/templates','/customer-care/automations','/marketing','/marketing/campaigns','/marketing/promotions',
+  '/marketing/segments','/marketing/calendar','/marketing/whatsapp','/marketing/email','/marketing/social',
+  '/marketing/product-feeds','/marketing/tracking','/marketing/audiences','/marketing/creative-library',
+  '/marketing/budgets','/marketing/analytics','/marketing/apps','/marketing/apps/releases','/marketing/customer-journey',
+  '/marketing/alerts','/marketing/ai','/marketing/integrations','/marketing/settings','/marketing/intelligence',
+  '/analytics','/business-intelligence/executive','/business-intelligence/price-opportunities',
+  '/business-intelligence/promotion-simulator','/business-intelligence/inventory','/business-intelligence/revenue-margin',
+  '/business-intelligence/customers','/business-intelligence/ai-usage','/business-intelligence/automation','/competitors',
+  '/pricing','/pricing/approval','/finance','/profit-analysis','/banking','/finance/ledger','/finance/transactions',
+  '/finance/mollie','/finance/payables','/expenses','/finance/p-and-l','/finance/profitability','/finance/alerts',
+  '/finance/vat','/settings','/settings/notifications','/settings/users','/site-health','/inventory-management/reports/audit',
 ];
 
-// These high-value routes must remain discoverable on both desktop and mobile navigation.
-// Query/hash variants are included here because losing one of those links can silently hide
-// a working pricing or approval view even when the underlying page still exists.
+// These links must remain discoverable in BOTH desktop and mobile/Fold navigation.
+// `/marketing/analytics` is intentionally NOT here: it is now a legacy redirect into the
+// consolidated Analytics Centre. The redirect itself remains continuity-guarded above.
 const navigationParityRoutes = [
-  '/dashboard',
-  '/stores',
-  '/inventory/visibility',
-  '/settings/master-data/stores',
-  '/orders',
-  '/sync-status',
-  '/customers',
-  '/inventory',
-  '/inventory/bulk',
-  '/business-intelligence/executive#approvals',
-  '/settings/master-data/categories',
-  '/settings/master-data/brands',
-  '/inventory-management/sync',
-  '/inventory-management',
-  '/inventory-management/stock',
-  '/inventory-management/adjustments',
-  '/inventory-management/movements',
-  '/inventory-audit',
-  '/inventory-management/reports',
-  '/inventory-management/warehouses',
-  '/inventory-management/barcode',
-  '/inventory-management/packaging',
-  '/inventory-management/expiry',
-  '/procurement',
-  '/backorder-planning',
-  '/inventory-management/purchase-orders',
-  '/suppliers/invoices',
-  '/inventory-management/grn',
-  '/suppliers',
-  '/suppliers/pricing',
-  '/suppliers/comparison',
-  '/picking',
-  '/packing',
-  '/shipping',
-  '/shipping/tracking',
-  '/shipping/calculator',
-  '/customer-care/inbox',
-  '/customer-care/conversations',
-  '/customer-care/tickets',
-  '/customer-care/channels',
-  '/customer-care/ai-assistant',
-  '/customer-care/knowledge-base',
-  '/customer-care/templates',
-  '/customer-care/automations',
-  '/marketing',
-  '/marketing/campaigns',
-  '/marketing/promotions',
-  '/marketing/segments',
-  '/marketing/calendar',
-  '/marketing/whatsapp',
-  '/marketing/email',
-  '/marketing/social',
-  '/marketing/product-feeds',
-  '/marketing/tracking',
-  '/marketing/audiences',
-  '/marketing/creative-library',
-  '/marketing/budgets',
-  '/marketing/analytics',
-  '/marketing/apps',
-  '/marketing/apps/releases',
-  '/marketing/customer-journey',
-  '/marketing/alerts',
-  '/marketing/ai',
-  '/marketing/integrations',
-  '/marketing/settings',
-  '/analytics',
-  '/business-intelligence/executive',
-  '/business-intelligence/price-opportunities',
-  '/business-intelligence/promotion-simulator',
-  '/business-intelligence/inventory',
-  '/business-intelligence/revenue-margin',
-  '/business-intelligence/customers',
-  '/marketing/intelligence',
-  '/business-intelligence/ai-usage',
-  '/business-intelligence/automation',
-  '/competitors',
-  '/pricing',
-  '/pricing/approval',
-  '/pricing?tab=fixing',
-  '/pricing?tab=weekly',
-  '/pricing?tab=competitors',
-  '/pricing?tab=rules',
-  '/pricing?tab=history',
-  '/finance',
-  '/profit-analysis',
-  '/banking',
-  '/finance/ledger',
-  '/finance/transactions',
-  '/finance/mollie',
-  '/finance/payables',
-  '/expenses',
-  '/finance/p-and-l',
-  '/finance/profitability',
-  '/finance/alerts',
-  '/finance/vat',
-  '/settings',
-  '/settings/notifications',
-  '/site-health',
-  '/settings/users',
-  '/inventory-management/reports/audit',
+  '/dashboard','/stores','/inventory/visibility','/settings/master-data/stores','/orders','/sync-status','/customers',
+  '/inventory','/inventory/bulk','/business-intelligence/executive#approvals','/settings/master-data/categories',
+  '/settings/master-data/brands','/inventory-management/sync','/inventory-management','/inventory-management/stock',
+  '/inventory-management/adjustments','/inventory-management/movements','/inventory-audit','/inventory-management/reports',
+  '/inventory-management/warehouses','/inventory-management/barcode','/inventory-management/packaging',
+  '/inventory-management/expiry','/procurement','/backorder-planning','/inventory-management/purchase-orders',
+  '/suppliers/invoices','/inventory-management/grn','/suppliers','/suppliers/pricing','/suppliers/comparison','/picking',
+  '/packing','/shipping','/shipping/tracking','/shipping/calculator','/customer-care/inbox','/customer-care/conversations',
+  '/customer-care/tickets','/customer-care/channels','/customer-care/ai-assistant','/customer-care/knowledge-base',
+  '/customer-care/templates','/customer-care/automations','/marketing','/marketing/campaigns','/marketing/promotions',
+  '/marketing/segments','/marketing/calendar','/marketing/whatsapp','/marketing/email','/marketing/social',
+  '/marketing/product-feeds','/marketing/tracking','/marketing/audiences','/marketing/creative-library','/marketing/budgets',
+  '/marketing/apps','/marketing/apps/releases','/marketing/customer-journey','/marketing/alerts','/marketing/ai',
+  '/marketing/integrations','/marketing/settings',
+  '/analytics','/analytics#growth','/analytics#website-ga4','/analytics#realtime','/analytics#visitors',
+  '/analytics#traffic-attribution','/analytics#geography','/analytics#ecommerce','/analytics#search-console',
+  '/analytics#apps','/analytics#health',
+  '/business-intelligence/executive','/business-intelligence/price-opportunities','/business-intelligence/promotion-simulator',
+  '/business-intelligence/inventory','/business-intelligence/revenue-margin','/business-intelligence/customers',
+  '/marketing/intelligence','/business-intelligence/ai-usage','/business-intelligence/automation','/competitors','/pricing',
+  '/pricing/approval','/pricing?tab=fixing','/pricing?tab=weekly','/pricing?tab=competitors','/pricing?tab=rules',
+  '/pricing?tab=history','/finance','/profit-analysis','/banking','/finance/ledger','/finance/transactions','/finance/mollie',
+  '/finance/payables','/expenses','/finance/p-and-l','/finance/profitability','/finance/alerts','/finance/vat','/settings',
+  '/settings/notifications','/site-health','/settings/users','/inventory-management/reports/audit',
 ];
 
 const navigationParityFiles = [
@@ -216,9 +67,19 @@ const navigationParityFiles = [
   path.join(root, 'components', 'MobileHeader.tsx'),
 ];
 
-const standaloneAnalyticsMarkers = [
-  { file: 'components/ClassifiedSidebar.tsx', markers: ["key: '07-analytics'", "label: 'Analytics'", "href: '/analytics', label: 'Analytics Overview'"] },
-  { file: 'components/MobileHeader.tsx', markers: ["key: '10.5 — analytics'", "label: 'Analytics'", "href: '/analytics', label: 'Analytics Overview'"] },
+const analyticsNavigationMarkers = [
+  { file: 'components/ClassifiedSidebar.tsx', markers: [
+    "key: '07-analytics'", "label: 'Analytics'", "href: '/analytics', label: 'Analytics Overview'",
+    "href: '/analytics#growth'", "href: '/analytics#website-ga4'", "href: '/analytics#realtime'",
+    "href: '/analytics#visitors'", "href: '/analytics#traffic-attribution'", "href: '/analytics#geography'",
+    "href: '/analytics#ecommerce'", "href: '/analytics#search-console'", "href: '/analytics#apps'", "href: '/analytics#health'",
+  ] },
+  { file: 'components/MobileHeader.tsx', markers: [
+    "key: '10.5 — analytics'", "label: 'Analytics'", "href: '/analytics', label: 'Analytics Overview'",
+    "href: '/analytics#growth'", "href: '/analytics#website-ga4'", "href: '/analytics#realtime'",
+    "href: '/analytics#visitors'", "href: '/analytics#traffic-attribution'", "href: '/analytics#geography'",
+    "href: '/analytics#ecommerce'", "href: '/analytics#search-console'", "href: '/analytics#apps'", "href: '/analytics#health'",
+  ] },
 ];
 
 const continuityCriticalFiles = [
@@ -229,21 +90,10 @@ const continuityCriticalFiles = [
 ];
 
 const continuityContentAssertions = [
-  {
-    file: 'app/marketing/apps/releases/page.tsx',
-    required: ['uploadReleaseArtifactResumable', 'PUBLISH', 'upload_pending'],
-    forbidden: ['.from(bucket)\n        .upload(release.artifact_path'],
-  },
-  {
-    file: 'lib/storage/resumableUpload.ts',
-    required: ['/storage/v1/upload/resumable', "'Tus-Resumable'", "method: 'PATCH'", "method: 'HEAD'"],
-    forbidden: [],
-  },
-  {
-    file: 'supabase/functions/app-release-manager/index.ts',
-    required: ['app-release-artifacts', 'requireAdmin', 'providerConfig', "confirmation !== 'PUBLISH'"],
-    forbidden: [],
-  },
+  { file: 'app/marketing/apps/releases/page.tsx', required: ['uploadReleaseArtifactResumable', 'PUBLISH', 'upload_pending'], forbidden: ['.from(bucket)\n        .upload(release.artifact_path'] },
+  { file: 'lib/storage/resumableUpload.ts', required: ['/storage/v1/upload/resumable', "'Tus-Resumable'", "method: 'PATCH'", "method: 'HEAD'"], forbidden: [] },
+  { file: 'supabase/functions/app-release-manager/index.ts', required: ['app-release-artifacts', 'requireAdmin', 'providerConfig', "confirmation !== 'PUBLISH'"], forbidden: [] },
+  { file: 'app/marketing/analytics/page.tsx', required: ["redirect('/analytics#traffic-attribution')"], forbidden: [] },
 ];
 
 function walk(dir, visit) {
@@ -315,8 +165,6 @@ for (const file of navigationParityFiles) {
   }
 }
 
-// Beyond the critical route list, compare every literal href in the two navigation catalogs.
-// This catches the exact regression that previously hid Analytics and other working pages.
 if (navigationParityFiles.every((file) => navigationTexts.has(file))) {
   const hrefPattern = /href:\s*["'`]([^"'`]+)["'`]/g;
   const catalogs = navigationParityFiles.map((file) => {
@@ -327,24 +175,19 @@ if (navigationParityFiles.every((file) => navigationTexts.has(file))) {
     return { file, targets };
   });
   const [desktop, mobile] = catalogs;
-  for (const target of desktop.targets) {
-    if (!mobile.targets.has(target)) navigationParityFailures.push(`${target} exists in desktop navigation but is missing from mobile/Fold navigation`);
-  }
-  for (const target of mobile.targets) {
-    if (!desktop.targets.has(target)) navigationParityFailures.push(`${target} exists in mobile/Fold navigation but is missing from desktop navigation`);
-  }
+  for (const target of desktop.targets) if (!mobile.targets.has(target)) navigationParityFailures.push(`${target} exists in desktop navigation but is missing from mobile/Fold navigation`);
+  for (const target of mobile.targets) if (!desktop.targets.has(target)) navigationParityFailures.push(`${target} exists in mobile/Fold navigation but is missing from desktop navigation`);
 }
 
-for (const assertion of standaloneAnalyticsMarkers) {
+for (const assertion of analyticsNavigationMarkers) {
   const full = path.join(root, assertion.file);
   if (!fs.existsSync(full)) {
     navigationParityFailures.push(`${assertion.file} is missing`);
     continue;
   }
   const text = fs.readFileSync(full, 'utf8');
-  for (const marker of assertion.markers) {
-    if (!text.includes(marker)) navigationParityFailures.push(`Standalone Analytics section marker missing from ${assertion.file}: ${marker}`);
-  }
+  for (const marker of assertion.markers) if (!text.includes(marker)) navigationParityFailures.push(`Analytics Centre marker missing from ${assertion.file}: ${marker}`);
+  if (text.includes("href: '/marketing/analytics'")) navigationParityFailures.push(`Legacy Marketing Analytics link must not be exposed in ${assertion.file}`);
 }
 
 const contentAssertionFailures = [];
@@ -355,12 +198,8 @@ for (const assertion of continuityContentAssertions) {
     continue;
   }
   const text = fs.readFileSync(full, 'utf8');
-  for (const required of assertion.required) {
-    if (!text.includes(required)) contentAssertionFailures.push(`${assertion.file} lost required continuity marker: ${required}`);
-  }
-  for (const forbidden of assertion.forbidden) {
-    if (text.includes(forbidden)) contentAssertionFailures.push(`${assertion.file} contains forbidden regression marker: ${forbidden.replaceAll('\n', ' ')}`);
-  }
+  for (const required of assertion.required) if (!text.includes(required)) contentAssertionFailures.push(`${assertion.file} lost required continuity marker: ${required}`);
+  for (const forbidden of assertion.forbidden) if (text.includes(forbidden)) contentAssertionFailures.push(`${assertion.file} contains forbidden regression marker: ${forbidden.replaceAll('\n', ' ')}`);
 }
 
 const report = [
