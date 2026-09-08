@@ -22,9 +22,20 @@ type Tx = {
   reconciliation_status?: string | null;
   is_reconciled?: boolean | null;
   reconciliation_notes?: string | null;
+  ledger_account_id?: string | null;
 };
 
 type Account = { id: string; bank_name?: string | null; account_name?: string | null; account_number?: string | null };
+type Ledger = {
+  id: string;
+  code: string;
+  name: string;
+  ledger_type?: string | null;
+  pnl_class?: string | null;
+  description?: string | null;
+  is_system?: boolean | null;
+  is_active?: boolean | null;
+};
 
 const categories = [
   ['sales_income', 'Sales income', 'revenue'],
@@ -105,10 +116,24 @@ const findTransactionMatch = (source: Tx, candidate: Tx) => {
 const reconciled = (tx: Tx) => Boolean(tx.is_reconciled) || tx.reconciliation_status === 'reconciled';
 const effectiveCategory = (category: string) => category === 'savings_allocation' ? 'transfer' : category;
 const effectiveAccounting = (category: string, accounting: string) => category === 'savings_allocation' ? 'transfer' : accounting;
+const ledgerTransactionCategory = (ledger: Ledger) => {
+  if (ledger.ledger_type === 'internal') return 'transfer';
+  if (ledger.ledger_type === 'income') return ledger.pnl_class === 'revenue' ? 'sales_income' : 'other_income';
+  if (ledger.pnl_class === 'cogs') return 'supplier_payment';
+  if (ledger.pnl_class === 'finance_cost') return 'financing';
+  if (ledger.pnl_class === 'tax') return 'tax';
+  if (ledger.ledger_type === 'expense') return 'operating_expense';
+  if (ledger.ledger_type === 'liability') return 'financing';
+  return 'other_expense';
+};
+const ledgerAccountingCategory = (ledger: Ledger) => ledger.pnl_class && ledger.pnl_class !== 'none'
+  ? ledger.pnl_class
+  : ledger.ledger_type || 'other';
 export default function FinanceTransactionsReconciliationClient() {
   const searchParams = useSearchParams();
   const [rows, setRows] = useState<Tx[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [bulkSaving, setBulkSaving] = useState(false);
@@ -126,7 +151,7 @@ export default function FinanceTransactionsReconciliationClient() {
   const [maxAmount, setMaxAmount] = useState('');
   const [sortBy, setSortBy] = useState<'date' | 'amount' | 'name' | 'balance'>('date');
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
-  const [pending, setPending] = useState<{ sourceId: string; category: string; accounting: string; matches: MatchedTransaction[] } | null>(null);
+  const [pending, setPending] = useState<{ sourceId: string; category: string; accounting: string; ledgerId: string | null; matches: MatchedTransaction[] } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -146,13 +171,16 @@ export default function FinanceTransactionsReconciliationClient() {
       }
       return { data: all, error: null };
     };
-    const [txResult, accountResult] = await Promise.all([
+    const [txResult, accountResult, ledgerResult] = await Promise.all([
       fetchAllTransactions(),
       supabase.from('store_bank_accounts').select('id,bank_name,account_name,account_number').order('bank_name', { ascending: true }),
+      supabase.from('finance_ledger_accounts').select('id,code,name,ledger_type,pnl_class,description,is_system,is_active').eq('is_active', true).order('code', { ascending: true }),
     ]);
     if (txResult.error) setError(txResult.error.message);
     setRows(txResult.data || []);
     setAccounts((accountResult.data || []) as Account[]);
+    if (ledgerResult.error) setError(ledgerResult.error.message);
+    setLedgers((ledgerResult.data || []) as Ledger[]);
     setSelected(new Set());
     setPending(null);
     setLoading(false);
@@ -228,15 +256,35 @@ export default function FinanceTransactionsReconciliationClient() {
 
   const reconcileOne = async (tx: Tx) => { setSaving(tx.id); await reconcileIds([tx.id]); setSaving(null); };
 
-  const prepareClassification = (tx: Tx, category: string, acct: string) => {
-    if (category === 'unknown') return;
+  const assignLedgerIds = async (ids: string[], ledgerId: string) => {
+    const uniqueIds = Array.from(new Set(ids));
+    if (!uniqueIds.length) return true;
+    const results = await Promise.all(uniqueIds.map(id => supabase.rpc('assign_bank_transaction_ledger', {
+      p_transaction_id: id,
+      p_ledger_account_id: ledgerId,
+      p_notes: 'Assigned from Bank Reconciliation centre',
+    })));
+    const failed = results.find(r => r.error)?.error;
+    if (failed) { setError(failed.message); return false; }
+    const ledger = ledgers.find(x => x.id === ledgerId);
+    const idSet = new Set(uniqueIds);
+    setRows(prev => prev.map(x => idSet.has(x.id) ? {
+      ...x,
+      ledger_account_id: ledgerId,
+      accounting_category: ledger ? ledgerAccountingCategory(ledger) : x.accounting_category,
+    } : x));
+    return true;
+  };
+
+  const prepareClassification = (tx: Tx, category: string, acct: string, ledgerId: string | null = null) => {
+    if (category === 'unknown' && !ledgerId) return;
     const matches = rows
       .filter(x => x.id !== tx.id && !reconciled(x))
       .map(candidate => ({ candidate, match: findTransactionMatch(tx, candidate) }))
       .filter((entry): entry is { candidate: Tx; match: { score: number; reason: string } } => Boolean(entry.match))
       .map(({ candidate, match }) => ({ ...candidate, matchScore: match.score, matchReason: match.reason }))
       .sort((a, b) => b.matchScore - a.matchScore || b.transaction_date.localeCompare(a.transaction_date));
-    setPending({ sourceId: tx.id, category, accounting: acct, matches });
+    setPending({ sourceId: tx.id, category, accounting: acct, ledgerId, matches });
   };
 
   const classifyIds = async (ids: string[], category: string, acct: string) => {
@@ -261,22 +309,31 @@ export default function FinanceTransactionsReconciliationClient() {
   };
 
 
-  const classifyAndReconcileIds = async (ids: string[], category: string, acct: string) => {
+  const classifyAndReconcileIds = async (ids: string[], category: string, acct: string, ledgerId: string | null = null) => {
     const uniqueIds = Array.from(new Set(ids));
     if (!uniqueIds.length) return true;
     setBulkSaving(true); setError(null);
-    const { error: rpcError } = await supabase.rpc('classify_and_reconcile_financial_transactions', {
-      p_transaction_ids: uniqueIds,
-      p_transaction_category: category,
-      p_accounting_category: acct,
-      p_notes: 'Reconciled from Bank Reconciliation centre',
-    });
+    const { error: rpcError } = ledgerId
+      ? await supabase.rpc('classify_assign_and_reconcile_financial_transactions', {
+        p_transaction_ids: uniqueIds,
+        p_transaction_category: category,
+        p_accounting_category: acct,
+        p_ledger_account_id: ledgerId,
+        p_notes: 'Reconciled from Bank Reconciliation centre',
+      })
+      : await supabase.rpc('classify_and_reconcile_financial_transactions', {
+        p_transaction_ids: uniqueIds,
+        p_transaction_category: category,
+        p_accounting_category: acct,
+        p_notes: 'Reconciled from Bank Reconciliation centre',
+      });
     if (rpcError) { setError(rpcError.message); setBulkSaving(false); return false; }
     const idSet = new Set(uniqueIds);
     setRows(prev => prev.map(x => idSet.has(x.id) ? {
       ...x,
       transaction_category: effectiveCategory(category),
       accounting_category: effectiveAccounting(category, acct),
+      ledger_account_id: ledgerId || x.ledger_account_id,
       classification_status: category === 'unknown' ? 'needs_review' : 'classified',
       is_reconciled: true,
       reconciliation_status: 'reconciled',
@@ -289,13 +346,14 @@ export default function FinanceTransactionsReconciliationClient() {
   const applyPending = async () => {
     if (!pending) return;
     const matchingIds = pending.matches.map(tx => tx.id);
-    const ok = await classifyAndReconcileIds([pending.sourceId, ...matchingIds], pending.category, pending.accounting);
+    const ok = await classifyAndReconcileIds([pending.sourceId, ...matchingIds], pending.category, pending.accounting, pending.ledgerId);
     if (ok) setPending(null);
   };
 
   const uniqueAccounting = useMemo(() => Array.from(new Set(rows.map(x => x.accounting_category).filter(Boolean))).sort(), [rows]);
   const uniqueClassifications = categories.filter(c => rows.some(x => (x.transaction_category || 'unknown') === c[0]));
   const pendingSource = pending ? rows.find(x => x.id === pending.sourceId) : null;
+  const pendingLedger = pending?.ledgerId ? ledgers.find(x => x.id === pending.ledgerId) : null;
   const pendingPreviewMatches = pending?.matches.slice(0, 60) || [];
   const pendingMatchedTransactions = pending?.matches || [];
   const pendingTargetCount = pendingMatchedTransactions.length + (pending ? 1 : 0);
@@ -346,7 +404,15 @@ export default function FinanceTransactionsReconciliationClient() {
           <p className="text-xs text-slate-400">Matches use similar names plus matching descriptions, merchants or references. Existing heads are shown for review. Apply & reconcile updates the selected head and reconciles every matched unreconciled row; Selected only changes only the head.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button disabled={bulkSaving} onClick={async () => { const ok = await classifyIds([pending.sourceId], pending.category, pending.accounting); if (ok) setPending(null); }} className="btn-secondary">Selected only</button>
+          <button disabled={bulkSaving} onClick={async () => {
+            const ok = await classifyIds([pending.sourceId], pending.category, pending.accounting);
+            if (!ok) return;
+            if (pending.ledgerId) {
+              const assigned = await assignLedgerIds([pending.sourceId], pending.ledgerId);
+              if (!assigned) return;
+            }
+            setPending(null);
+          }} className="btn-secondary">Selected only</button>
           <button disabled={bulkSaving || pendingMatchedTransactions.length === 0} onClick={applyPending} className="btn-primary">{bulkSaving ? 'Applying…' : `Apply & reconcile ${pendingTargetCount} transactions`}</button>
           <button disabled={bulkSaving} onClick={() => setPending(null)} className="btn-secondary">Cancel</button>
         </div>
@@ -354,7 +420,7 @@ export default function FinanceTransactionsReconciliationClient() {
       <div className="max-h-64 overflow-auto grid gap-1">
         {pendingSource && <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-cyan-500/10 border border-cyan-400/30 rounded-lg px-3 py-2 text-xs">
           <div><span className="text-white font-bold">{pendingSource.description || pendingSource.merchant || 'Selected transaction'}</span><span className="text-cyan-300 ml-2">Selected head</span></div>
-          <span className="text-cyan-200">{categories.find(c => c[0] === effectiveCategory(pending.category))?.[1] || categories.find(c => c[0] === pending.category)?.[1]}</span>
+          <span className="text-cyan-200">{pendingLedger ? `${pendingLedger.code} · ${pendingLedger.name}` : categories.find(c => c[0] === effectiveCategory(pending.category))?.[1] || categories.find(c => c[0] === pending.category)?.[1]}</span>
         </div>}
         {pendingPreviewMatches.map(tx => <div key={tx.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-slate-950/60 rounded-lg px-3 py-2 text-xs">
           <div className="min-w-0"><span className="text-white font-bold">{tx.description || tx.merchant || 'Transaction'}</span><span className="text-slate-500 ml-2">{tx.matchReason}</span><span className="block text-[10px] text-slate-500">{tx.merchant || tx.reference || 'No merchant/reference'}</span></div>
@@ -366,7 +432,24 @@ export default function FinanceTransactionsReconciliationClient() {
 
     <section className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden">
       <div className="flex flex-wrap items-center gap-2 p-3 border-b border-slate-800 bg-slate-950/40"><button onClick={toggleVisible} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-[9px] font-black uppercase tracking-widest text-white">{allVisibleSelected ? 'Clear visible' : 'Select visible'}</button><span className="text-xs text-slate-400">{selected.size} selected</span>{selectedVisible.length > 0 && <><button disabled={bulkSaving} onClick={() => { if (confirm(`Reconcile ${selectedVisible.length} selected transaction(s)?`)) reconcileIds(selectedVisible.map(x => x.id)); }} className="px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 text-[9px] font-black uppercase tracking-widest">{bulkSaving ? 'Working…' : `Reconcile selected (${selectedVisible.length})`}</button><button onClick={() => setSelected(new Set())} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-[9px] font-black uppercase tracking-widest text-slate-300">Clear selection</button></>}{filteredUnreconciled.length > 0 && reconFilter === 'unreconciled' && <button disabled={bulkSaving} onClick={() => { if (confirm(`Reconcile all ${filteredUnreconciled.length} currently filtered unreconciled transactions?`)) reconcileIds(filteredUnreconciled.map(x => x.id)); }} className="ml-auto px-4 py-2 rounded-xl bg-cyan-500 text-slate-950 text-[9px] font-black uppercase tracking-widest">Reconcile all filtered ({filteredUnreconciled.length})</button>}</div>
-      <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-slate-800/60 text-[9px] uppercase tracking-widest text-slate-500"><tr><th className="p-3 w-10"><input type="checkbox" checked={allVisibleSelected} onChange={toggleVisible} /></th><th className="p-3 text-left">Date</th><th className="p-3 text-left">Bank / transaction</th><th className="p-3 text-right">Amount</th><th className="p-3 text-left">Classification</th><th className="p-3 text-left">Ledger / accounting</th><th className="p-3 text-center">Reconciliation</th><th className="p-3 text-right">Action</th></tr></thead><tbody className="divide-y divide-slate-800">{filtered.map(tx => <tr key={tx.id} className={selected.has(tx.id) ? 'bg-cyan-500/5' : ''}><td className="p-3"><input type="checkbox" disabled={reconciled(tx)} checked={selected.has(tx.id)} onChange={() => toggle(tx.id)} /></td><td className="p-3 text-slate-400 whitespace-nowrap">{new Date(tx.transaction_date).toLocaleDateString('en-GB')}</td><td className="p-3"><p className="font-bold text-white">{tx.description || tx.merchant || 'Transaction'}</p><p className="text-[10px] text-slate-500">{accountName(tx.bank_account_id)}{tx.reference ? ` · Ref ${tx.reference}` : ''}</p></td><td className={`p-3 text-right font-black ${tx.type === 'credit' ? 'text-emerald-300' : 'text-rose-300'}`}>{tx.type === 'credit' ? '+' : '-'}{formatCurrency(Math.abs(Number(tx.amount || 0)))}</td><td className="p-3"><select disabled={reconciled(tx) || bulkSaving} value={tx.transaction_category || 'unknown'} onChange={e => { const c = categories.find(x => x[0] === e.target.value) || categories[categories.length - 1]; prepareClassification(tx, c[0], c[2]); }} className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-2 text-xs text-white">{categories.map(c => <option key={c[0]} value={c[0]}>{c[1]}</option>)}</select></td><td className="p-3 text-xs text-slate-400">{tx.accounting_category || 'Unassigned'}</td><td className="p-3 text-center"><span className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase ${reconciled(tx) ? 'bg-emerald-500/10 text-emerald-300' : 'bg-amber-500/10 text-amber-300'}`}>{reconciled(tx) ? 'RECONCILED' : 'OUTSTANDING'}</span></td><td className="p-3 text-right">{reconciled(tx) ? <span className="text-[9px] uppercase tracking-widest text-emerald-300 font-black">Complete</span> : <button disabled={saving === tx.id || bulkSaving} onClick={() => reconcileOne(tx)} className="px-3 py-2 rounded-lg bg-emerald-500 text-slate-950 text-[9px] font-black uppercase tracking-widest">{saving === tx.id ? 'Reconciling…' : 'Reconcile'}</button>}</td></tr>)}</tbody></table>{loading && <div className="p-12 text-center text-slate-500">Loading bank movements…</div>}{!loading && !filtered.length && <div className="p-12 text-center text-emerald-300 font-bold">No transactions match these filters.</div>}</div>
+      <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-slate-800/60 text-[9px] uppercase tracking-widest text-slate-500"><tr><th className="p-3 w-10"><input type="checkbox" checked={allVisibleSelected} onChange={toggleVisible} /></th><th className="p-3 text-left">Date</th><th className="p-3 text-left">Bank / transaction</th><th className="p-3 text-right">Amount</th><th className="p-3 text-left">Classification</th><th className="p-3 text-left">Ledger head / accounting</th><th className="p-3 text-center">Reconciliation</th><th className="p-3 text-right">Action</th></tr></thead><tbody className="divide-y divide-slate-800">{filtered.map(tx => <tr key={tx.id} className={selected.has(tx.id) ? 'bg-cyan-500/5' : ''}><td className="p-3"><input type="checkbox" disabled={reconciled(tx)} checked={selected.has(tx.id)} onChange={() => toggle(tx.id)} /></td><td className="p-3 text-slate-400 whitespace-nowrap">{new Date(tx.transaction_date).toLocaleDateString('en-GB')}</td><td className="p-3"><p className="font-bold text-white">{tx.description || tx.merchant || 'Transaction'}</p><p className="text-[10px] text-slate-500">{accountName(tx.bank_account_id)}{tx.reference ? ` · Ref ${tx.reference}` : ''}</p></td><td className={`p-3 text-right font-black ${tx.type === 'credit' ? 'text-emerald-300' : 'text-rose-300'}`}>{tx.type === 'credit' ? '+' : '-'}{formatCurrency(Math.abs(Number(tx.amount || 0)))}</td><td className="p-3"><select disabled={reconciled(tx) || bulkSaving} value={tx.ledger_account_id && ledgers.some(x => x.id === tx.ledger_account_id) ? 'ledger:' + tx.ledger_account_id : (tx.transaction_category || 'unknown')} onChange={e => {
+          const value = e.target.value;
+          if (value.startsWith('ledger:')) {
+            const ledger = ledgers.find(x => x.id === value.slice(7));
+            if (ledger) prepareClassification(tx, ledgerTransactionCategory(ledger), ledgerAccountingCategory(ledger), ledger.id);
+            return;
+          }
+          const c = categories.find(x => x[0] === value) || categories[categories.length - 1];
+          prepareClassification(tx, c[0], c[2], null);
+        }} className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-2 text-xs text-white min-w-[220px]">
+        <optgroup label="Classification">{categories.map(c => <option key={c[0]} value={c[0]}>{c[1]}</option>)}</optgroup>
+        <optgroup label="Chart of Accounts / ledger heads">{ledgers.map(ledger => <option key={ledger.id} value={'ledger:' + ledger.id}>{ledger.code} · {ledger.name}</option>)}</optgroup>
+      </select></td><td className="p-3 text-xs">{(() => {
+        const ledger = tx.ledger_account_id ? ledgers.find(x => x.id === tx.ledger_account_id) : null;
+        return ledger
+          ? <><span className="text-white">{ledger.code} · {ledger.name}</span><span className="block text-[10px] text-slate-500">{ledgerAccountingCategory(ledger)}</span></>
+          : <span className="text-slate-400">{tx.accounting_category || 'Unassigned'}</span>;
+      })()}</td><td className="p-3 text-center"><span className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase ${reconciled(tx) ? 'bg-emerald-500/10 text-emerald-300' : 'bg-amber-500/10 text-amber-300'}`}>{reconciled(tx) ? 'RECONCILED' : 'OUTSTANDING'}</span></td><td className="p-3 text-right">{reconciled(tx) ? <span className="text-[9px] uppercase tracking-widest text-emerald-300 font-black">Complete</span> : <button disabled={saving === tx.id || bulkSaving} onClick={() => reconcileOne(tx)} className="px-3 py-2 rounded-lg bg-emerald-500 text-slate-950 text-[9px] font-black uppercase tracking-widest">{saving === tx.id ? 'Reconciling…' : 'Reconcile'}</button>}</td></tr>)}</tbody></table>{loading && <div className="p-12 text-center text-slate-500">Loading bank movements…</div>}{!loading && !filtered.length && <div className="p-12 text-center text-emerald-300 font-bold">No transactions match these filters.</div>}</div>
     </section>
     <style jsx>{`.filter{background:#020617;border:1px solid #334155;border-radius:.75rem;padding:.65rem .75rem;color:white;font-size:.75rem;min-width:0;width:100%}.btn-primary{background:#06b6d4;color:#020617;border-radius:.75rem;padding:.6rem 1rem;font-size:.65rem;font-weight:900;text-transform:uppercase;letter-spacing:.08em}.btn-secondary{background:#1e293b;border:1px solid #334155;color:white;border-radius:.75rem;padding:.6rem 1rem;font-size:.65rem;font-weight:900;text-transform:uppercase;letter-spacing:.08em}`}</style>
   </main>;
