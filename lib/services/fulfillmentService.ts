@@ -96,18 +96,20 @@ export class FulfillmentService {
             shipping_cost
           )
         `)
+        .eq('payment_status', 'paid')
+        .eq('is_deleted', false)
         .order('created_at', { ascending: false });
 
       if (status) {
         if (Array.isArray(status)) {
           query = query.in('fulfillment_status', status);
-          console.log('Querying orders with fulfillment_status IN:', status);
+          console.log('Querying paid orders with fulfillment_status IN:', status);
         } else {
           query = query.eq('fulfillment_status', status);
-          console.log('Querying orders with fulfillment_status:', status);
+          console.log('Querying paid orders with fulfillment_status:', status);
         }
       } else {
-        console.log('Querying all orders (no status filter)');
+        console.log('Querying all paid orders (no fulfillment status filter)');
       }
 
       const { data, error } = await query.limit(500);
@@ -117,7 +119,7 @@ export class FulfillmentService {
         throw error;
       }
 
-      console.log(`Found ${data?.length || 0} orders`);
+      console.log(`Found ${data?.length || 0} paid orders`);
 
       return (data || []).map(order => {
         const total_weight_kg = (order.order_items || []).reduce((sum: number, item: any) => {
@@ -205,7 +207,8 @@ export class FulfillmentService {
 
   static async getOrdersReadyForShipping(): Promise<FulfillmentOrder[]> {
     try {
-      // Use select('*') to be resilient to missing columns
+      // Shipping and shipment history is an operational/financial surface: only payment-received orders belong here.
+      // Include delivered/completed rows so the page can provide a real Delivered filter/history instead of losing them upstream.
       let query = supabase
         .from('orders')
         .select(`
@@ -217,18 +220,16 @@ export class FulfillmentService {
             *
           )
         `)
+        .eq('payment_status', 'paid')
+        .eq('is_deleted', false)
         .order('created_at', { ascending: false });
 
-      // We want orders that are in an active fulfillment lifecycle
-      // but NOT those that are finished (completed/delivered/cancelled)
-      const activeStatuses = '("packed","ready_to_ship","shipment_booked","collected","shipped","at_local_depot","out_for_delivery","delivery_attempted","delivery_rescheduled")';
-      query = query.or(`order_status.in.${activeStatuses},fulfillment_status.in.${activeStatuses}`);
+      const shippingStatuses = '("packed","ready_to_ship","shipment_booked","collected","shipped","at_local_depot","out_for_delivery","delivery_attempted","delivery_rescheduled","delivered","completed")';
+      query = query.or(`order_status.in.${shippingStatuses},fulfillment_status.in.${shippingStatuses}`);
 
-      const { data, error } = await query.limit(500);
+      const { data, error } = await query.limit(1000);
       if (error) throw error;
 
-      // Filter out terminal states in JS for maximum reliability
-      // This "clears" the section of anything that is already delivered or completed
       return (data || [])
         .map(order => {
           const total_weight_kg = (order as any).total_weight_kg || 0.5;
@@ -240,15 +241,11 @@ export class FulfillmentService {
           };
         })
         .filter(order => {
-          // Terminal statuses for the order itself
-          const isOrderTerminal = ['completed', 'delivered', 'cancelled', 'refunded'].includes(order.order_status?.toLowerCase());
-
-          // Terminal statuses for the associated shipment
+          const orderStatus = order.order_status?.toLowerCase();
           const shipmentStatus = order.shipment?.status?.toLowerCase();
-          const isShipmentTerminal = ['delivered', 'cancelled', 'returned'].includes(shipmentStatus);
-
-          // Only keep orders that are NOT terminal in both respects
-          return !isOrderTerminal && !isShipmentTerminal;
+          const excludedOrder = ['cancelled', 'refunded'].includes(orderStatus);
+          const excludedShipment = ['cancelled', 'returned'].includes(shipmentStatus);
+          return !excludedOrder && !excludedShipment;
         });
     } catch (e) {
       console.error('Error in getOrdersReadyForShipping:', e);
@@ -274,31 +271,29 @@ export class FulfillmentService {
     avg_packing_time: string;
   }> {
     try {
-      // 1. Fetch all orders (broader select to avoid 400 on missing columns)
+      // Fulfilment KPIs must represent payment-received business only.
       let query = supabase
         .from('orders')
-        .select('*');
+        .select('*')
+        .eq('payment_status', 'paid')
+        .eq('is_deleted', false);
 
       if (storeId && storeId !== 'all') {
         query = query.eq('store_id', storeId);
       }
 
-      const { data: allOrders, error: ordersError } = await query.limit(2000);
+      const { data: allOrders, error: ordersError } = await query.limit(5000);
 
       if (ordersError) throw ordersError;
 
-      // 2. Fetch failed shipments
       let shipmentQuery = supabase
         .from('shipments')
         .select('status, order_id')
         .eq('status', 'failed');
 
       const { data: failedShipments } = await shipmentQuery;
-
-      // Filter failed shipments by store if storeId provided
-      const filteredFailedCount = storeId && storeId !== 'all' && allOrders
-        ? (failedShipments || []).filter(s => allOrders.some(o => o.id === s.order_id)).length
-        : failedShipments?.length || 0;
+      const paidOrderIds = new Set((allOrders || []).map(o => o.id));
+      const filteredFailedCount = (failedShipments || []).filter(s => paidOrderIds.has(s.order_id)).length;
 
       const stats = {
         pending_payment: 0,
@@ -318,7 +313,6 @@ export class FulfillmentService {
       let pickingCount = 0;
 
       (allOrders || []).forEach(order => {
-        // Use order_status OR fulfillment_status OR warehouse_status (resiliency)
         const statusVal = (order.order_status || order.fulfillment_status || order.warehouse_status || '').toLowerCase();
 
         if (['completed', 'delivered'].includes(statusVal)) {
@@ -332,11 +326,8 @@ export class FulfillmentService {
         } else if (['picking'].includes(statusVal)) {
           stats.picking++;
         } else if (['confirmed', 'paid'].includes(statusVal)) {
-          // If status is paid/confirmed but not in picking, it belongs in 'confirmed'
           if (statusVal === 'paid' && order.order_status === 'pending_payment') stats.paid++;
           else stats.confirmed++;
-        } else if (['pending_payment', 'pending'].includes(statusVal)) {
-          stats.pending_payment++;
         }
 
         const duration = order.picking_duration;
