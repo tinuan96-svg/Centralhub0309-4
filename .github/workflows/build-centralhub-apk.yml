@@ -39,14 +39,8 @@ jobs:
       - name: Install JavaScript dependencies
         run: npm ci
 
-      - name: Build static web bundle for Capacitor
-        env:
-          NEXT_OUTPUT: export
-          NEXT_PUBLIC_SUPABASE_URL: https://icnvrpnzjjcbvgcqgiua.supabase.co
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-        run: |
-          npm run build
-          npx cap sync android
+      - name: Sync Capacitor Android project
+        run: npx cap sync android
 
       - name: Assemble debug APK
         working-directory: android
