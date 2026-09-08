@@ -69,6 +69,25 @@ async function invokeWhatsAppMedia(messageId: string) {
   return payload;
 }
 
+type DeliveryStatus = WhatsAppMessage['status'];
+
+function canApplyDeliveryStatus(current: DeliveryStatus, incoming: DeliveryStatus) {
+  if (!incoming || current === incoming) return true;
+  if (current === 'read') return false;
+  if (current === 'delivered') return incoming === 'read';
+  if (current === 'failed') return incoming === 'delivered' || incoming === 'read';
+  if (current === 'sent') return incoming === 'delivered' || incoming === 'read' || incoming === 'failed';
+  return true;
+}
+
+function effectiveDeliveryStatus(log: any): DeliveryStatus | null {
+  if (log?.read_at || log?.status === 'read') return 'read';
+  if (log?.delivered_at || log?.status === 'delivered') return 'delivered';
+  if (log?.failed_at || log?.status === 'failed') return 'failed';
+  if (log?.status === 'sent') return 'sent';
+  return null;
+}
+
 export const whatsappService = {
   async getConversations(storeId?: string) {
     let query = supabase.from('whatsapp_conversations').select('*, contact:whatsapp_contacts(*)').order('last_message_at', { ascending: false });
@@ -81,7 +100,46 @@ export const whatsappService = {
   async getMessages(conversationId: string) {
     const { data, error } = await supabase.from('whatsapp_messages').select('*').eq('conversation_id', conversationId).order('created_at', { ascending: true });
     if (error) throw error;
-    return data as WhatsAppMessage[];
+
+    const messages = (data || []) as WhatsAppMessage[];
+    const outboundIds = messages
+      .filter(message => message.direction === 'outbound' && message.wa_message_id)
+      .map(message => message.wa_message_id as string);
+
+    if (!outboundIds.length) return messages;
+
+    // The Meta status callback can beat the message-row insert. Read the
+    // delivery log as a fallback so the inbox always reflects the strongest
+    // known WhatsApp state.
+    const { data: deliveryLogs, error: deliveryLogError } = await supabase
+      .from('whatsapp_outbound_log')
+      .select('wa_message_id, status, delivered_at, read_at, failed_at, error_code, error_message')
+      .in('wa_message_id', outboundIds);
+
+    if (deliveryLogError) {
+      console.warn('[WhatsAppService] Delivery log lookup failed:', deliveryLogError.message);
+      return messages;
+    }
+
+    const logByMessageId = new Map((deliveryLogs || []).map(log => [log.wa_message_id, log]));
+    return messages.map(message => {
+      if (!message.wa_message_id) return message;
+      const log = logByMessageId.get(message.wa_message_id);
+      if (!log) return message;
+      const deliveryStatus = effectiveDeliveryStatus(log);
+      const status = deliveryStatus && canApplyDeliveryStatus(message.status, deliveryStatus)
+        ? deliveryStatus
+        : message.status;
+      return {
+        ...message,
+        status,
+        delivered_at: log.delivered_at ?? message.delivered_at ?? null,
+        read_at: log.read_at ?? message.read_at ?? null,
+        failed_at: log.failed_at ?? message.failed_at ?? null,
+        delivery_error_code: log.error_code ?? message.delivery_error_code ?? null,
+        delivery_error_message: log.error_message ?? message.delivery_error_message ?? null,
+      };
+    });
   },
 
   async getMediaUrl(messageId: string) {
