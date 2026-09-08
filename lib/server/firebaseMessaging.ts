@@ -99,6 +99,12 @@ function dataValue(value: unknown) {
   return value === null || value === undefined ? undefined : String(value);
 }
 
+function channelFor(category?: string | null) {
+  if (category === 'customer_message') return 'centralhub_customer_messages';
+  if (category === 'order_received' || category === 'order_confirmed') return 'centralhub_orders';
+  return 'centralhub_alerts';
+}
+
 export async function sendFirebasePush(token: string, payload: FirebaseSendPayload) {
   const account = readServiceAccount();
   if (!account) {
@@ -123,6 +129,7 @@ export async function sendFirebasePush(token: string, payload: FirebaseSendPaylo
         .filter(([, value]) => value !== undefined),
     );
 
+    const notificationChannelId = channelFor(payload.category);
     const response = await fetch(
       'https://fcm.googleapis.com/v1/projects/' + encodeURIComponent(account.project_id) + '/messages:send',
       {
@@ -134,9 +141,22 @@ export async function sendFirebasePush(token: string, payload: FirebaseSendPaylo
         body: JSON.stringify({
           message: {
             token,
+            notification: {
+              title: payload.title,
+              body: payload.body,
+            },
             data,
             android: {
               priority: 'HIGH',
+              notification: {
+                channel_id: notificationChannelId,
+                priority: 'PRIORITY_HIGH',
+                default_sound: true,
+                default_vibrate_timings: true,
+                visibility: 'PUBLIC',
+                notification_count: 1,
+                click_action: 'OPEN_CENTRALHUB',
+              },
             },
           },
         }),
