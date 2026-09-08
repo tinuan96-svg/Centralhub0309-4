@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import SecurityPulse from '@/app/dashboard/components/SecurityPulse';
 
 type Store = { id: string; name: string; slug: string; domain: string | null };
 type Config = {
@@ -105,6 +106,15 @@ export default function SiteHealthPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const refreshSoon = () => { if (timer) clearTimeout(timer); timer = setTimeout(() => void load(), 350); };
+    let channel = supabase.channel(`site-health-live-${Math.random().toString(36).slice(2)}`);
+    for (const table of ['site_health_store_configs', 'site_health_issues', 'site_health_runs', 'site_health_fix_attempts', 'security_heartbeats', 'security_events']) channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, refreshSoon);
+    channel.subscribe();
+    const fallback = window.setInterval(() => void load(), 60000);
+    return () => { if (timer) clearTimeout(timer); window.clearInterval(fallback); void supabase.removeChannel(channel); };
+  }, [load]);
 
   const views = useMemo<StoreView[]>(() => stores.map((store) => ({
     store,
@@ -137,13 +147,15 @@ export default function SiteHealthPage() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="text-[10px] font-black uppercase tracking-[.22em] text-cyan-400">CentralHub Automation</div>
-            <h1 className="mt-2 text-2xl md:text-3xl font-black text-white">Auto Site Health</h1>
-            <p className="mt-2 max-w-3xl text-sm text-slate-400">SiteGuru and Search Console findings are isolated by store, risk-classified, repaired through constrained AI, validated in GitHub, then deployed only after the production build passes.</p>
+            <h1 className="mt-2 text-2xl md:text-3xl font-black text-white">Security & Site Health</h1>
+            <p className="mt-2 max-w-3xl text-sm text-slate-400">Live availability, TLS and browser-security telemetry is combined with store-isolated SiteGuru and Search Console findings. Risky repairs remain constrained, validated in GitHub and deployed only after the production build passes.</p>
           </div>
           <button onClick={load} className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700">Refresh</button>
         </div>
         {error && <div className="mt-4 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</div>}
       </section>
+
+      <SecurityPulse />
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {[

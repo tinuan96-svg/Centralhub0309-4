@@ -39,6 +39,10 @@ const requiredFiles = [
   'app/settings/master-data/stores/page.tsx',
   'app/settings/notifications/page.tsx',
   'app/site-health/page.tsx',
+  'app/dashboard/components/SecurityPulse.tsx',
+  'lib/hooks/useDashboardRealtime.ts',
+  'supabase/functions/security-monitor/index.ts',
+  'supabase/migrations/20260908134000_add_live_security_operations.sql',
   'components/AuthProvider.tsx',
   'components/MarketingConnectionModal.tsx',
   'components/MobileLayout.tsx',
@@ -77,6 +81,10 @@ const requiredFiles = [
 ];
 
 const assertions = [
+  { label: 'Security pulse remains backed by protected realtime telemetry', file: 'app/dashboard/components/SecurityPulse.tsx', all: ["from('security_heartbeats')", "from('security_events')", "table: 'security_heartbeats'", "table: 'security_events'", 'No heartbeat'] },
+  { label: 'Main dashboard refreshes automatically from operational tables', file: 'lib/hooks/useDashboardRealtime.ts', all: ["'orders'", "'products'", "'bank_transactions'", "'security_events'", "'security_heartbeats'", "event: '*'"] },
+  { label: 'Security monitor performs real external probes and records honest states', file: 'supabase/functions/security-monitor/index.ts', all: ['AbortSignal.timeout', "status = 'offline'", "from('security_heartbeats')", "from('security_events')"] },
+  { label: 'Security telemetry migration enforces RLS and admin-only reads', file: 'supabase/migrations/20260908134000_add_live_security_operations.sql', all: ['enable row level security', 'revoke all', 'public.is_admin()', 'supabase_realtime'] },
   { label: 'Samsung Fold cover uses mobile shell and unfolded inner screen uses desktop shell', file: 'components/MobileLayout.tsx', all: ['(max-width: 699px)', 'ClassifiedSidebar', 'MobileHeader'] },
   { label: 'Samsung Fold overlay fix is globally loaded', file: 'app/layout.tsx', all: ['./fold-mobile-fixes.css'] },
   { label: 'Android Back returns through WebView history before closing the app', file: 'android/app/src/main/java/com/centralhub/network/MainActivity.java', all: ['onBackPressed', 'canGoBack', 'history.back'] },

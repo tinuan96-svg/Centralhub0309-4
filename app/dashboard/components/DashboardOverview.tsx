@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode, useEffect, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowUpRight, CircleAlert, Download } from 'lucide-react';
 import { useDashboardFilterStore } from '@/lib/store/dashboardFilterStore';
@@ -13,6 +13,8 @@ import DashboardKpiGrid from './DashboardKpiGrid';
 import ActionRequired from './ActionRequired';
 import AIInsights from './AIInsights';
 import AuditLogWidget from './AuditLogWidget';
+import SecurityPulse from './SecurityPulse';
+import { useDashboardRealtime } from '@/lib/hooks/useDashboardRealtime';
 
 export default function DashboardOverview({ refreshKey, appearance = 'dark', controls }: { refreshKey: number; appearance?: 'dark' | 'light'; controls?: ReactNode }) {
   const { timeRange, comparisonType, selectedStoreId, customStartDate, customEndDate } = useDashboardFilterStore();
@@ -20,6 +22,8 @@ export default function DashboardOverview({ refreshKey, appearance = 'dark', con
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
+  const requestLiveRefresh = useCallback(() => setRefresh(value => value + 1), []);
+  const liveStatus = useDashboardRealtime(requestLiveRefresh);
   useEffect(() => {
     let cancelled = false;
     setLoading(true); setError(null); setReport(null);
@@ -37,11 +41,12 @@ export default function DashboardOverview({ refreshKey, appearance = 'dark', con
   return <>
     <section className="ch-model-shell ch-visual-console" data-appearance={appearance} aria-label="Visual business dashboard">
       <h1 className="sr-only">Business dashboard</h1>
-      <DashboardFilterBar compact lastUpdated={report?.loadedAt || null} loading={loading} onRefresh={() => setRefresh(n => n + 1)} actions={<>{controls}<button type="button" onClick={exportReport} disabled={!report || loading} className="ch-button ch-console-icon" title="Export figures" aria-label="Export dashboard figures"><Download size={16} /></button></>} />
+      <DashboardFilterBar compact lastUpdated={report?.loadedAt || null} loading={loading} onRefresh={requestLiveRefresh} actions={<>{controls}<button type="button" onClick={exportReport} disabled={!report || loading} className="ch-button ch-console-icon" title="Export figures" aria-label="Export dashboard figures"><Download size={16} /></button></>} />
       {error && <div role="alert" className="ch-note ch-error flex items-center gap-3"><CircleAlert size={20} /><span>{error}</span></div>}
       {loading && <div role="status" aria-label="Loading dashboard" className="ch-kpi-grid">{Array.from({ length: 6 }, (_, i) => <div key={i} className="ch-panel h-28 animate-pulse"><div className="h-3 w-20 bg-slate-700/50 rounded mb-5" /><div className="h-7 w-28 bg-slate-700/50 rounded" /></div>)}</div>}
       {report && <div className="ch-visual-surface">
-        <p className="ch-console-scope">{report.start.toLocaleDateString('en-GB')} – {report.end.toLocaleDateString('en-GB')} · {selectedStoreId === 'all' ? 'All stores' : stores[0]?.name || 'Selected store'}</p>
+        <p className="ch-console-scope">{report.start.toLocaleDateString('en-GB')} – {report.end.toLocaleDateString('en-GB')} · {selectedStoreId === 'all' ? 'All stores' : stores[0]?.name || 'Selected store'} · Dashboard stream: {liveStatus}</p>
+        <SecurityPulse selectedStoreId={selectedStoreId} compact />
         <ReferenceDashboard report={report} selectedStoreId={selectedStoreId} timeRange={timeRange} />
         <div className="ch-visual-comparisons"><DashboardKpiGrid compact current={report.current} previous={report.previous} /></div>
         <SectionVisuals report={report} selectedStoreId={selectedStoreId} refreshKey={report.loadedAt.getTime()} />
