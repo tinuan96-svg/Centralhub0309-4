@@ -4,7 +4,7 @@ export const config = {
   schedule: '* * * * *',
 };
 
-const UNANSWERED_AFTER_MS = 10 * 60 * 1000;
+const UNANSWERED_AFTER_MS = 45 * 1000;
 const ACTIVE_TICKET_STATUSES = ['open', 'assigned', 'in_progress', 'waiting_customer', 'waiting_internal'];
 
 function json(data: Record<string, unknown>, status = 200) {
@@ -35,8 +35,8 @@ async function sendAttentionPush(params: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      title: 'Customer message needs attention',
-      message: `${params.customerName} has been waiting more than 10 minutes for a reply.`,
+      title: 'You have a message from customer',
+      message: `${params.customerName} sent a WhatsApp message and is waiting for a reply.`,
       url: `/customer-care/inbox?conversation=${encodeURIComponent(params.conversationId)}`,
       storeId: params.storeId,
       severity: 'warning',
@@ -45,11 +45,11 @@ async function sendAttentionPush(params: {
       ttl: 60 * 60,
       metadata: {
         source: 'customer-message-watchdog',
-        event_type: 'CUSTOMER_MESSAGE_UNANSWERED',
+        event_type: 'CUSTOMER_MESSAGE_RECEIVED_OR_UNANSWERED',
         message_id: params.messageId,
         conversation_id: params.conversationId,
         contact_id: params.contactId,
-        dedupe_key: `CUSTOMER_MESSAGE_TIMEOUT:${params.messageId}`,
+        dedupe_key: `CUSTOMER_MESSAGE:${params.messageId}`,
       },
     }),
   });
@@ -80,15 +80,10 @@ export default async function customerMessageWatchdog() {
   const pushSecret = (process.env.CENTRALHUB_PUSH_API_SECRET || '').trim();
 
   if (!supabaseUrl || !serviceRoleKey || !pushSecret) {
-    return json({
-      success: false,
-      error: 'Customer-message watchdog configuration is missing.',
-    }, 500);
+    return json({ success: false, error: 'Customer-message watchdog configuration is missing.' }, 500);
   }
 
-  const db = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+  const db = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
   const cutoff = new Date(Date.now() - UNANSWERED_AFTER_MS).toISOString();
 
   const { data: conversations, error: conversationError } = await db
@@ -108,22 +103,13 @@ export default async function customerMessageWatchdog() {
   const activeTicketConversationIds = new Set<string>();
 
   if (contactIds.length) {
-    const { data: contacts } = await db
-      .from('whatsapp_contacts')
-      .select('id, display_name, phone_number')
-      .in('id', contactIds);
+    const { data: contacts } = await db.from('whatsapp_contacts').select('id, display_name, phone_number').in('id', contactIds);
     for (const contact of contacts || []) contactsById.set(contact.id, contact);
   }
 
   if (conversationIds.length) {
-    const { data: tickets } = await db
-      .from('support_tickets')
-      .select('conversation_id')
-      .in('conversation_id', conversationIds)
-      .in('status', ACTIVE_TICKET_STATUSES);
-    for (const ticket of tickets || []) {
-      if (ticket.conversation_id) activeTicketConversationIds.add(ticket.conversation_id);
-    }
+    const { data: tickets } = await db.from('support_tickets').select('conversation_id').in('conversation_id', conversationIds).in('status', ACTIVE_TICKET_STATUSES);
+    for (const ticket of tickets || []) if (ticket.conversation_id) activeTicketConversationIds.add(ticket.conversation_id);
   }
 
   let inspected = 0;
@@ -136,10 +122,7 @@ export default async function customerMessageWatchdog() {
     inspected += 1;
     if (!conversation.id || !conversation.store_id || !conversation.contact_id) continue;
 
-    if (
-      conversation.ai_processing_started_at &&
-      Date.now() - dateMs(conversation.ai_processing_started_at) < UNANSWERED_AFTER_MS
-    ) {
+    if (conversation.ai_processing_started_at && Date.now() - dateMs(conversation.ai_processing_started_at) < UNANSWERED_AFTER_MS) {
       skippedAiProcessing += 1;
       continue;
     }
@@ -164,9 +147,7 @@ export default async function customerMessageWatchdog() {
     const latestInbound = (messages || []).find((message: any) => message.direction === 'inbound');
     if (!latestInbound || Date.now() - dateMs(latestInbound.created_at) < UNANSWERED_AFTER_MS) continue;
 
-    const latestReply = (messages || []).find((message: any) =>
-      message.direction === 'outbound' && String(message.status || '').toLowerCase() !== 'failed'
-    );
+    const latestReply = (messages || []).find((message: any) => message.direction === 'outbound' && String(message.status || '').toLowerCase() !== 'failed');
     if (latestReply && dateMs(latestReply.created_at) >= dateMs(latestInbound.created_at)) continue;
 
     const contact = contactsById.get(conversation.contact_id);
@@ -180,22 +161,9 @@ export default async function customerMessageWatchdog() {
       customerName: contact?.display_name || contact?.phone_number || 'A customer',
     });
 
-    if (push.ok) {
-      notified += 1;
-    } else {
-      failures.push({
-        conversation_id: conversation.id,
-        error: `Push sender returned ${push.status}: ${push.body.slice(0, 300)}`,
-      });
-    }
+    if (push.ok) notified += 1;
+    else failures.push({ conversation_id: conversation.id, error: `Push sender returned ${push.status}: ${push.body.slice(0, 300)}` });
   }
 
-  return json({
-    success: failures.length === 0,
-    inspected,
-    notified,
-    skipped_ai_processing: skippedAiProcessing,
-    skipped_active_ticket: skippedActiveTicket,
-    failures: failures.length ? failures : undefined,
-  });
+  return json({ success: failures.length === 0, inspected, notified, skipped_ai_processing: skippedAiProcessing, skipped_active_ticket: skippedActiveTicket, failures: failures.length ? failures : undefined });
 }
