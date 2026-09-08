@@ -46,6 +46,8 @@ export interface CashflowSummary {
   unreconciledCount: number;
 }
 
+const BANK_TX_FIELDS = 'id,bank_account_id,store_id,transaction_date,transaction_time,description,amount,type,balance,reference,merchant,category,source,is_reconciled,transaction_category,accounting_category,classification_status,financial_treatment';
+
 export class BankSyncService {
   static async getBankAccounts(): Promise<BankAccount[]> {
     const { data, error } = await supabase.from('store_bank_accounts').select('*').order('bank_name');
@@ -61,15 +63,22 @@ export class BankSyncService {
     });
   }
 
-  static async getTransactions(accountId: string, limit = 5000): Promise<BankTransaction[]> {
-    const pageSize = 1000;
+  static async getTransactions(accountId: string, limit = 250): Promise<BankTransaction[]> {
+    const maxRows = Math.max(1, Math.min(limit, 5000));
+    const pageSize = Math.min(500, maxRows);
     const all: BankTransaction[] = [];
-    const maxRows = Math.max(1, limit);
+
     for (let offset = 0; offset < maxRows; offset += pageSize) {
       const end = Math.min(offset + pageSize - 1, maxRows - 1);
-      const { data, error } = await supabase.from('bank_transactions').select('*').eq('bank_account_id', accountId).order('transaction_date', { ascending: false }).order('transaction_time', { ascending: false, nullsFirst: false }).range(offset, end);
+      const { data, error } = await supabase
+        .from('bank_transactions')
+        .select(BANK_TX_FIELDS)
+        .eq('bank_account_id', accountId)
+        .order('transaction_date', { ascending: false })
+        .order('transaction_time', { ascending: false, nullsFirst: false })
+        .range(offset, end);
       if (error) { console.error('getTransactions error:', error); return all; }
-      all.push(...(data || []));
+      all.push(...((data || []) as BankTransaction[]));
       if (!data || data.length < pageSize) break;
     }
     return all;
@@ -77,49 +86,20 @@ export class BankSyncService {
 
   static async getCashflowSummary(days = 30): Promise<CashflowSummary> {
     const empty: CashflowSummary = { incoming: 0, outgoing: 0, transactionCount: 0, reconciledCount: 0, unreconciledCount: 0 };
-    const { data: activeAccounts, error: accountError } = await supabase
-      .from('store_bank_accounts')
-      .select('id')
-      .eq('is_active', true);
-
-    if (accountError) {
-      console.error('getCashflowSummary account lookup error:', accountError);
+    const { data, error } = await supabase.rpc('get_bank_cashflow_summary', { p_days: Math.max(1, days) });
+    if (error) {
+      console.error('getCashflowSummary error:', error);
       return empty;
     }
-
-    const activeAccountIds = (activeAccounts || []).map((account) => account.id).filter(Boolean);
-    if (activeAccountIds.length === 0) return empty;
-
-    const start = new Date(Date.now() - Math.max(1, days) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const pageSize = 1000;
-    const all: Pick<BankTransaction, 'amount' | 'type' | 'is_reconciled'>[] = [];
-
-    for (let offset = 0; ; offset += pageSize) {
-      const { data, error } = await supabase
-        .from('bank_transactions')
-        .select('amount,type,is_reconciled')
-        .in('bank_account_id', activeAccountIds)
-        .gte('transaction_date', start)
-        .order('transaction_date', { ascending: false })
-        .order('id', { ascending: false })
-        .range(offset, offset + pageSize - 1);
-      if (error) {
-        console.error('getCashflowSummary error:', error);
-        return empty;
-      }
-      all.push(...((data || []) as Pick<BankTransaction, 'amount' | 'type' | 'is_reconciled'>[]));
-      if (!data || data.length < pageSize) break;
-    }
-
-    return all.reduce<CashflowSummary>((summary, transaction) => {
-      const amount = Math.abs(Number(transaction.amount) || 0);
-      if (transaction.type === 'credit') summary.incoming += amount;
-      if (transaction.type === 'debit') summary.outgoing += amount;
-      summary.transactionCount += 1;
-      if (transaction.is_reconciled) summary.reconciledCount += 1;
-      else summary.unreconciledCount += 1;
-      return summary;
-    }, { ...empty });
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return empty;
+    return {
+      incoming: Number(row.incoming || 0),
+      outgoing: Number(row.outgoing || 0),
+      transactionCount: Number(row.transaction_count || 0),
+      reconciledCount: Number(row.reconciled_count || 0),
+      unreconciledCount: Number(row.unreconciled_count || 0),
+    };
   }
 
   static async syncGoogleSheet(accountId: string): Promise<{ success: boolean; inserted?: number; updated?: number; duplicates?: number; latest_balance?: number | null; error?: string }> {
