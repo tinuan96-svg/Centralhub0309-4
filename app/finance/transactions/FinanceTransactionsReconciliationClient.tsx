@@ -64,7 +64,7 @@ const categories = [
 
 const reconciled = (tx: Tx) => Boolean(tx.is_reconciled) || tx.reconciliation_status === 'reconciled';
 
-const ledgerTransactionCategory = (ledger: Ledger) => {
+const ledgerTransactionCategory = (ledger: Ledger): string => {
   if (ledger.ledger_type === 'internal') return 'transfer';
   if (ledger.ledger_type === 'income') return ledger.pnl_class === 'revenue' ? 'sales_income' : 'other_income';
   if (ledger.pnl_class === 'cogs') return 'supplier_payment';
@@ -76,7 +76,7 @@ const ledgerTransactionCategory = (ledger: Ledger) => {
   return 'other_expense';
 };
 
-const ledgerAccountingCategory = (ledger: Ledger) => {
+const ledgerAccountingCategory = (ledger: Ledger): string => {
   if (ledger.pnl_class === 'revenue' || ledger.pnl_class === 'other_income') return 'revenue';
   if (ledger.pnl_class === 'cogs') return 'cogs';
   if (ledger.pnl_class === 'variable_expense') return 'variable_cost';
@@ -200,8 +200,8 @@ export default function FinanceTransactionsReconciliationClient() {
 
   const applyChoice = async (tx: Tx, value: string) => {
     if (!value || value === 'unknown') return;
-    let category = value;
-    let accounting = categories.find(c => c[0] === value)?.[2] || 'other';
+    let category: string = value;
+    let accounting: string = categories.find(c => c[0] === value)?.[2] || 'other';
     let ledgerId: string | null = null;
     let label = categories.find(c => c[0] === value)?.[1] || value;
 
