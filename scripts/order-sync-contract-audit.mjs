@@ -25,7 +25,7 @@ const browserFiles = [
   'lib/services/orderService.ts',
 ];
 
-const forbidden = /supabase\\.functions\\.invoke\\(\\s*['"]sync-orders['"]/;
+const forbidden = /supabase\.functions\.invoke\(\s*['"]sync-orders['"]/;
 const violations = browserFiles.filter((file) => forbidden.test(readFileSync(file, 'utf8')));
 
 if (violations.length) {
