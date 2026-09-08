@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { OrderWithItems, OrderStatus, Store } from '@/lib/types';
 import StoreBadge from '@/components/StoreBadge';
@@ -78,7 +79,7 @@ function StatusSheet({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 bg-black/70 z-[60] flex items-end justify-center md:items-center p-0 md:p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 z-[110] flex items-end justify-center md:items-center p-0 md:p-4" onClick={onClose}>
       <div
         className="w-full md:max-w-md bg-slate-900 border-t md:border border-slate-700/60 rounded-t-2xl md:rounded-2xl flex flex-col overflow-hidden shadow-2xl"
         style={{ maxHeight: '80dvh' }}
@@ -149,6 +150,9 @@ export default function OrderDetailSheet({
   onRefreshFromSource?: (order: OrderWithItems) => Promise<void>;
   isActionLoading?: boolean;
 }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
   const [showStatusSheet, setShowStatusSheet] = useState(false);
   const [savingStatus, setSavingStatus] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -261,12 +265,21 @@ export default function OrderDetailSheet({
 
   const { date, time } = fmtDate(order.created_at);
 
-  return (
+  if (!mounted) return null;
+
+  // Render outside the app shell so sidebar stacking and transformed ancestors
+  // cannot cover or offset the order dialog in Android WebView.
+  return createPortal(
     <>
-      <div className="fixed inset-0 bg-black/75 z-40 flex items-end md:items-center justify-center" onClick={onClose}>
+      <div className="fixed inset-0 bg-black/75 z-[100] flex items-end md:items-center justify-center"
+        style={{ padding: 'env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px)' }}
+        onClick={onClose}>
         <div
-          className="bg-slate-900 w-full md:max-w-2xl md:rounded-2xl rounded-t-2xl border border-slate-700/60 shadow-2xl flex flex-col"
-          style={{ maxHeight: '94dvh' }}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Order ${order.order_number}`}
+          className="bg-slate-900 min-w-0 max-w-full overflow-hidden w-full md:max-w-2xl md:rounded-2xl rounded-t-2xl border border-slate-700/60 shadow-2xl flex flex-col"
+          style={{ maxHeight: 'calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px)' }}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
@@ -291,7 +304,7 @@ export default function OrderDetailSheet({
                   </svg>
                 </button>
               )}
-              <button onClick={onClose} className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white flex-shrink-0 ml-2">
+              <button onClick={onClose} aria-label="Close order details" className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white flex-shrink-0 ml-2">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -300,7 +313,7 @@ export default function OrderDetailSheet({
           </div>
 
           {/* Scrollable content */}
-          <div className="flex-1 overflow-y-auto overscroll-contain">
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain [overflow-wrap:anywhere]">
             <div className="p-4 space-y-4">
 
               {/* Status + payment row */}
@@ -653,6 +666,7 @@ export default function OrderDetailSheet({
           onClose={() => setShowStatusSheet(false)}
         />
       )}
-    </>
+    </>,
+    document.body
   );
 }
