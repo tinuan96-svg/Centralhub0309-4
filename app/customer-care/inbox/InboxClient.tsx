@@ -301,7 +301,7 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
                     <WhatsAppMessageContent message={msg} />
                     <div className="flex items-center justify-end gap-1.5 mt-1">
                       <span className="text-[10px] opacity-70">{formatDate(msg.created_at)}</span>
-                      {msg.direction === 'outbound' && <span className="text-[9px] uppercase font-bold tracking-tight opacity-75">{messageStatusLabel(msg.status)}</span>}
+                      {msg.direction === 'outbound' && <span title={msg.delivery_error_message || `WhatsApp status: ${messageStatusLabel(msg.status)}`} className="text-[9px] uppercase font-bold tracking-tight opacity-75">{messageStatusLabel(msg.status)}</span>}
                     </div>
                   </div>
                 </div>
