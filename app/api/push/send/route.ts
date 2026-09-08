@@ -28,7 +28,11 @@ function getNotificationDedupeKey(body: any) {
   const category = String(body?.category || metadata.category || '').trim();
   const messageId = String(metadata.message_id || body?.message_id || '').trim();
   if (category === 'customer_message' && messageId) {
-    return 'CUSTOMER_MESSAGE:' + messageId;
+    return String(metadata.dedupe_key || 'CUSTOMER_MESSAGE:' + messageId).trim();
+  }
+
+  if (category === 'support' && metadata.dedupe_key) {
+    return String(metadata.dedupe_key).trim();
   }
 
   return null;
@@ -77,7 +81,7 @@ export async function POST(req: Request) {
   const notificationMetadata = notificationDedupeKey
     ? {
         ...incomingMetadata,
-        source: 'centralhub-automatic-order-push',
+        source: incomingMetadata.source || 'centralhub-automatic-notification',
         dedupe_key: notificationDedupeKey,
         store_slug: requestedStoreBrand.slug,
         store_name: requestedStoreBrand.name,
