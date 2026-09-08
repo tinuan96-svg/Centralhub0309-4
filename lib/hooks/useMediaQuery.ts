@@ -28,7 +28,7 @@ export function useMediaQuery(query: string): boolean {
   return matches;
 }
 
-export const useIsMobile = () => useMediaQuery('(max-width: 700px)');
+export const useIsMobile = () => useMediaQuery('(max-width: 699px)');
 export const useIsFoldCover = () => useMediaQuery('(max-width: 500px)');
-export const useIsFoldInner = () => useMediaQuery('(min-width: 701px) and (max-width: 1024px)');
+export const useIsFoldInner = () => useMediaQuery('(min-width: 700px) and (max-width: 1024px)');
 export const useIsDesktop = () => useMediaQuery('(min-width: 1025px)');

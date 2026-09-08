@@ -1,14 +1,12 @@
 /*
- * Samsung Fold / large mobile PWA fix.
+ * Cover-display-only hardening.
  *
- * MobileLayout intentionally stays active up to 1023px so the unfolded Fold
- * inner screen still gets the one-hand mobile shell. Tailwind's fold-inner
- * breakpoint starts at 700px, so components marked fold-inner:hidden can be
- * hidden while the mobile header/bottom-nav are still active. Keep full-screen
- * mobile overlays visible across the whole mobile-shell range.
+ * MobileLayout ends at 699px. The unfolded Fold starts at the fold-inner
+ * breakpoint (700px) and uses the desktop shell, so no mobile overlay rule
+ * should leak into the unfolded layout.
  */
-@media (min-width: 700px) and (max-width: 1023px) {
-  .fold-inner\:hidden.fixed.inset-0 {
+@media (max-width: 699px) {
+  .fold-inner\\:hidden.fixed.inset-0 {
     display: flex !important;
   }
 }

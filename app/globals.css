@@ -172,9 +172,9 @@
   }
 }
 
-/* Foldable/mobile hardening. The Z Fold7 has a 21:9 cover display and a much wider
-   unfolded display, so the application stays in the mobile shell up to 1023px CSS width. */
-@media (max-width: 1023px) {
+/* Cover-display hardening. The unfolded Fold starts at the shared 700px
+   fold-inner breakpoint and uses the desktop shell. */
+@media (max-width: 699px) {
   html,
   body,
   #__next {

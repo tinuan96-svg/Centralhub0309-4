@@ -6,6 +6,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
+import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import com.getcapacitor.BridgeActivity;
@@ -15,6 +16,10 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        WebSettings webSettings = bridge.getWebView().getSettings();
+        webSettings.setUseWideViewPort(true);
+        webSettings.setLoadWithOverviewMode(false);
 
         bridge.getWebView().addJavascriptInterface(
                 new CentralHubNativeBridge(this),
@@ -85,5 +90,39 @@ public class MainActivity extends BridgeActivity {
                 }
             }
         });
+    }
+
+    /**
+     * Keep Android Back inside the WebView while there is an in-app page to
+     * return to. Only the root page is allowed to close the activity.
+     */
+    @Override
+    @SuppressWarnings("deprecation")
+    public void onBackPressed() {
+        WebView webView = bridge.getWebView();
+        if (webView == null) {
+            super.onBackPressed();
+            return;
+        }
+
+        if (webView.canGoBack()) {
+            webView.goBack();
+            return;
+        }
+
+        // Next.js client navigation can use the History API. If WebView's
+        // native history stack has not caught up yet, ask the page directly.
+        webView.evaluateJavascript(
+                "(window.history && window.history.length > 1) ? 'true' : 'false'",
+                value -> {
+                    boolean hasPageHistory =
+                            "true".equalsIgnoreCase(value) || "\\"true\\"".equals(value);
+                    if (hasPageHistory) {
+                        webView.evaluateJavascript("window.history.back()", null);
+                    } else {
+                        MainActivity.super.onBackPressed();
+                    }
+                }
+        );
     }
 }
