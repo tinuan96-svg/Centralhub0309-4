@@ -48,6 +48,11 @@ export interface WhatsAppMessage {
   media_download_error: string | null;
   media_download_attempts: number;
   media_downloaded_at: string | null;
+  delivered_at?: string | null;
+  read_at?: string | null;
+  failed_at?: string | null;
+  delivery_error_code?: string | number | null;
+  delivery_error_message?: string | null;
   sender_phone: string | null;
   status: MessageStatus;
   ai_generated: boolean;
