@@ -40,9 +40,75 @@ const categories = [
   ['unknown', 'Needs review', 'other'],
 ] as const;
 
+type MatchedTransaction = Tx & { matchScore: number; matchReason: string };
+
+const matchFields = [
+  { key: 'description' as const, label: 'description/name' },
+  { key: 'merchant' as const, label: 'merchant' },
+  { key: 'reference' as const, label: 'reference' },
+] as const;
+
 const normalize = (value: unknown) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
-const matchKeys = (tx: Tx) => Array.from(new Set([normalize(tx.description), normalize(tx.merchant), normalize(tx.reference)].filter(Boolean)));
+
+const transactionFieldValues = (tx: Tx) => matchFields
+  .map(field => ({ ...field, value: normalize(tx[field.key]) }))
+  .filter(field => field.value.length >= 3);
+
+const levenshteinSimilarity = (left: string, right: string) => {
+  if (left === right) return 1;
+  if (!left || !right) return 0;
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= left.length; i += 1) {
+    const current = [i];
+    for (let j = 1; j <= right.length; j += 1) {
+      current[j] = Math.min(
+        current[j - 1] + 1,
+        previous[j] + 1,
+        previous[j - 1] + (left[i - 1] === right[j - 1] ? 0 : 1),
+      );
+    }
+    for (let j = 0; j <= right.length; j += 1) previous[j] = current[j];
+  }
+  return 1 - previous[right.length] / Math.max(left.length, right.length);
+};
+
+const tokenSimilarity = (left: string, right: string) => {
+  const leftTokens = new Set(left.split(' ').filter(token => token.length > 1));
+  const rightTokens = new Set(right.split(' ').filter(token => token.length > 1));
+  if (!leftTokens.size || !rightTokens.size) return 0;
+  const intersection = Array.from(leftTokens).filter(token => rightTokens.has(token)).length;
+  const union = new Set([...leftTokens, ...rightTokens]).size;
+  return union ? intersection / union : 0;
+};
+
+const findTransactionMatch = (source: Tx, candidate: Tx) => {
+  let best: { score: number; reason: string } | null = null;
+  for (const sourceField of transactionFieldValues(source)) {
+    for (const candidateField of transactionFieldValues(candidate)) {
+      const score = Math.max(
+        levenshteinSimilarity(sourceField.value, candidateField.value),
+        tokenSimilarity(sourceField.value, candidateField.value),
+      );
+      const exact = sourceField.value === candidateField.value;
+      const threshold = exact ? 1 : Math.min(sourceField.value.length, candidateField.value.length) >= 8 ? 0.78 : 0.88;
+      if (score < threshold) continue;
+      const reason = exact
+        ? sourceField.key === candidateField.key ? `Same ${candidateField.label}` : `Matched ${candidateField.label}`
+        : `Similar ${candidateField.label}`;
+      if (!best || score > best.score) best = { score, reason };
+    }
+  }
+  return best;
+};
+
 const reconciled = (tx: Tx) => Boolean(tx.is_reconciled) || tx.reconciliation_status === 'reconciled';
+const effectiveCategory = (category: string) => category === 'savings_allocation' ? 'transfer' : category;
+const effectiveAccounting = (category: string, accounting: string) => category === 'savings_allocation' ? 'transfer' : accounting;
+const needsClassificationUpdate = (tx: Tx, category: string, accounting: string) => (
+  tx.transaction_category !== effectiveCategory(category)
+  || tx.accounting_category !== effectiveAccounting(category, accounting)
+  || tx.classification_status === 'needs_review'
+);
 
 export default function FinanceTransactionsReconciliationClient() {
   const searchParams = useSearchParams();
@@ -65,7 +131,7 @@ export default function FinanceTransactionsReconciliationClient() {
   const [maxAmount, setMaxAmount] = useState('');
   const [sortBy, setSortBy] = useState<'date' | 'amount' | 'name' | 'balance'>('date');
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
-  const [pending, setPending] = useState<{ sourceId: string; category: string; accounting: string; matches: Tx[] } | null>(null);
+  const [pending, setPending] = useState<{ sourceId: string; category: string; accounting: string; matches: MatchedTransaction[] } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -153,29 +219,51 @@ export default function FinanceTransactionsReconciliationClient() {
 
   const prepareClassification = (tx: Tx, category: string, acct: string) => {
     if (category === 'unknown') return;
-    const sourceKeys = matchKeys(tx);
-    const matches = rows.filter(x => x.id !== tx.id && !reconciled(x) && (x.classification_status === 'needs_review' || !x.transaction_category || x.transaction_category === 'unknown') && matchKeys(x).some(k => sourceKeys.includes(k)));
+    const matches = rows
+      .filter(x => x.id !== tx.id && !reconciled(x))
+      .map(candidate => ({ candidate, match: findTransactionMatch(tx, candidate) }))
+      .filter((entry): entry is { candidate: Tx; match: { score: number; reason: string } } => Boolean(entry.match))
+      .map(({ candidate, match }) => ({ ...candidate, matchScore: match.score, matchReason: match.reason }))
+      .sort((a, b) => b.matchScore - a.matchScore || b.transaction_date.localeCompare(a.transaction_date));
     setPending({ sourceId: tx.id, category, accounting: acct, matches });
   };
 
   const classifyIds = async (ids: string[], category: string, acct: string) => {
+    const uniqueIds = Array.from(new Set(ids));
+    if (!uniqueIds.length) return true;
     setBulkSaving(true); setError(null);
-    const results = await Promise.all(ids.map(id => supabase.rpc('classify_financial_transaction', { p_transaction_id: id, p_transaction_category: category, p_accounting_category: acct, p_notes: null })));
-    const failed = results.find(r => r.error)?.error;
-    if (failed) { setError(failed.message); setBulkSaving(false); return false; }
-    const idSet = new Set(ids);
-    setRows(prev => prev.map(x => idSet.has(x.id) ? { ...x, transaction_category: category === 'savings_allocation' ? 'transfer' : category, accounting_category: acct, classification_status: 'classified' } : x));
+    const { error: rpcError } = await supabase.rpc('classify_financial_transactions', {
+      p_transaction_ids: uniqueIds,
+      p_transaction_category: category,
+      p_accounting_category: acct,
+      p_notes: null,
+    });
+    if (rpcError) { setError(rpcError.message); setBulkSaving(false); return false; }
+    const idSet = new Set(uniqueIds);
+    setRows(prev => prev.map(x => idSet.has(x.id) ? {
+      ...x,
+      transaction_category: effectiveCategory(category),
+      accounting_category: effectiveAccounting(category, acct),
+      classification_status: 'classified',
+    } : x));
     setBulkSaving(false); return true;
   };
 
   const applyPending = async () => {
     if (!pending) return;
-    const ok = await classifyIds([pending.sourceId, ...pending.matches.map(x => x.id)], pending.category, pending.accounting);
+    const matchingIds = pending.matches
+      .filter(tx => needsClassificationUpdate(tx, pending.category, pending.accounting))
+      .map(tx => tx.id);
+    const ok = await classifyIds([pending.sourceId, ...matchingIds], pending.category, pending.accounting);
     if (ok) setPending(null);
   };
 
   const uniqueAccounting = useMemo(() => Array.from(new Set(rows.map(x => x.accounting_category).filter(Boolean))).sort(), [rows]);
   const uniqueClassifications = categories.filter(c => rows.some(x => (x.transaction_category || 'unknown') === c[0]));
+  const pendingSource = pending ? rows.find(x => x.id === pending.sourceId) : null;
+  const pendingPreviewMatches = pending?.matches.slice(0, 60) || [];
+  const pendingTargetMatches = pending?.matches.filter(x => needsClassificationUpdate(x, pending.category, pending.accounting)) || [];
+  const pendingTargetCount = pendingTargetMatches.length + (pending ? 1 : 0);
 
   return <main className="p-4 sm:p-6 space-y-5 max-w-[1800px] mx-auto">
     <header className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
@@ -215,7 +303,31 @@ export default function FinanceTransactionsReconciliationClient() {
       </div>
     </section>
 
-    {pending && <section className="rounded-3xl border border-cyan-500/30 bg-cyan-500/5 p-4 space-y-3"><div className="flex flex-col lg:flex-row lg:justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-widest text-cyan-300">Repeated transaction match</p><h2 className="text-lg font-black text-white">Apply the selected classification to {pending.matches.length} matching unreconciled transaction{pending.matches.length === 1 ? '' : 's'}?</h2><p className="text-xs text-slate-400">Matches use normalized description, merchant or reference. Nothing is saved until you confirm.</p></div><div className="flex gap-2"><button disabled={bulkSaving} onClick={async () => { const ok = await classifyIds([pending.sourceId], pending.category, pending.accounting); if (ok) setPending(null); }} className="btn-secondary">Selected only</button><button disabled={bulkSaving} onClick={applyPending} className="btn-primary">{bulkSaving ? 'Applying…' : `Apply to ${pending.matches.length + 1}`}</button><button onClick={() => setPending(null)} className="btn-secondary">Cancel</button></div></div><div className="max-h-40 overflow-auto grid gap-1">{pending.matches.map(tx => <div key={tx.id} className="flex justify-between bg-slate-950/60 rounded-lg px-3 py-2 text-xs"><span className="text-white">{tx.description}</span><span className={tx.type === 'credit' ? 'text-emerald-300' : 'text-rose-300'}>{tx.type === 'credit' ? '+' : '-'}{formatCurrency(Number(tx.amount || 0))}</span></div>)}</div></section>}
+    {pending && <section className="rounded-3xl border border-cyan-500/30 bg-cyan-500/5 p-4 space-y-3">
+      <div className="flex flex-col lg:flex-row lg:justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-widest text-cyan-300">Matched name / description suggestions</p>
+          <h2 className="text-lg font-black text-white">{pending.matches.length ? `${pending.matches.length} similar or matching transaction${pending.matches.length === 1 ? '' : 's'} found` : 'No other similar or matching transactions found'}</h2>
+          <p className="text-xs text-slate-400">Matches use similar names plus matching descriptions, merchants or references. Existing heads are shown for review. Only unreconciled rows can be updated.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button disabled={bulkSaving} onClick={async () => { const ok = await classifyIds([pending.sourceId], pending.category, pending.accounting); if (ok) setPending(null); }} className="btn-secondary">Selected only</button>
+          <button disabled={bulkSaving || pendingTargetMatches.length === 0} onClick={applyPending} className="btn-primary">{bulkSaving ? 'Applying…' : `Apply to ${pendingTargetCount} transactions`}</button>
+          <button disabled={bulkSaving} onClick={() => setPending(null)} className="btn-secondary">Cancel</button>
+        </div>
+      </div>
+      <div className="max-h-64 overflow-auto grid gap-1">
+        {pendingSource && <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-cyan-500/10 border border-cyan-400/30 rounded-lg px-3 py-2 text-xs">
+          <div><span className="text-white font-bold">{pendingSource.description || pendingSource.merchant || 'Selected transaction'}</span><span className="text-cyan-300 ml-2">Selected head</span></div>
+          <span className="text-cyan-200">{categories.find(c => c[0] === effectiveCategory(pending.category))?.[1] || categories.find(c => c[0] === pending.category)?.[1]}</span>
+        </div>}
+        {pendingPreviewMatches.map(tx => <div key={tx.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-slate-950/60 rounded-lg px-3 py-2 text-xs">
+          <div className="min-w-0"><span className="text-white font-bold">{tx.description || tx.merchant || 'Transaction'}</span><span className="text-slate-500 ml-2">{tx.matchReason}</span><span className="block text-[10px] text-slate-500">{tx.merchant || tx.reference || 'No merchant/reference'}</span></div>
+          <div className="text-right whitespace-nowrap"><span className="text-slate-400">Current: </span><span className="text-white">{categories.find(c => c[0] === (tx.transaction_category || 'unknown'))?.[1] || 'Needs review'}</span><span className={`ml-2 ${tx.type === 'credit' ? 'text-emerald-300' : 'text-rose-300'}`}>{tx.type === 'credit' ? '+' : '-'}{formatCurrency(Number(tx.amount || 0))}</span></div>
+        </div>)}
+      </div>
+      {pending.matches.length > pendingPreviewMatches.length && <p className="text-[10px] text-slate-500">Showing the first {pendingPreviewMatches.length} matches. Apply will include all {pendingTargetMatches.length} additional unreconciled rows that need this head.</p>}
+    </section>}
 
     <section className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden">
       <div className="flex flex-wrap items-center gap-2 p-3 border-b border-slate-800 bg-slate-950/40"><button onClick={toggleVisible} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-[9px] font-black uppercase tracking-widest text-white">{allVisibleSelected ? 'Clear visible' : 'Select visible'}</button><span className="text-xs text-slate-400">{selected.size} selected</span>{selectedVisible.length > 0 && <><button disabled={bulkSaving} onClick={() => { if (confirm(`Reconcile ${selectedVisible.length} selected transaction(s)?`)) reconcileIds(selectedVisible.map(x => x.id)); }} className="px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 text-[9px] font-black uppercase tracking-widest">{bulkSaving ? 'Working…' : `Reconcile selected (${selectedVisible.length})`}</button><button onClick={() => setSelected(new Set())} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-[9px] font-black uppercase tracking-widest text-slate-300">Clear selection</button></>}{filteredUnreconciled.length > 0 && reconFilter === 'unreconciled' && <button disabled={bulkSaving} onClick={() => { if (confirm(`Reconcile all ${filteredUnreconciled.length} currently filtered unreconciled transactions?`)) reconcileIds(filteredUnreconciled.map(x => x.id)); }} className="ml-auto px-4 py-2 rounded-xl bg-cyan-500 text-slate-950 text-[9px] font-black uppercase tracking-widest">Reconcile all filtered ({filteredUnreconciled.length})</button>}</div>
