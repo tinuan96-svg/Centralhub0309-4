@@ -60,6 +60,8 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
   const [navSearch, setNavSearch] = useState('');
   const [expanded, setExpanded] = useState<string[]>(['01-command']);
   const [mounted, setMounted] = useState(false);
+  const [width, setWidth] = useState(1200);
+  const [sidebarPreference, setSidebarPreference] = useState<boolean | null>(null);
   const [stats, setStats] = useState({ pendingOrders: 0, lowStock: 0, backorders: 0, tickets: 0 });
 
   const fetchStats = useCallback(async () => {
@@ -72,7 +74,17 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
     setStats({ pendingOrders: orders.count || 0, lowStock: stock.count || 0, backorders: backorders.count || 0, tickets: tickets.count || 0 });
   }, []);
 
-  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => {
+    setMounted(true);
+    setWidth(window.innerWidth);
+    const onResize = () => setWidth(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    const savedCollapse = localStorage.getItem('sidebar_classified_collapsed');
+    if (savedCollapse === 'true' || savedCollapse === 'false') {
+      setSidebarPreference(savedCollapse === 'true');
+    }
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
   useEffect(() => { fetchStats(); const id = setInterval(fetchStats, 300000); return () => clearInterval(id); }, [fetchStats]);
   useEffect(() => { const saved = localStorage.getItem('sidebar_classified_sections'); if (saved) { try { setExpanded(JSON.parse(saved)); } catch {} } }, []);
   useEffect(() => { if (mounted) localStorage.setItem('sidebar_classified_sections', JSON.stringify(expanded)); }, [expanded, mounted]);
@@ -86,22 +98,80 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
     return allowed.map(s => ({ ...s, items: s.items.filter(i => i.label.toLowerCase().includes(q) || i.href.toLowerCase().includes(q)) })).filter(s => s.label.toLowerCase().includes(q) || s.items.length);
   }, [navSearch, isAdmin, disabledNavKeys]);
 
-  // The desktop shell is used on the unfolded Fold from the 700px breakpoint.
-  // Keep its navigation open: touchscreens have no hover event to expand a
-  // collapsed sidebar, which otherwise makes the section buttons appear dead.
-  const collapsed = manualCollapsed;
+  // On the unfolded Fold, keep the sidebar compact by default. The header
+  // toggle lets the user expand it when the full labels are needed.
+  const autoCollapsed = width < 1100;
+  const collapsed = manualCollapsed || (sidebarPreference ?? autoCollapsed);
+  const setCollapsed = (next: boolean) => {
+    if (manualCollapsed) {
+      onToggleCollapse?.();
+      return;
+    }
+    setSidebarPreference(next);
+    localStorage.setItem('sidebar_classified_collapsed', String(next));
+  };
   const toggle = (key: string) => setExpanded(v => v.includes(key) ? v.filter(x => x !== key) : [...v, key]);
   const active = (href: string) => href.includes('?') ? pathname === href.split('?')[0] : pathname === href || pathname.startsWith(href + '/');
 
   return (
     <aside className={`${collapsed ? designTokens.layout.sidebarWidthCollapsed : designTokens.layout.sidebarWidth} ${designTokens.colors.background.main} border-r ${designTokens.colors.border.default} h-screen sticky top-0 flex flex-col transition-all duration-300 ease-in-out z-50`}>
-      <div className="p-4 border-b border-slate-800 flex items-center justify-between"><Link href="/dashboard" className="font-black text-white">CentralHub</Link>{onToggleCollapse && <button onClick={onToggleCollapse} className="text-slate-400">{collapsed ? '→' : '←'}</button>}</div>
+      <div className="p-4 border-b border-slate-800 flex items-center justify-between gap-2">
+        {collapsed ? (
+          <Link href="/dashboard" aria-label="CentralHub dashboard" className="font-black text-white text-sm">CH</Link>
+        ) : (
+          <Link href="/dashboard" className="font-black text-white">CentralHub</Link>
+        )}
+        <button
+          type="button"
+          onClick={() => setCollapsed(!collapsed)}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          className="min-w-9 min-h-9 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 touch-manipulation"
+        >
+          {collapsed ? '→' : '←'}
+        </button>
+      </div>
       {!collapsed && <div className="px-4 pt-3"><div className="text-[9px] font-black uppercase tracking-[.2em] text-cyan-400">Business navigation</div><div className="text-[10px] text-slate-600 mt-1">Organised by what each area is used for</div></div>}
-      <div className="p-3"><input value={navSearch} onChange={e => setNavSearch(e.target.value)} placeholder={collapsed ? '⌕' : 'Search navigation...'} className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none" /></div>
+      <div className="p-3">
+        {collapsed ? (
+          <button
+            type="button"
+            onClick={() => setCollapsed(false)}
+            aria-label="Expand sidebar search"
+            title="Expand sidebar search"
+            className="w-full min-h-10 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 text-lg touch-manipulation"
+          >
+            ⌕
+          </button>
+        ) : (
+          <input
+            value={navSearch}
+            onChange={e => setNavSearch(e.target.value)}
+            placeholder="Search navigation..."
+            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none"
+          />
+        )}
+      </div>
       <nav className="flex-1 overflow-y-auto px-3 pb-4 space-y-1">
         {mounted && filtered.map(section => <div key={section.key} className="mb-1">
-          <button onClick={() => toggle(section.key)} title={section.description} className={`w-full min-h-[44px] touch-manipulation flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest ${pathname && section.items.some(i => active(i.href)) ? 'bg-cyan-500/10 text-cyan-300' : 'text-slate-400 hover:text-white'}`}>
-            <span className="truncate">{section.icon} {section.label}{counts[section.key] ? <span className="ml-2 text-[9px] text-amber-300">{counts[section.key]}</span> : ''}</span><span>{expanded.includes(section.key) ? '−' : '+'}</span>
+          <button
+            type="button"
+            onClick={() => {
+              if (collapsed) {
+                setCollapsed(false);
+                setExpanded(v => v.includes(section.key) ? v : [...v, section.key]);
+              } else {
+                toggle(section.key);
+              }
+            }}
+            title={collapsed ? `${section.label}: ${section.description}` : section.description}
+            aria-expanded={expanded.includes(section.key)}
+            className={`w-full min-h-[44px] touch-manipulation flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest ${pathname && section.items.some(i => active(i.href)) ? 'bg-cyan-500/10 text-cyan-300' : 'text-slate-400 hover:text-white'}`}
+          >
+            <span className={collapsed ? 'w-full text-center text-xl' : 'truncate'}>
+              {collapsed ? section.icon : <>{section.icon} {section.label}{counts[section.key] ? <span className="ml-2 text-[9px] text-amber-300">{counts[section.key]}</span> : null}</>}
+            </span>
+            {!collapsed && <span>{expanded.includes(section.key) ? '−' : '+'}</span>}
           </button>
           {expanded.includes(section.key) && !collapsed && <div className="ml-3 mt-1 space-y-0.5 border-l border-slate-800 pl-2">{section.items.map(item => <Link key={item.href} href={item.href} className={`block px-3 py-2 rounded-lg text-xs ${active(item.href) ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-200'}`}>{item.label}{item.badge ? ` (${item.badge})` : ''}</Link>)}</div>}
         </div>)}
