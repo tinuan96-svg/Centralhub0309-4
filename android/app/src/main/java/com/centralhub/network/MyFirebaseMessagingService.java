@@ -30,7 +30,8 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
                     data.get("action_url"),
                     data.get("category"),
                     data.get("notification_id"),
-                    data.get("dedupe_key")
+                    data.get("dedupe_key"),
+                    data.get("store_slug")
             );
             return;
         }
@@ -42,6 +43,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
                     valueOr(remoteMessage.getNotification().getBody(), "You have a new CentralHub alert."),
                     null,
                     "phone_push",
+                    null,
                     null,
                     null
             );
@@ -65,7 +67,8 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
             String actionUrl,
             String category,
             String notificationId,
-            String dedupeKey
+            String dedupeKey,
+            String storeSlug
     ) {
         Intent intent = new Intent(this, MainActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -82,7 +85,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
         Uri defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
         NotificationCompat.Builder notificationBuilder =
                 new NotificationCompat.Builder(this, CHANNEL_ID)
-                        .setSmallIcon(R.mipmap.ic_launcher)
+                        .setSmallIcon(notificationIcon(storeSlug))
                         .setContentTitle(title)
                         .setContentText(messageBody)
                         .setStyle(new NotificationCompat.BigTextStyle().bigText(messageBody))
@@ -113,6 +116,22 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
         }
 
         notificationManager.notify(notificationIdValue, notificationBuilder.build());
+    }
+
+    private int notificationIcon(String storeSlug) {
+        String normalized = storeSlug == null ? "" : storeSlug.trim().toLowerCase();
+        switch (normalized) {
+            case "malluspices":
+                return R.drawable.ic_store_malluspices;
+            case "keralagrocery":
+                return R.drawable.ic_store_keralagrocery;
+            case "pocketgrocery":
+                return R.drawable.ic_store_pocketgrocery;
+            case "tamilretail":
+                return R.drawable.ic_store_tamilretail;
+            default:
+                return R.mipmap.ic_launcher;
+        }
     }
 
     private static int stableNotificationId(
