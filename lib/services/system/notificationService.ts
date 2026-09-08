@@ -7,6 +7,8 @@ export interface SystemNotification {
   severity: 'info' | 'warning' | 'critical' | 'success';
   category: string;
   action_url?: string;
+  store_id?: string | null;
+  metadata?: Record<string, unknown> | null;
   is_read: boolean;
   created_at: string;
 }
