@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 type Ledger = { id:string; code:string; name:string; ledger_type:string; pnl_class:string; pricing_relevant:boolean; description:string|null };
 
 const rules = [
+  { keys:['internet','broadband','wifi','telecom','phone line','connectivity'], name:'Telecoms / internet', code:'6500', ledger_type:'expense', pnl_class:'operating_expense', pricing_relevant:true, treatment:'Prepayment when the service covers future periods; recognise monthly over the benefit period.', rationale:'Business internet or telecoms service used across the operating period.' },
   { keys:['hosting','domain','website','software','saas','subscription'], name:'Software / online services', code:'6100', ledger_type:'expense', pnl_class:'operating_expense', pricing_relevant:true, treatment:'Prepayment when the service covers future periods; recognise monthly over the benefit period.', rationale:'Digital service used by the business.' },
   { keys:['advert','facebook','google ads','marketing'], name:'Marketing / advertising', code:'6200', ledger_type:'expense', pnl_class:'operating_expense', pricing_relevant:true, treatment:'Normal expense as the campaign is delivered.', rationale:'Promotional spend supports customer acquisition.' },
   { keys:['rent','warehouse','storage','premises'], name:'Rent / premises', code:'6000', ledger_type:'expense', pnl_class:'operating_expense', pricing_relevant:true, treatment:'Prepayment if paid before the rental benefit is received.', rationale:'Premises cost follows the rental period.' },
@@ -35,7 +36,9 @@ export default function FinanceHeadAdvisorClient() {
   const suggest = () => {
     setError(null); setMessage(null);
     const text = (form.what+' '+form.purpose+' '+form.supplier).toLowerCase();
-    const months = monthsBetween(form.benefitStart,form.benefitEnd);
+    const durationMatch = text.match(/(\\d+)\\s*(year|years|month|months)/);
+    const inferredMonths = durationMatch ? (durationMatch[2].startsWith('year') ? Number(durationMatch[1])*12 : Number(durationMatch[1])) : 0;
+    const months = monthsBetween(form.benefitStart,form.benefitEnd) || inferredMonths;
     const rule = rules.find(x => x.keys.some(k => text.includes(k))) || { name:'Other operating expenses', code:'6900', ledger_type:'expense', pnl_class:'operating_expense', pricing_relevant:true, treatment:months>1?'Review as a prepayment and recognise over the benefit period.':'Normal expense.', rationale:'No existing business pattern matched confidently; review before creating a new head.' };
     const existing = ledgers.find(x => x.name.toLowerCase() === rule.name.toLowerCase()) || null;
     setSuggestion({ ...rule, existing, months, monthly: form.amount && months ? Number(form.amount)/months : null });
