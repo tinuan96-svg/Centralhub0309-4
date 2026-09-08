@@ -24,13 +24,29 @@ export default function DashboardOverview({ refreshKey, appearance = 'dark', con
   const stores = report?.stores.filter(s => selectedStoreId === 'all' || s.id === selectedStoreId) || [];
   const exportReport = () => {
     if (!report) return;
-    const rows = [['Metric', 'Value', 'Scope'], ['Product sales', String(report.current.totalRevenue), 'Paid orders, excluding delivery'], ['Order gross profit', String(report.current.actualGrossProfit ?? 'Unavailable'), 'Order total less product cost; includes delivery, excludes fees'], ['Paid expenses', String(report.current.totalOverhead), 'Paid expenses by invoice date'], ['After paid expenses', String(report.current.netProfit ?? 'Unavailable'), 'Order gross profit less paid expenses'], ['Paid orders', String(report.current.totalOrders), 'Selected period'], ['Cost estimates', String(report.current.estimatedCosts), 'Orders using current product costs'], ['Missing costs', String(report.current.missingCosts), 'Orders with incomplete cost coverage'], ['Warehouse value', String(report.current.totalInventoryValue ?? 'Unavailable'), 'Current warehouse stock; all stores'], ['Period start', report.start.toISOString(), ''], ['Period end', report.end.toISOString(), ''], ['Store', selectedStoreId, ''], ['Loaded at', report.loadedAt.toISOString(), '']];
+    const rows = [
+      ['Metric', 'Value', 'Scope'],
+      ['Paid order total', String(report.current.totalRevenue), 'Payment-received order totals including delivery charged'],
+      ['Product subtotal', String(report.current.productSubtotal), 'Paid product item subtotal excluding delivery charged'],
+      ['Delivery charged', String(report.current.deliveryRevenue), 'Delivery amount charged to paid orders'],
+      ['Order gross profit', String(report.current.actualGrossProfit ?? 'Unavailable'), 'Paid order total less product cost; before fees and overhead'],
+      ['Paid expenses', String(report.current.totalOverhead), 'Paid expenses by invoice date'],
+      ['After paid expenses', String(report.current.netProfit ?? 'Unavailable'), 'Order gross profit less paid expenses'],
+      ['Paid orders', String(report.current.totalOrders), 'Selected period'],
+      ['Cost estimates', String(report.current.estimatedCosts), 'Orders using current product costs'],
+      ['Missing costs', String(report.current.missingCosts), 'Orders with incomplete cost coverage'],
+      ['Warehouse value', String(report.current.totalInventoryValue ?? 'Unavailable'), 'Current warehouse stock; all stores'],
+      ['Period start', report.start.toISOString(), ''],
+      ['Period end', report.end.toISOString(), ''],
+      ['Store', selectedStoreId, ''],
+      ['Loaded at', report.loadedAt.toISOString(), ''],
+    ];
     const csv = rows.map(row => row.map(cell => '"' + cell.replace(/"/g, '""') + '"').join(',')).join('\r\n');
     const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })); const a = document.createElement('a'); a.href = url; a.download = 'centralhub-dashboard-report.csv'; a.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const dashboardWidgets = report ? [
-    { id: 'business-overview', title: 'Business overview', description: 'Main revenue, sales and trend visualisations', desktop: 12, tablet: 12, mobile: 12, minHeight: 360, content: <ReferenceDashboard report={report} selectedStoreId={selectedStoreId} timeRange={timeRange} /> },
+    { id: 'business-overview', title: 'Business overview', description: 'Main paid-order totals, sales and trend visualisations', desktop: 12, tablet: 12, mobile: 12, minHeight: 360, content: <ReferenceDashboard report={report} selectedStoreId={selectedStoreId} timeRange={timeRange} /> },
     { id: 'security-pulse', title: 'Security pulse', description: 'Realtime security and site-risk monitoring', desktop: 4, tablet: 6, mobile: 12, minHeight: 250, content: <SecurityPulse selectedStoreId={selectedStoreId} compact /> },
     { id: 'kpi-indexes', title: 'KPI indexes', description: 'Revenue, profit, orders and inventory indexes', desktop: 8, tablet: 6, mobile: 12, minHeight: 250, content: <div className="ch-visual-comparisons"><DashboardKpiGrid compact current={report.current} previous={report.previous} /></div> },
     { id: 'section-visuals', title: 'Section visualisations', description: 'Graphs and indicators from operational sections', desktop: 12, tablet: 12, mobile: 12, minHeight: 360, content: <SectionVisuals report={report} selectedStoreId={selectedStoreId} refreshKey={report.loadedAt.getTime()} /> },
@@ -54,7 +70,7 @@ export default function DashboardOverview({ refreshKey, appearance = 'dark', con
     </section>
     {report && <div className="ch-dashboard-followup">
       <details className="ch-model-inspection"><summary>Definitions, actions & system messages</summary><div className="ch-dashboard-stack">
-        <div className="ch-note"><p>Product sales exclude delivery. Order gross profit follows Profit Analysis: order totals less product costs, including delivery charged and before shipping, packing, gateway fees and overhead. After paid expenses subtracts paid expense invoices; it is not accounting net profit. <Link className="ch-link" href="/finance">Open Finance for accounting profit <ArrowUpRight size={14} /></Link></p><p className="mt-2">{report.current.estimatedCosts} orders use estimated current product costs; {report.current.missingCosts} have incomplete cost coverage. Warehouse, bank, integration and reserve figures show their labelled global/current scopes. Finance uses its existing seven-day accounting report. Other period charts use the selected store and dates.</p></div>
+        <div className="ch-note"><p>Paid order total is the amount actually received from paid orders, including delivery charged. Product subtotal is kept separate so it never looks like the order total is missing money. Order gross profit follows Profit Analysis: paid order totals less product costs, before shipping, packing, gateway fees and overhead. After paid expenses subtracts paid expense invoices; it is not accounting net profit. <Link className="ch-link" href="/finance">Open Finance for accounting profit <ArrowUpRight size={14} /></Link></p><p className="mt-2">{report.current.estimatedCosts} orders use estimated current product costs; {report.current.missingCosts} have incomplete cost coverage. Warehouse, bank, integration and reserve figures show their labelled global/current scopes. Finance uses its existing seven-day accounting report. Other period charts use the selected store and dates.</p></div>
         <nav className="ch-workspace-links" aria-label="Section details"><Link href="/stores">Stores</Link><Link href="/inventory">Inventory</Link><Link href="/backorder-planning">Backorders</Link><Link href="/profit-analysis">Product performance</Link><Link href="/picking">Picking</Link><Link href="/packing">Packing</Link><Link href="/shipping">Shipping</Link><Link href="/customers">Customers</Link><Link href="/customer-care/inbox">Inbox</Link><Link href="/customer-care/channels">Channels</Link><Link href="/marketing">Marketing</Link><Link href="/analytics">Analytics</Link></nav>
       </div></details>
     </div>}
