@@ -47,7 +47,9 @@ export default function SocialMedia({ params, searchParams }: { params: any; sea
           <Link href="/marketing/integrations?category=social">
             <Button variant="secondary">Manage Integrations</Button>
           </Link>
-          <Button disabled={connections.length === 0}>+ Create Post</Button>
+          <Link href={connections.length > 0 ? '/marketing/calendar' : '/marketing/integrations?category=social'}>
+            <Button>{connections.length > 0 ? '+ Create Post' : 'Connect Channels'}</Button>
+          </Link>
         </div>
       </div>
 
@@ -58,7 +60,7 @@ export default function SocialMedia({ params, searchParams }: { params: any; sea
                {socialPlatforms.map(platform => {
                  const connection = connections.find(c =>
                     c.provider_id.toLowerCase().includes(platform.id) ||
-                    c.provider?.display_name.toLowerCase().includes(platform.id)
+                    c.provider?.display_name?.toLowerCase().includes(platform.id)
                  );
 
                  return (
@@ -93,7 +95,7 @@ export default function SocialMedia({ params, searchParams }: { params: any; sea
                Centralize your social media strategy. Plan posts, track engagement, and analyze which content drives the most store traffic.
             </p>
             {connections.length > 0 ? (
-              <Button variant="secondary">View Calendar</Button>
+              <Link href="/marketing/calendar"><Button variant="secondary">View Calendar</Button></Link>
             ) : (
               <div className="space-y-4">
                 <p className="text-xs text-amber-500 bg-amber-500/10 px-4 py-2 rounded-lg border border-amber-500/20">

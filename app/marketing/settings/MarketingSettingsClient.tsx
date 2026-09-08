@@ -16,13 +16,15 @@ type ProviderSetup = {
 };
 
 export default function MarketingSettings({ params, searchParams }: { params: any; searchParams: any }) {
-  const [providerId,setProviderId]=useState<'meta'|'google'>('meta');
+  const requestedProvider = searchParams?.provider === 'google' ? 'google' : 'meta';
+  const [providerId,setProviderId]=useState<'meta'|'google'>(requestedProvider);
   const [setup,setSetup]=useState<ProviderSetup|null>(null);
   const [requiredRedirect,setRequiredRedirect]=useState('');
   const [clientId,setClientId]=useState(''),[clientSecret,setClientSecret]=useState(''),[developerToken,setDeveloperToken]=useState(''),[loginCustomerId,setLoginCustomerId]=useState(''),[appLabel,setAppLabel]=useState('');
   const [loading,setLoading]=useState(false),[saving,setSaving]=useState(false),[error,setError]=useState<string|null>(null),[notice,setNotice]=useState<string|null>(null);
 
-  const loadProvider=async(id:'meta'|'google')=>{setLoading(true);setError(null);setNotice(null);try{const result=await marketingService.getPlatformOAuthConfig(id);setSetup(result.config||null);setRequiredRedirect(result.required_redirect_uri||result.config?.redirect_uri||'');setClientId('');setClientSecret('');setDeveloperToken('');setLoginCustomerId(result.config?.login_customer_id||'');setAppLabel(result.config?.app_label||'');}catch(err:any){setSetup(null);setError(err?.message||'Could not load platform setup.')}finally{setLoading(false)}};
+  const loadProvider=async(id:'meta'|'google')=>{setLoading(true);setError(null);setNotice(null);const fallbackRedirect=marketingService.getManagedOAuthRedirectUri(id);setRequiredRedirect(fallbackRedirect);try{const result=await marketingService.getPlatformOAuthConfig(id);setSetup(result.config||null);setRequiredRedirect(result.required_redirect_uri||result.config?.redirect_uri||fallbackRedirect);setClientId('');setClientSecret('');setDeveloperToken('');setLoginCustomerId(result.config?.login_customer_id||'');setAppLabel(result.config?.app_label||'');}catch(err:any){setSetup(null);setRequiredRedirect(fallbackRedirect);setError(err?.message||'Could not load platform setup.')}finally{setLoading(false)}};
+  useEffect(()=>{if(searchParams?.provider==='google'||searchParams?.provider==='meta')setProviderId(searchParams.provider)},[searchParams?.provider]);
   useEffect(()=>{loadProvider(providerId)},[providerId]);
 
   const saveProvider=async()=>{setSaving(true);setError(null);setNotice(null);try{if(!clientId.trim()&&!setup?.configured)throw new Error(providerId==='google'?'Google OAuth Client ID is required.':'Meta App ID is required.');if(!clientSecret.trim()&&!setup?.configured)throw new Error(providerId==='google'?'Google OAuth Client Secret is required.':'Meta App Secret is required.');const result=await marketingService.configurePlatformOAuth({providerId,clientId:clientId.trim(),clientSecret:clientSecret.trim(),developerToken:providerId==='google'?(developerToken.trim()||undefined):undefined,loginCustomerId:providerId==='google'?(loginCustomerId.trim()||undefined):undefined,appLabel:appLabel.trim()||undefined});setSetup(result.config||null);setRequiredRedirect(result.required_redirect_uri||requiredRedirect);setClientId('');setClientSecret('');setDeveloperToken('');setNotice(`CentralHub ${providerId==='google'?'Google':'Meta'} login configured. ${result.stores_prepared??0} store connection profiles prepared safely.`);}catch(err:any){setError(err?.message||'Could not save platform setup.')}finally{setSaving(false)}};

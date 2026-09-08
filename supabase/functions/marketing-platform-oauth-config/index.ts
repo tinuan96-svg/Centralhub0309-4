@@ -27,8 +27,9 @@ async function seedAllStores(db:any,platform:any,providerId:string){const{data:s
 Deno.serve(async req=>{
   if(req.method==='OPTIONS')return new Response('ok',{headers:cors})
   if(req.method!=='POST')return json({error:'method_not_allowed'},405)
+  let requestProviderId='google'
   try{
-    const db=await requireAdmin(req),body=await req.json().catch(()=>({})),action=String(body?.action||'get'),providerId=String(body?.providerId||'google').trim()
+    const db=await requireAdmin(req),body=await req.json().catch(()=>({})),action=String(body?.action||'get'),providerId=String(body?.providerId||'google').trim();requestProviderId=providerId
     if(!supported.has(providerId))return json({error:`Managed one-click OAuth is not enabled for ${providerId}`},400)
     const redirectUri=callback(providerId)
     if(action==='get'){
@@ -72,5 +73,5 @@ Deno.serve(async req=>{
       return json({success:true,config:safe(data,providerId)})
     }
     return json({error:'unsupported_action'},400)
-  }catch(e:any){const message=e?.message||'Platform OAuth configuration failed';return json({success:false,error:message},/Authorization|session|Admin access/i.test(message)?401:400)}
+  }catch(e:any){const message=e?.message||'Platform OAuth configuration failed';const provider=requestProviderId==='meta'?'meta':'google';const required_redirect_uri=callback(provider);return json({success:false,error:message,provider_id:provider,required_redirect_uri},/Authorization|session|Admin access/i.test(message)?401:400)}
 })

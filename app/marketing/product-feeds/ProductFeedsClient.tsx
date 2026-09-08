@@ -1,135 +1,63 @@
 'use client';
 
-import {
-  PageHeader,
-  Card,
-  CardContent,
-  StatGrid,
-  Badge,
-  Button,
-  SectionHeader,
-  designTokens
-} from '@/lib/design-system';
+import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { PageHeader, Card, Button } from '@/lib/design-system';
+import { useStore } from '@/lib/store/useStore';
+import { supabase } from '@/lib/supabase';
+import { marketingService } from '@/lib/services/marketing/marketingService';
 
-const platforms = [
-  { name: 'Google Merchant Center', count: '1,240', status: 'Synced', variant: 'success' as const, icon: '🔍' },
-  { name: 'Meta Catalog', count: '1,240', status: 'Synced', variant: 'success' as const, icon: '👥' },
-  { name: 'TikTok Catalog', count: '850', status: 'Pending', variant: 'pending' as const, icon: '🎵' },
-  { name: 'Pinterest Catalog', count: '1,100', status: 'Error', variant: 'failed' as const, icon: '📌' },
-];
+type Connection = { provider_id: string; status?: string | null; health_score?: number | null; last_sync_at?: string | null; last_error?: string | null };
+type SyncJob = { provider_id?: string | null; status?: string | null; error_message?: string | null; created_at?: string | null };
+const labels: Record<string, string> = { google: 'Google Merchant Center', meta: 'Meta Catalog' };
 
-const commonErrors = [
-  { id: 1, message: 'Missing GTIN (Global Trade Item Number)', count: 12, impact: 'High' },
-  { id: 2, message: 'Low Quality Image (Resolution below 250px)', count: 8, impact: 'Medium' },
-  { id: 3, message: 'Missing Description field', count: 5, impact: 'Medium' },
-  { id: 4, message: 'Price Mismatch (Store vs. Feed)', count: 3, impact: 'Critical' },
-];
+export default function ProductFeedsClient() {
+  const { selectedStore } = useStore();
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [jobs, setJobs] = useState<SyncJob[]>([]);
+  const [activeProducts, setActiveProducts] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState('');
+  const [error, setError] = useState('');
 
-export default function ProductFeedsClient({ params, searchParams }: { params: any; searchParams: any }) {
-  return (
-    <div className="p-6 space-y-10 bg-[#0D1117] min-h-screen">
-      <PageHeader
-        title="Product Feed Engine"
-        subtitle="Master command center for multi-channel product catalog synchronization and optimization."
-        icon="🚀"
-      />
+  const load = useCallback(async () => {
+    setLoading(true); setError('');
+    try {
+      let connectionQuery = supabase.from('marketing_connections').select('provider_id,status,health_score,last_sync_at,last_error').order('provider_id');
+      let jobQuery = supabase.from('marketing_sync_jobs').select('provider_id,status,error_message,created_at').order('created_at', { ascending: false }).limit(50);
+      let productQuery = supabase.from('products').select('id').eq('is_active', true).eq('is_deleted', false).limit(10000);
+      // The central products catalog is shared across stores; feed connections and sync jobs remain store-scoped.
+      if (selectedStore?.id) { connectionQuery = connectionQuery.eq('store_id', selectedStore.id); jobQuery = jobQuery.eq('store_id', selectedStore.id); }
+      const [connectionResult, jobResult, productResult] = await Promise.all([connectionQuery, jobQuery, productQuery]);
+      if (connectionResult.error) throw connectionResult.error;
+      if (jobResult.error) throw jobResult.error;
+      if (productResult.error) throw productResult.error;
+      setConnections(connectionResult.data || []); setJobs(jobResult.data || []); setActiveProducts((productResult.data || []).length);
+    } catch (err: any) { setError(err?.message || 'Could not load live product feed data.'); }
+    finally { setLoading(false); }
+  }, [selectedStore?.id]);
 
-      {/* Product Health Dashboard */}
-      <section className="space-y-4">
-        <SectionHeader title="Product Health Summary" subtitle="Total inventory health across all connected marketing channels." />
-        <StatGrid columns={3}>
-          <Card className="border-[#2EA043]/30 bg-[#2EA043]/5">
-            <CardContent className="flex flex-col items-center text-center py-8">
-              <div className="w-12 h-12 rounded-full bg-[#2EA043]/20 flex items-center justify-center text-[#2EA043] mb-4">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-              <p className={designTokens.typography.metricLabel}>Active Items</p>
-              <p className="text-4xl font-bold text-[#2EA043] mt-1">3,240</p>
-            </CardContent>
-          </Card>
+  useEffect(() => { void load(); }, [load]);
 
-          <Card className="border-[#FFC107]/30 bg-[#FFC107]/5">
-            <CardContent className="flex flex-col items-center text-center py-8">
-              <div className="w-12 h-12 rounded-full bg-[#FFC107]/20 flex items-center justify-center text-[#FFC107] mb-4">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-              </div>
-              <p className={designTokens.typography.metricLabel}>Warnings</p>
-              <p className="text-4xl font-bold text-[#FFC107] mt-1">145</p>
-            </CardContent>
-          </Card>
+  const sync = async (providerId: string) => {
+    if (!selectedStore?.id) { setError('Select a specific store before syncing a product feed.'); return; }
+    setSyncing(providerId); setError('');
+    try { await marketingService.syncConnection(selectedStore.id, providerId); await load(); }
+    catch (err: any) { setError(err?.message || `Could not sync ${labels[providerId] || providerId}.`); }
+    finally { setSyncing(''); }
+  };
 
-          <Card className="border-[#F85149]/30 bg-[#F85149]/5">
-            <CardContent className="flex flex-col items-center text-center py-8">
-              <div className="w-12 h-12 rounded-full bg-[#F85149]/20 flex items-center justify-center text-[#F85149] mb-4">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </div>
-              <p className={designTokens.typography.metricLabel}>Rejected Items</p>
-              <p className="text-4xl font-bold text-[#F85149] mt-1">28</p>
-            </CardContent>
-          </Card>
-        </StatGrid>
-      </section>
+  const failedJobs = jobs.filter(job => ['failed', 'error'].includes(String(job.status || '').toLowerCase()));
+  const providers = connections.filter(connection => ['google', 'meta'].includes(connection.provider_id));
 
-      {/* Catalog Sync Grid */}
-      <section className="space-y-4">
-        <SectionHeader title="Catalog Sync Grid" subtitle="Real-time status of your product catalogs on external platforms." />
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {platforms.map((platform) => (
-            <Card key={platform.name} className="flex flex-col h-full bg-[#161B22] border-[#30363D] hover:border-slate-500 transition-all">
-              <CardContent className="flex-grow">
-                <div className="flex justify-between items-start mb-6">
-                  <div className="text-2xl bg-slate-800 p-2 rounded-lg">{platform.icon}</div>
-                  <Badge variant={platform.variant}>{platform.status}</Badge>
-                </div>
-                <div className="space-y-1 mb-8">
-                  <h4 className="font-bold text-white text-base leading-tight">{platform.name}</h4>
-                  <p className="text-2xl font-black text-cyan-400">{platform.count}</p>
-                  <p className="text-[10px] text-slate-500 uppercase tracking-[0.2em] font-bold">Products Synchronized</p>
-                </div>
-              </CardContent>
-              <div className="p-4 pt-0">
-                <Button variant="secondary" className="w-full text-xs py-2.5 font-bold uppercase tracking-wider">
-                  Sync Now
-                </Button>
-              </div>
-            </Card>
-          ))}
-        </div>
-      </section>
-
-      {/* Common Errors List */}
-      <section className="space-y-4">
-        <SectionHeader title="Common Feed Errors" subtitle="Address these issues to improve your visibility and conversion rates." />
-        <Card className="bg-[#161B22] border-[#30363D]">
-          <div className="divide-y divide-[#30363D]">
-            {commonErrors.map((error) => (
-              <div key={error.id} className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-[#21262D] transition-colors">
-                <div className="flex items-start gap-4">
-                  <div className={`mt-1.5 w-2.5 h-2.5 rounded-full flex-shrink-0 ${error.impact === 'Critical' || error.impact === 'High' ? 'bg-[#F85149] shadow-[0_0_8px_rgba(248,81,73,0.5)]' : 'bg-[#FFC107]'}`} />
-                  <div>
-                    <p className="text-sm font-semibold text-white">{error.message}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs text-slate-400">{error.count} products affected</span>
-                      <span className="text-xs text-slate-600">•</span>
-                      <span className={`text-[10px] uppercase font-bold tracking-wider ${error.impact === 'Critical' ? 'text-[#F85149]' : 'text-slate-500'}`}>Impact: {error.impact}</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button variant="ghost" className="text-[10px] uppercase font-bold tracking-widest h-9 px-4 hover:bg-slate-800">Bulk Fix</Button>
-                  <Button variant="primary" className="text-[10px] uppercase font-bold tracking-widest h-9 px-6 bg-gradient-to-r from-indigo-600 to-purple-600 border-0 shadow-lg shadow-indigo-500/20">AI Fix</Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </section>
-    </div>
-  );
+  return <div className="p-6 space-y-6 max-w-7xl mx-auto text-white">
+    <div className="flex flex-wrap justify-between items-start gap-4"><PageHeader title="Product Feeds" subtitle="Live catalog connections, sync status and recorded feed failures." /><div className="flex gap-2"><Link href="/marketing/integrations?category=commerce"><Button variant="secondary">Manage Integrations</Button></Link><button onClick={() => void load()} className="px-4 py-2 rounded-lg border border-slate-700 bg-slate-900">Refresh</button></div></div>
+    {error && <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">{error}</div>}
+    <div className="grid grid-cols-2 md:grid-cols-3 gap-3"><Stat label="Active catalog products" value={activeProducts === null ? '—' : activeProducts.toLocaleString('en-GB')} /><Stat label="Connected feeds" value={providers.length} /><Stat label="Recorded sync failures" value={failedJobs.length} /></div>
+    <Card className="p-6 bg-slate-900/50 border-slate-800"><div className="flex items-center justify-between gap-3 mb-5"><div><h2 className="text-lg font-bold">Live feed connections</h2><p className="text-xs text-slate-500 mt-1">Only connections and jobs stored for the selected store are shown.</p></div><Link href="/inventory-management/stock" className="text-xs text-cyan-400">Review inventory</Link></div>{loading ? <div className="p-10 text-center text-slate-400">Loading…</div> : providers.length === 0 ? <div className="p-10 text-center text-slate-500 border border-dashed border-slate-800 rounded-2xl">No Google or Meta feed connection is recorded for this scope. Connect one to enable live catalog sync.</div> : <div className="space-y-3">{providers.map(connection => <div key={connection.provider_id} className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4"><div><div className="font-bold">{labels[connection.provider_id] || connection.provider_id}</div><div className="text-xs text-slate-500 mt-1">Status: {connection.status || 'unknown'} · Health: {connection.health_score == null ? '—' : `${connection.health_score}%`}</div>{connection.last_error && <div className="text-xs text-red-300 mt-2">{connection.last_error}</div>}</div><div className="flex items-center gap-3"><span className="text-xs text-slate-500">Last sync: {connection.last_sync_at ? new Date(connection.last_sync_at).toLocaleString('en-GB') : 'Never'}</span><button onClick={() => void sync(connection.provider_id)} disabled={syncing === connection.provider_id || !selectedStore?.id} className="px-3 py-2 rounded-lg border border-slate-700 text-xs">{syncing === connection.provider_id ? 'Syncing…' : 'Sync now'}</button></div></div>)}</div>}</Card>
+    <Card className="p-6 bg-slate-900/50 border-slate-800"><div className="flex items-center justify-between gap-3 mb-4"><h2 className="text-lg font-bold">Recorded feed errors</h2><Link href="/marketing/integrations" className="text-xs text-cyan-400">Connection help</Link></div>{failedJobs.length === 0 ? <div className="p-8 text-center text-slate-500 border border-dashed border-slate-800 rounded-2xl">No failed sync jobs are recorded for this scope.</div> : <div className="space-y-2">{failedJobs.map((job, index) => <div key={`${job.provider_id}-${job.created_at}-${index}`} className="rounded-xl border border-red-500/20 bg-red-500/5 p-4"><div className="flex justify-between gap-3 text-xs"><span className="font-bold text-red-200">{labels[job.provider_id || ''] || job.provider_id || 'Unknown provider'}</span><span className="text-slate-500">{job.created_at ? new Date(job.created_at).toLocaleString('en-GB') : '—'}</span></div><p className="text-sm text-slate-300 mt-2">{job.error_message || 'Sync failed without a recorded message.'}</p></div>)}</div>}</Card>
+    <div className="flex flex-wrap gap-3"><Link href="/marketing/integrations?category=commerce"><Button variant="secondary">Connect a feed</Button></Link><Link href="/inventory-management/stock"><Button variant="secondary">Fix inventory data</Button></Link></div>
+  </div>;
 }
+
+function Stat({ label, value }: { label: string; value: string | number }) { return <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4"><div className="text-xs text-slate-500 uppercase">{label}</div><div className="text-xl font-black mt-1">{value}</div></div>; }
