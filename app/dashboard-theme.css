@@ -508,3 +508,51 @@
 }
 @media (max-width: 480px) { .ch-snapshot-signals { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (prefers-reduced-motion: reduce) { .ch-live-console *, .ch-live-console *::before, .ch-live-console *::after { animation: none !important; transition: none !important; } }
+
+/* Compact first view: keep security telemetry beside the summary on wide
+   displays, and use two short store columns on phones and folded displays. */
+.ch-live-console .ch-security-pulse-compact .ch-security-stores {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .35rem;
+}
+.ch-live-console .ch-security-pulse-compact .ch-security-stores > div {
+  grid-template-columns: 8px minmax(0, 1fr);
+  gap: .15rem .35rem;
+  padding: .35rem .45rem;
+}
+.ch-live-console .ch-security-pulse-compact .ch-security-stores time {
+  grid-column: 2;
+}
+.ch-live-console .ch-security-pulse-compact .ch-security-summary .ch-visual-metrics {
+  margin: 0;
+}
+@media (max-width: 899px) {
+  .ch-live-console { padding: .65rem; gap: .5rem; }
+  .ch-live-console .ch-visual-surface,
+  .ch-live-console .ch-model-grid { gap: .5rem; }
+  .ch-live-console .ch-console-toolbar { padding-bottom: .4rem; gap: .3rem; }
+  .ch-live-console .ch-security-pulse-compact .ch-security-layout {
+    grid-template-columns: 84px minmax(0, 1fr);
+    gap: .45rem;
+  }
+  .ch-live-console .ch-security-pulse-compact .ch-radar { width: 84px; }
+  .ch-live-console .ch-security-pulse-compact .ch-radar i { transform-origin: 3px 34px; }
+  .ch-live-console .ch-security-pulse-compact .ch-radar-core strong { font-size: 1.05rem; }
+  .ch-live-console .ch-security-pulse-compact .ch-radar-core span { font-size: .45rem; }
+  .ch-live-console .ch-security-pulse-compact .ch-security-stores { grid-column: 1 / -1; }
+  .ch-live-console .ch-security-summary .ch-visual-metrics {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start; gap: .4rem;
+  }
+  .ch-live-console .ch-security-summary .ch-visual-metric { min-width: 0; }
+  .ch-live-console .ch-security-summary .ch-visual-metric span { flex-wrap: wrap; }
+  .ch-live-console .ch-security-footer { flex-direction: row; flex-wrap: wrap; gap: .25rem .75rem; }
+  .ch-live-console .ch-live-label small { display: inline; margin-left: .35rem; }
+  .ch-live-console .ch-live-status { flex-wrap: wrap; gap: .35rem; }
+  .ch-live-console .ch-kpi-compact { padding: .55rem; }
+  .ch-live-console .ch-snapshot-signals { gap: .35rem; }
+  .ch-live-console .ch-snapshot-signals > div { padding: .3rem .4rem; }
+}
+@media (max-width: 359px) {
+  .ch-live-console .ch-security-pulse-compact .ch-security-stores { grid-template-columns: minmax(0, 1fr); }
+}
