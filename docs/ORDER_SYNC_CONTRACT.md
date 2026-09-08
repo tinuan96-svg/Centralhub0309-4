@@ -37,6 +37,14 @@ The legacy alias `keralagroceries` is normalized to `keralagrocery`; it must not
 
 The sync operation must be idempotent. Concurrent UI mounts must share one in-flight request so one source order cannot generate duplicate CentralHub notifications from the browser.
 
+Automatic order notifications are payment-gated at the Edge Function boundary:
+
+- A new-order or payment-confirmed notification is allowed only when the source order explicitly reports a successful payment (paid, completed, success, confirmed, or an equivalent authorised state).
+- pending, failed, refunded, cancelled, unpaid, and unknown payment states must never generate an automatic order notification.
+- Do not infer payment success from operational status alone.
+- The existing notification dedupe key remains EVENT_TYPE:source_order_id.
+- Store identity for notifications comes from the canonical stores.id/stores.slug mapping. Web notifications use the store asset under public/notification-logos/; native Android notifications use the matching local store icon.
+
 ## Change rule
 
 Any future order-sync change must:
