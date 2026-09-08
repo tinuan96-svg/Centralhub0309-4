@@ -5,7 +5,7 @@ export const runtime = 'nodejs';
 
 
 function getSyncHeaders() {
-  const secret = process.env.CENTRALHUB_PUSH_API_SECRET?.trim();
+  const secret = process.env.CENTRALHUB_PUSH_API_SECRET?.trim() || process.env.CENTRALHUB_WEBHOOK_SECRET?.trim();
   if (!secret) return null;
   return {
     Authorization: `Bearer ${secret}`,
