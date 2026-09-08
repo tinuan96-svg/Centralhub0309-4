@@ -8,7 +8,8 @@ import { PeriodSummary, percentChange } from '@/lib/dashboard/reporting';
 export default function DashboardKpiGrid({ current, previous, compact = false }: { current: PeriodSummary; previous: PeriodSummary | null; compact?: boolean }) {
   const { comparisonType } = useDashboardFilterStore();
   const cards = [
-    { label: 'Product sales', value: current.totalRevenue, previous: previous?.totalRevenue, icon: Banknote, colour: '#67e8f9', note: 'Payment-received orders · excludes delivery' },
+    { label: 'Paid order total', value: current.totalRevenue, previous: previous?.totalRevenue, icon: Banknote, colour: '#67e8f9', note: 'Payment-received order total including delivery charged' },
+    { label: 'Product subtotal', value: current.productSubtotal, previous: previous?.productSubtotal, icon: Banknote, colour: '#38bdf8', note: 'Product item subtotal only, excluding delivery' },
     { label: 'Order gross profit', value: current.actualGrossProfit, previous: previous?.actualGrossProfit, icon: Coins, colour: '#6ee7b7', note: current.missingCosts ? 'Paid order product costs incomplete' : current.estimatedCosts ? 'Paid orders · includes estimated product costs' : 'Paid orders · before fees and operating costs' },
     { label: 'Paid expenses', value: current.totalOverhead, previous: previous?.totalOverhead, icon: Wallet, colour: '#fda4af', invert: true, note: 'Paid expense invoices · selected invoice dates' },
     { label: 'After paid expenses', value: current.netProfit, previous: previous?.netProfit, icon: ChartNoAxesCombined, colour: '#c4b5fd', note: 'Paid-order gross profit less paid expenses' },
