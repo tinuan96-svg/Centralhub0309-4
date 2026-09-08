@@ -51,6 +51,23 @@ async function notifyCentralHubPhonePush(params: { title: string; message: strin
   }
 }
 
+async function sendExistingCentralHubNotification(notificationId: string) {
+  const siteUrl = (Deno.env.get('CENTRALHUB_SITE_URL') || 'https://centralhub.network').replace(/\/$/, '')
+  const pushSecret = Deno.env.get('CENTRALHUB_PUSH_API_SECRET') || ''
+  if (!pushSecret) return
+
+  try {
+    const response = await fetch(`${siteUrl}/api/push/send`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${pushSecret}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notificationId }),
+    })
+    if (!response.ok) console.error('[WhatsApp Webhook] Existing notification push failed:', response.status, await response.text().catch(() => ''))
+  } catch (error: any) {
+    console.error('[WhatsApp Webhook] Existing notification push request failed:', error?.message || error)
+  }
+}
+
 async function createFallbackEscalation(db: any, params: { storeId: string; conversationId: string; contactId: string; message: string }) {
   try {
     const { data: existing } = await db.from('support_tickets').select('id').eq('store_id', params.storeId).eq('conversation_id', params.conversationId).in('status', ['open', 'assigned', 'in_progress', 'waiting_customer', 'waiting_internal']).limit(1).maybeSingle()
@@ -64,12 +81,21 @@ async function createFallbackEscalation(db: any, params: { storeId: string; conv
     }).select('id').single()
     if (error) throw error
     await db.from('whatsapp_conversations').update({ status: 'waiting', handling_mode: 'AI_DRAFT', updated_at: new Date().toISOString() }).eq('id', params.conversationId)
-    await db.from('system_notifications').insert({
+    const { data: notification, error: notificationError } = await db.from('system_notifications').insert({
       user_id: null, store_id: params.storeId, title: 'AI customer response failed',
       message: `${contact?.display_name || contact?.phone_number || 'Customer'} needs immediate human assistance because the AI could not complete a response.`,
       severity: 'critical', category: 'support', action_url: `/customer-care/tickets?ticket=${ticket.id}`,
-      metadata: { type: 'customer_support_ai_failure', ticket_id: ticket.id, conversation_id: params.conversationId, contact_id: params.contactId },
-    })
+      metadata: {
+        source: 'customer-care-ai-fallback',
+        type: 'customer_support_ai_failure',
+        ticket_id: ticket.id,
+        conversation_id: params.conversationId,
+        contact_id: params.contactId,
+        dedupe_key: `AI_ESCALATION:${ticket.id}`,
+      },
+    }).select('id').single()
+    if (notificationError) console.error('[AI Fallback Escalation] Notification save error:', notificationError.message)
+    else if (notification?.id) await sendExistingCentralHubNotification(notification.id)
     return ticket.id
   } catch (error: any) {
     console.error('[AI Fallback Escalation Error]', error?.message || error)
@@ -81,6 +107,7 @@ async function processCustomerCareAI(params: { message: string; conversationId: 
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
   const db = createClient(supabaseUrl, serviceRoleKey)
+  let aiProcessing = false
   try {
     const [{ data: conversation }, { data: settings }] = await Promise.all([
       db.from('whatsapp_conversations').select('handling_mode').eq('id', params.conversationId).maybeSingle(),
@@ -90,6 +117,14 @@ async function processCustomerCareAI(params: { message: string; conversationId: 
     const aiEnabled = settings?.ai_enabled ?? true
     const autoReply = settings?.ai_auto_reply ?? true
     if (!aiEnabled || handlingMode === 'HUMAN') return
+    const activelyResponding = handlingMode === 'AI' && autoReply
+    if (activelyResponding) {
+      const { error: processingError } = await db.from('whatsapp_conversations')
+        .update({ ai_processing_started_at: new Date().toISOString() })
+        .eq('id', params.conversationId)
+      if (processingError) console.error('[AI Flow] Could not mark AI processing:', processingError.message)
+      aiProcessing = true
+    }
     console.log(`[AI Flow] Starting response for conversation ${params.conversationId}; store=${params.storeId}; mode=${handlingMode}; autoReply=${autoReply}`)
     const aiRes = await fetch(`${supabaseUrl}/functions/v1/customer-care-ai`, {
       method: 'POST', headers: { 'Authorization': `Bearer ${serviceRoleKey}`, 'Content-Type': 'application/json' },
@@ -122,6 +157,13 @@ async function processCustomerCareAI(params: { message: string; conversationId: 
   } catch (error: any) {
     console.error('[AI Flow Error]', error?.message || error)
     await createFallbackEscalation(db, { storeId: params.storeId, conversationId: params.conversationId, contactId: params.contactId, message: params.message })
+  } finally {
+    if (aiProcessing) {
+      const { error: clearError } = await db.from('whatsapp_conversations')
+        .update({ ai_processing_started_at: null, updated_at: new Date().toISOString() })
+        .eq('id', params.conversationId)
+      if (clearError) console.error('[AI Flow] Could not clear AI processing:', clearError.message)
+    }
   }
 }
 
@@ -241,16 +283,6 @@ serve(async (req) => {
           await mediaTask
         }
       }
-
-      await notifyCentralHubPhonePush({
-        title: 'You have a message from customer',
-        message: `${storeName}: ${profileName} sent a new ${msg.type === 'audio' || msg.type === 'voice' ? 'voice' : 'WhatsApp'} message.`,
-        url: `/customer-care/inbox?conversation=${encodeURIComponent(conv.id)}`,
-        category: 'customer_message',
-        storeId,
-        dedupeKey: `CUSTOMER_MESSAGE:${String(msg.id || eventId)}`,
-        metadata: { store_id: storeId, store_name: storeName, conversation_id: conv.id, contact_id: contact.id, message_id: msg.id },
-      })
 
       const mediaDetails = mediaCaption ? ' The caption says: "' + mediaCaption + '".' : ''
       const aiInput = msg.type === 'text'
