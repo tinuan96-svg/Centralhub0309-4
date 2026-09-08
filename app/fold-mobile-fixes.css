@@ -1,5 +1,5 @@
 /*
- * Fold display hardening; cover-display-only hardening remains isolated from the mobile shell.
+ * Fold display hardening; Cover-display-only hardening remains isolated from the mobile shell.
  *
  * MobileLayout ends at 699px. The unfolded Fold starts at the fold-inner
  * breakpoint (700px) and uses the desktop shell, so no mobile overlay rule
