@@ -3,6 +3,7 @@
 import { ReactNode, useState, useEffect } from 'react';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
+import { syncOrders } from '@/lib/services/orderSyncClient';
 import { supabase } from '@/lib/supabase';
 
 interface AppLayoutProps {
@@ -15,7 +16,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
   useEffect(() => {
     // 1. Trigger background sync from MalluSpices on load
     console.log('AppLayout: Starting background sync...');
-    supabase.functions.invoke('sync-orders').catch(err => console.error('Auto-sync failed:', err));
+    void syncOrders().catch(err => console.error('Auto-sync failed:', err));
 
     // 2. Listen for order changes in CentralHub
     const channelId = Math.random().toString(36).substring(2, 11);
