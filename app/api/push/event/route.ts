@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { sendWebPush, getWebPushConfigStatus, StoredPushSubscription } from '@/lib/server/webPush';
 import { getServiceClient, getUserFromRequest, jsonError } from '../_utils';
+import { getStoreNotificationBrand } from '@/lib/notifications/storeNotificationBrand';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -58,10 +59,40 @@ export async function POST(req: Request) {
     return jsonError('Unsupported automatic phone notification event.');
   }
 
-  const notificationDetails = buildNotification(eventType, body);
   const supabase = getServiceClient();
   const orderId = String(body.orderId || body.order_id || '').trim();
-  const dedupeKey = orderId ? `${eventType}:${orderId}` : null;
+  if (!orderId) {
+    return jsonError('orderId is required for automatic order notifications.', 400);
+  }
+
+  const { data: order, error: orderError } = await supabase
+    .from('orders')
+    .select('payment_status, order_status, store_id')
+    .eq('id', orderId)
+    .maybeSingle();
+
+  if (orderError) return jsonError(orderError.message, 500);
+  if (!order) return jsonError('Order not found.', 404);
+
+  // Fail closed: both automatic order events require a paid order. This
+  // protects this legacy authenticated route as well as the internal sender.
+  if (order.payment_status !== 'paid') {
+    return NextResponse.json({
+      success: true,
+      skipped: true,
+      reason: 'Order notification withheld until payment is successful.',
+      sent: 0,
+      attempted: 0,
+    }, { status: 202 });
+  }
+
+  const canonicalStoreId = order.store_id || body.storeId || body.store_id || null;
+  const { data: store } = canonicalStoreId
+    ? await supabase.from('stores').select('slug, name').eq('id', canonicalStoreId).maybeSingle()
+    : { data: null };
+  const storeBrand = getStoreNotificationBrand(store?.slug, store?.name);
+  const notificationDetails = buildNotification(eventType, body);
+  const dedupeKey = `${eventType}:${orderId}`;
 
   if (dedupeKey) {
     const { data: existing, error: existingError } = await supabase
@@ -88,6 +119,9 @@ export async function POST(req: Request) {
     event_type: eventType,
     order_id: orderId || null,
     order_number: body.orderNumber || body.order_number || null,
+    store_slug: storeBrand.slug,
+    store_name: storeBrand.name,
+    store_logo_url: storeBrand.webIcon,
     ...(dedupeKey ? { dedupe_key: dedupeKey } : {}),
   };
 
@@ -95,7 +129,7 @@ export async function POST(req: Request) {
     .from('system_notifications')
     .insert({
       user_id: user.id,
-      store_id: body.storeId || body.store_id || null,
+      store_id: canonicalStoreId,
       title: notificationDetails.title,
       message: notificationDetails.message,
       severity: 'info',
@@ -104,7 +138,7 @@ export async function POST(req: Request) {
       is_read: false,
       metadata: notificationMetadata,
     })
-    .select('id, title, message, action_url, severity, category')
+    .select('id, store_id, title, message, action_url, severity, category, metadata')
     .single();
 
   if (notificationError || !notification) {
@@ -158,6 +192,11 @@ export async function POST(req: Request) {
       tag: `centralhub-${notification.id}`,
       severity: notification.severity,
       category: notification.category,
+      icon: storeBrand.webIcon,
+      badge: storeBrand.webIcon,
+      storeId: notification.store_id,
+      storeName: storeBrand.name,
+      storeSlug: storeBrand.slug,
       renotify: true,
     }, { ttl: 60 * 60, urgency: 'high' });
 
