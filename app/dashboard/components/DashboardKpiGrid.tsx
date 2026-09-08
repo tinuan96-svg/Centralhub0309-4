@@ -8,12 +8,12 @@ import { PeriodSummary, percentChange } from '@/lib/dashboard/reporting';
 export default function DashboardKpiGrid({ current, previous, compact = false }: { current: PeriodSummary; previous: PeriodSummary | null; compact?: boolean }) {
   const { comparisonType } = useDashboardFilterStore();
   const cards = [
-    { label: 'Product sales', value: current.totalRevenue, previous: previous?.totalRevenue, icon: Banknote, colour: '#67e8f9', note: 'Paid orders · excludes delivery' },
-    { label: 'Order gross profit', value: current.actualGrossProfit, previous: previous?.actualGrossProfit, icon: Coins, colour: '#6ee7b7', note: current.missingCosts ? 'Product costs incomplete' : current.estimatedCosts ? 'Includes estimated product costs' : 'Before fees and operating costs' },
-    { label: 'Paid expenses', value: current.totalOverhead, previous: previous?.totalOverhead, icon: Wallet, colour: '#fda4af', invert: true, note: 'Selected invoice dates' },
-    { label: 'After paid expenses', value: current.netProfit, previous: previous?.netProfit, icon: ChartNoAxesCombined, colour: '#c4b5fd', note: 'Gross profit less paid expenses' },
+    { label: 'Product sales', value: current.totalRevenue, previous: previous?.totalRevenue, icon: Banknote, colour: '#67e8f9', note: 'Payment-received orders · excludes delivery' },
+    { label: 'Order gross profit', value: current.actualGrossProfit, previous: previous?.actualGrossProfit, icon: Coins, colour: '#6ee7b7', note: current.missingCosts ? 'Paid order product costs incomplete' : current.estimatedCosts ? 'Paid orders · includes estimated product costs' : 'Paid orders · before fees and operating costs' },
+    { label: 'Paid expenses', value: current.totalOverhead, previous: previous?.totalOverhead, icon: Wallet, colour: '#fda4af', invert: true, note: 'Paid expense invoices · selected invoice dates' },
+    { label: 'After paid expenses', value: current.netProfit, previous: previous?.netProfit, icon: ChartNoAxesCombined, colour: '#c4b5fd', note: 'Paid-order gross profit less paid expenses' },
     { label: 'Warehouse value', value: current.totalInventoryValue, icon: Package, colour: '#fcd34d', note: 'Current stock · all stores' },
-    { label: 'Paid orders', value: current.totalOrders, previous: previous?.totalOrders, icon: ShoppingBag, colour: '#93c5fd', count: true, note: current.pendingOrders + ' awaiting payment in period' },
+    { label: 'Paid orders', value: current.totalOrders, previous: previous?.totalOrders, icon: ShoppingBag, colour: '#93c5fd', count: true, note: 'Payment received orders only' },
   ];
   return <div className="ch-kpi-grid">{cards.map(card => {
     const change = comparisonType === 'none' || card.value === null ? null : percentChange(card.value, card.previous);

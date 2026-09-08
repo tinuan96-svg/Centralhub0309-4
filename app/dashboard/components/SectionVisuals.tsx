@@ -14,9 +14,9 @@ import MetricMasonry from '@/components/dashboard/MetricMasonry';
 
 export default function SectionVisuals({ report, selectedStoreId, refreshKey }: { report: DashboardReport; selectedStoreId: string; refreshKey: number }) {
   const paid = report.orders.filter(isPaidOrder);
-  const group = (key: 'order_status' | 'payment_status' | 'delivery_city', rows = report.orders) => {
+  const group = (key: 'order_status' | 'payment_method' | 'delivery_city', rows = paid) => {
     const values = new Map<string, number>();
-    rows.forEach(o => { const label = (o[key] || 'Unknown').replace(/_/g, ' '); values.set(label, (values.get(label) || 0) + 1); });
+    rows.forEach(o => { const label = (String(o[key] || 'Unknown')).replace(/_/g, ' '); values.set(label, (values.get(label) || 0) + 1); });
     return [...values].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
   };
   const out = report.inventory.filter(i => numeric(i.stock_quantity) <= 0).length;
@@ -27,8 +27,8 @@ export default function SectionVisuals({ report, selectedStoreId, refreshKey }: 
     <FinancialCommandSummary refreshKey={refreshKey} />
     <Panel title="Stock availability" subtitle="Current warehouse · all stores"><DonutChart data={[{ label: 'Available', value: report.inventory.length - out - low, color: '#50e4eb' }, { label: 'Low stock', value: low, color: '#fbbf24' }, { label: 'Zero / negative', value: out, color: '#f04fed' }]} label="stock records" /></Panel>
     <Panel title="Top products" subtitle="Paid product sales · selected period"><MetricBars data={report.products.slice(0, 5).map(p => ({ label: p.name, value: p.revenue }))} format={formatCurrency} /></Panel>
-    <Panel title="Order mix" subtitle="All orders · selected period"><DonutChart data={group('order_status')} label="orders" /></Panel>
-    <Panel title="Payment mix" subtitle="Order states · selected period"><DonutChart data={group('payment_status')} label="orders" /></Panel>
+    <Panel title="Order mix" subtitle="Paid order status · selected period"><DonutChart data={group('order_status')} label="paid orders" /></Panel>
+    <Panel title="Payment methods" subtitle="Paid orders only · selected period"><DonutChart data={group('payment_method')} label="paid orders" /></Panel>
     <Panel title="Fulfilment" subtitle="Paid orders · selected period"><MetricBars data={[
       { label: 'Picking', value: paid.filter(o => ['confirmed', 'processing', 'picking'].includes(o.order_status)).length },
       { label: 'Packing', value: paid.filter(o => ['picked', 'packing', 'ready_for_packing'].includes(o.order_status)).length },
@@ -37,7 +37,7 @@ export default function SectionVisuals({ report, selectedStoreId, refreshKey }: 
       { label: 'Delivered', value: paid.filter(o => ['delivered', 'completed'].includes(o.order_status)).length },
     ]} /></Panel>
     <Panel title="Store sales" subtitle="Paid products · selected period"><MetricBars data={storeSales} format={formatCurrency} /></Panel>
-    <Panel title="Delivery locations" subtitle="Paid orders · selected period"><MetricBars data={group('delivery_city', paid).slice(0, 6)} /></Panel>
+    <Panel title="Delivery locations" subtitle="Paid orders · selected period"><MetricBars data={group('delivery_city').slice(0, 6)} /></Panel>
     <Panel title="Cost quality" subtitle="Paid orders · selected period"><DonutChart data={[
       { label: 'Recorded', value: report.current.costRows.filter(o => ['order_total', 'snapshot'].includes(o.cost_quality)).length, color: '#50e4eb' },
       { label: 'Estimated', value: report.current.estimatedCosts, color: '#fbbf24' },

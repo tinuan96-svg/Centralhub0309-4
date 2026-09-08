@@ -6,7 +6,7 @@ import { InventoryRow, PeriodSummary, ReportOrder, ReportStore, numeric, summari
 export { isPaidOrder, numeric, percentChange, productRevenue } from './metrics';
 export type { PeriodSummary } from './metrics';
 
-// Read-only reporting. Existing operational services, writes and sync remain untouched.
+// Read-only business reporting. Dashboard order rows are payment-received only.
 // Every page must succeed; never publish a silently truncated total.
 export async function readReportRows<T = any>(query: () => any, label: string): Promise<T[]> {
   const rows: T[] = [];
@@ -30,10 +30,10 @@ export async function loadDashboardReport(filters: { timeRange: TimeRange; compa
   const previous = getComparisonDateRange(start, end, filters.comparisonType);
   const storeId = filters.selectedStoreId === 'all' ? undefined : filters.selectedStoreId;
   const ordersFor = (a: Date, b: Date) => readReportRows<ReportOrder>(() => {
-    let q = supabase.from('orders').select('id,store_id,total,delivery_fee,order_status,payment_status,created_at,delivery_city,customer_email').eq('is_deleted', false).gte('created_at', a.toISOString()).lte('created_at', b.toISOString()).order('id');
+    let q = supabase.from('orders').select('id,store_id,total,delivery_fee,order_status,payment_status,payment_method,created_at,delivery_city,customer_email').eq('is_deleted', false).eq('payment_status', 'paid').not('order_status', 'in', '("cancelled","refunded","failed")').gte('created_at', a.toISOString()).lte('created_at', b.toISOString()).order('id');
     if (storeId) q = q.eq('store_id', storeId);
     return q;
-  }, 'Orders');
+  }, 'Paid orders');
   const expensesFor = (a: Date, b: Date) => readReportRows(() => {
     let q = supabase.from('expenses').select('id,amount_gross').eq('payment_status', 'paid').gte('invoice_date', a.toISOString()).lte('invoice_date', b.toISOString()).order('id');
     if (storeId) q = q.eq('store_id', storeId);
@@ -47,7 +47,7 @@ export async function loadDashboardReport(filters: { timeRange: TimeRange; compa
     readReportRows<InventoryRow>(() => supabase.from('central_inventory').select('id,product_id,stock_quantity,low_stock_threshold,cost_price').order('id'), 'Warehouse stock'),
     readReportRows<ReportStore>(() => supabase.from('stores').select('id,name,slug').order('id'), 'Stores'),
     readReportRows(() => {
-      let q = supabase.from('order_items').select('id,product_id,product_name,total_price,quantity,orders!inner(created_at,store_id,payment_status,order_status,is_deleted)').eq('orders.payment_status', 'paid').eq('orders.is_deleted', false).not('orders.order_status', 'in', '("cancelled","refunded")').gte('orders.created_at', start.toISOString()).lte('orders.created_at', end.toISOString()).order('id');
+      let q = supabase.from('order_items').select('id,product_id,product_name,total_price,quantity,orders!inner(created_at,store_id,payment_status,order_status,is_deleted)').eq('orders.payment_status', 'paid').eq('orders.is_deleted', false).not('orders.order_status', 'in', '("cancelled","refunded","failed")').gte('orders.created_at', start.toISOString()).lte('orders.created_at', end.toISOString()).order('id');
       if (storeId) q = q.eq('orders.store_id', storeId);
       return q;
     }, 'Product sales'),
