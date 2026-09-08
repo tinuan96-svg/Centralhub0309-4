@@ -5,7 +5,7 @@ import { useDashboardFilterStore } from '@/lib/store/dashboardFilterStore';
 import { formatCurrency } from '@/lib/utils/currency';
 import { PeriodSummary, percentChange } from '@/lib/dashboard/reporting';
 
-export default function DashboardKpiGrid({ current, previous }: { current: PeriodSummary; previous: PeriodSummary | null }) {
+export default function DashboardKpiGrid({ current, previous, compact = false }: { current: PeriodSummary; previous: PeriodSummary | null; compact?: boolean }) {
   const { comparisonType } = useDashboardFilterStore();
   const cards = [
     { label: 'Product sales', value: current.totalRevenue, previous: previous?.totalRevenue, icon: Banknote, colour: '#67e8f9', note: 'Paid orders · excludes delivery' },
@@ -18,11 +18,11 @@ export default function DashboardKpiGrid({ current, previous }: { current: Perio
   return <div className="ch-kpi-grid">{cards.map(card => {
     const change = comparisonType === 'none' || card.value === null ? null : percentChange(card.value, card.previous);
     const positive = change !== null && (card.invert ? change < 0 : change > 0);
-    return <article className="ch-panel ch-kpi" key={card.label} style={{ '--metric-accent': card.colour } as CSSProperties}>
+    return <article className={'ch-panel ch-kpi' + (compact ? ' ch-kpi-compact' : '')} key={card.label} title={card.note} style={{ '--metric-accent': card.colour } as CSSProperties}>
       <div className="flex items-start justify-between gap-2 mb-3"><p className="ch-kpi-label">{card.label}</p><span className="ch-kpi-icon"><card.icon size={18} aria-hidden="true" /></span></div>
       <p className="ch-kpi-value">{card.value === null ? '—' : card.count ? card.value.toLocaleString('en-GB') : formatCurrency(card.value)}</p>
       <p className="ch-comparison">{change === null ? card.label === 'Warehouse value' ? 'Current snapshot' : comparisonType === 'none' ? 'Selected period' : 'No comparable baseline' : <><span className={change === 0 ? 'text-slate-300' : positive ? 'text-emerald-300' : 'text-rose-300'}>{change > 0 ? '↗' : change < 0 ? '↘' : '—'} {Math.abs(change).toFixed(1)}%</span> vs {comparisonType === 'lastYear' ? 'last year' : 'previous period'}</>}</p>
-      <p className="text-xs text-slate-400 leading-relaxed mt-2">{card.note}</p>
+      {!compact && <p className="text-xs text-slate-400 leading-relaxed mt-2">{card.note}</p>}
     </article>;
   })}</div>;
 }

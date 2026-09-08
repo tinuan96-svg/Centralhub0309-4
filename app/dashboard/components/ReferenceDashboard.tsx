@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import type { DashboardReport } from '@/lib/dashboard/reporting';
 import { isPaidOrder, numeric, productRevenue } from '@/lib/dashboard/metrics';
 import { formatCurrency } from '@/lib/utils/currency';
@@ -58,7 +57,7 @@ export default function ReferenceDashboard({ report, selectedStoreId, timeRange 
   return <div className="ch-model-grid">
     <section className="ch-panel ch-model-financial-band" aria-label="Financial totals and key ratios">
       <div className="ch-model-total"><span className="ch-model-label">Product sales</span><strong>{formatCurrency(report.current.totalRevenue)}</strong><span className="ch-model-meta">{paid.length.toLocaleString('en-GB')} paid orders</span><dl><div><dt>Paid expenses</dt><dd>{formatCurrency(report.current.totalOverhead)}</dd></div><div><dt>Warehouse</dt><dd>{report.current.totalInventoryValue === null ? '—' : formatCurrency(report.current.totalInventoryValue)}</dd></div></dl></div>
-      <div className="ch-model-total"><span className="ch-model-label">Order gross profit</span><strong>{report.current.actualGrossProfit === null ? '—' : formatCurrency(report.current.actualGrossProfit)}</strong><span className="ch-model-meta">{report.current.missingCosts ? 'Incomplete costs' : report.current.estimatedCosts ? 'Estimated costs included' : 'Before fees & overhead'}</span><dl><div><dt>After paid expenses</dt><dd>{report.current.netProfit === null ? '—' : formatCurrency(report.current.netProfit)}</dd></div></dl><Link href="/finance" className="ch-link">Finance →</Link></div>
+      <div className="ch-model-total"><span className="ch-model-label">Order gross profit</span><strong>{report.current.actualGrossProfit === null ? '—' : formatCurrency(report.current.actualGrossProfit)}</strong><span className="ch-model-meta">{report.current.missingCosts ? 'Incomplete costs' : report.current.estimatedCosts ? 'Estimated costs included' : 'Before fees & overhead'}</span><dl><div><dt>After paid expenses</dt><dd>{report.current.netProfit === null ? '—' : formatCurrency(report.current.netProfit)}</dd></div></dl></div>
       <GradientRing label="Delivered" value={ratio(delivered, paid.length)} detail={`${delivered} / ${paid.length} paid orders`} />
       <GradientRing label="Recorded costs" value={ratio(recorded, paid.length)} detail={`${recorded} / ${paid.length} paid orders`} />
       <GradientRing label="Stock available" value={ratio(stocked, report.inventory.length)} detail="Current warehouse · all stores" />
@@ -71,7 +70,7 @@ export default function ReferenceDashboard({ report, selectedStoreId, timeRange 
       <HealthRadar axes={[{ label: 'Paid', value: ratio(paid.length, report.orders.length), detail: 'Eligible paid / all orders' }, { label: 'Delivery', value: ratio(delivered, paid.length), detail: 'Delivered / paid orders' }, { label: 'Repeat', value: ratio(repeat, buyers.size), detail: 'Repeat / identified buyers' }, { label: 'Costs', value: ratio(recorded, paid.length), detail: 'Recorded costs / paid orders' }, { label: 'Stock', value: ratio(stocked, report.inventory.length), detail: 'Positive stock / stock records' }]} />
     </section>
     <Panel title="Sales & profitability" subtitle="Store comparison · before fees & overhead" className="ch-model-profit"><StoreScatter stores={scatter} /></Panel>
-    <Panel title="Repeat customers" className="ch-model-customer"><GradientRing segmented label="Repeat buyer ratio" value={ratio(repeat, buyers.size)} detail={`${repeat} of ${buyers.size} identified buyers`} /><Link href="/customers" className="ch-link">Customer activity →</Link></Panel>
+    <Panel title="Repeat customers" className="ch-model-customer"><GradientRing segmented label="Repeat buyer ratio" value={ratio(repeat, buyers.size)} detail={`${repeat} of ${buyers.size} identified buyers`} /></Panel>
     <Panel title="Weekly sales" className="ch-model-weekly"><WeeklyColumns series={series.map(s => ({ id: s.id, name: s.name, values: s.data }))} dates={dates.slice(-7)} /></Panel>
     <Panel title="Order activity" className="ch-model-activity"><ActivityCalendar days={[...calendar.values()]} start={start} end={end} /></Panel>
   </div>;

@@ -2,8 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { IntegrationService, IntegrationStatus } from '@/lib/services/system/integrationService';
+import { CircleCheck, CircleAlert, CircleX } from 'lucide-react';
+import { Panel } from '@/components/dashboard/Charts';
+import { GradientRing } from '@/components/dashboard/ReferenceCharts';
+import { MetricState } from '@/components/dashboard/VisualMetric';
 
-export default function IntegrationHealth() {
+export default function IntegrationHealth({ visual = false }: { visual?: boolean }) {
   const [integrations, setIntegrations] = useState<IntegrationStatus[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -16,6 +20,7 @@ export default function IntegrationHealth() {
     })();
   }, []);
 
+  if (visual) return <Panel title="Integration health" subtitle="Saved operational checks · all stores">{loading ? <MetricState loading /> : !integrations.length ? <MetricState label="No health data" /> : <><GradientRing label="Healthy checks" value={integrations.filter(i => i.status === 'healthy').length / integrations.length * 100} detail={`${integrations.filter(i => i.status === 'healthy').length} / ${integrations.length} checks`} /><div className="ch-visual-health">{integrations.map(i => { const Icon = i.status === 'healthy' ? CircleCheck : i.status === 'warning' ? CircleAlert : CircleX; return <div key={i.id} title={i.latestError || i.status}><Icon size={18} className={'ch-indicator-' + i.status} aria-label={i.status} /><span>{i.name}</span><strong>{i.errorCount} issues</strong><time>{i.lastSync ? new Date(i.lastSync).toLocaleString('en-GB') : 'No activity timestamp'}</time></div>; })}</div></>}</Panel>;
   if (loading) return <div className="h-40 bg-slate-800/20 border border-slate-800 rounded-3xl animate-pulse" />;
 
   const hasError = integrations.some(item => item.status === 'error');

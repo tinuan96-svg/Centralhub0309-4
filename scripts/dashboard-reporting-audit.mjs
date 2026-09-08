@@ -47,6 +47,19 @@ assert.equal(percentChange(100, 0), null, 'Zero baseline has no defined percenta
 assert.equal(percentChange(-50, -100), 50, 'Reduced losses should have positive arithmetic change');
 assert.equal(percentChange(-150, -100), -50);
 
+const { metricTotal, metricRate, metricGroups } = load('lib/dashboard/channelMetrics.ts');
+assert.equal(metricTotal([], 'spend'), null, 'No import is unavailable, not measured zero');
+assert.equal(metricTotal([{ spend: 0 }], 'spend'), 0, 'Retain an imported zero');
+assert.equal(metricTotal([{ spend: 100 }, { spend: null }], 'spend'), null, 'Partial imported totals must not be published');
+assert.equal(metricTotal([{ spend: 'bad' }], 'spend'), null);
+assert.equal(metricTotal([{ spend: '25.50' }, { spend: -5.25 }], 'spend'), 20.25, 'GBP major units and signed corrections are retained');
+assert.equal(metricRate(5, 0), null);
+assert.equal(metricRate(null, 100), null);
+assert.equal(metricRate(0, 100), 0);
+assert.equal(metricRate(50, 25, 1), 2, 'ROAS is a multiple, not a percentage');
+assert.deepEqual(metricGroups([{ source: 'Search', sessions: 10 }, { source: 'Search', sessions: 5 }, { source: 'Email', sessions: 3 }], 'source', 'sessions'), [{ label: 'Search', value: 15 }, { label: 'Email', value: 3 }]);
+assert.equal(metricGroups([{ source: 'Search', sessions: 10 }, { source: 'Search', sessions: null }], 'source', 'sessions')[0].value, null);
+
 const { readReportRows, loadDashboardReport } = load('lib/dashboard/reporting.ts');
 await assert.rejects(() => loadDashboardReport({ timeRange: 'custom', customStartDate: '2026-09-01', customEndDate: null }), /Select both/);
 const pages = [];

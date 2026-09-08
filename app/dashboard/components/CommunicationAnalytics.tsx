@@ -5,8 +5,9 @@ import { supabase } from '@/lib/supabase';
 import { useDashboardFilterStore } from '@/lib/store/dashboardFilterStore';
 import { readReportRows } from '@/lib/dashboard/reporting';
 import { DonutChart, Panel } from '@/components/dashboard/Charts';
+import { MetricState, VisualMetric } from '@/components/dashboard/VisualMetric';
 
-export default function CommunicationAnalytics() {
+export default function CommunicationAnalytics({ visual = false }: { visual?: boolean }) {
   const [stats, setStats] = useState<{ open: number; human: number; resolved: number; inbound: number; outbound: number } | null>(null);
   const [error, setError] = useState(false);
   const { selectedStoreId } = useDashboardFilterStore();
@@ -25,6 +26,9 @@ export default function CommunicationAnalytics() {
     ]).then(([convs, tickets, messages]) => { if (!cancelled) setStats({ open: convs.filter(c => c.status === 'open').length, human: convs.filter(c => c.status === 'open' && c.handling_mode === 'HUMAN').length, resolved: tickets.length, inbound: messages.filter(m => m.direction === 'inbound').length, outbound: messages.filter(m => m.direction === 'outbound').length }); }).catch(() => { if (!cancelled) setError(true); });
     return () => { cancelled = true; };
   }, [selectedStoreId]);
+  if (visual) return <Panel title="Customer communications" subtitle="Open now · messages and resolutions today">
+    {!stats || error ? <MetricState loading={!error} error={error} /> : <><div className="ch-visual-metrics"><VisualMetric label="Open" value={stats.open} /><VisualMetric label="With admin" value={stats.human} /><VisualMetric label="Resolved today" value={stats.resolved} /><VisualMetric label="Messages today" value={stats.inbound + stats.outbound} /></div><DonutChart data={[{ label: 'Received', value: stats.inbound, color: '#50e4eb' }, { label: 'Sent', value: stats.outbound, color: '#f04fed' }]} label="messages" /></>}
+  </Panel>;
   return <Panel title="Customer communications" subtitle="Current conversations and today's message activity." action={<Link href="/customer-care/inbox" className="ch-link">Open inbox →</Link>}>
     {error ? <p role="alert" className="ch-note ch-error">Message statistics could not be loaded.</p> : !stats ? <p className="ch-muted">Loading messages…</p> : <>
       <div className="grid grid-cols-3 gap-3 mb-6">{[['Open enquiries', stats.open], ['With admin', stats.human], ['Tickets resolved today', stats.resolved]].map(([label, value]) => <div key={label}><p className="ch-muted">{label}</p><p className="ch-kpi-value mt-2">{value}</p></div>)}</div>

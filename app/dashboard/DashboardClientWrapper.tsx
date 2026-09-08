@@ -2,13 +2,7 @@
 
 import dynamic from 'next/dynamic';
 
-const FinancialCommandSummary = dynamic(
-  () => import('@/app/finance/FinancialCommandSummary'),
-  {
-    ssr: false,
-    loading: () => <div className="h-36 bg-slate-950" />,
-  },
-);
+const DashboardStoreChat = dynamic(() => import('./components/DashboardStoreChat'), { ssr: false });
 
 const DashboardClient = dynamic(() => import('./DashboardClient'), {
   ssr: false,
@@ -18,8 +12,8 @@ const DashboardClient = dynamic(() => import('./DashboardClient'), {
 export default function DashboardClientWrapper() {
   return (
     <>
-      <FinancialCommandSummary />
       <DashboardClient params={{}} searchParams={{}} />
+      <DashboardStoreChat />
     </>
   );
 }
