@@ -74,6 +74,15 @@ export const WHATSAPP_EVENTS: Record<string, WhatsAppEvent[]> = {
       variables: ['customer_name', 'order_number'],
     },
   ],
+  FINANCE: [
+    {
+      key: 'payment.failed',
+      label: 'Payment Failed',
+      type: 'TRANSACTIONAL',
+      source: 'ORDER_SERVICE',
+      variables: ['customer_name', 'order_number'],
+    },
+  ],
   SHIPPING: [
     {
       key: 'shipment.collected',
