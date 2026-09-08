@@ -26,7 +26,14 @@ export const WHATSAPP_EVENTS: Record<string, WhatsAppEvent[]> = {
     },
     {
       key: 'order.confirmed',
-      label: 'Order Confirmed',
+      label: 'Order Confirmed / Payment Confirmed',
+      type: 'TRANSACTIONAL',
+      source: 'ORDER_SERVICE',
+      variables: ['customer_name', 'order_number'],
+    },
+    {
+      key: 'order.processing',
+      label: 'Order Processing',
       type: 'TRANSACTIONAL',
       source: 'ORDER_SERVICE',
       variables: ['customer_name', 'order_number'],
@@ -48,6 +55,13 @@ export const WHATSAPP_EVENTS: Record<string, WhatsAppEvent[]> = {
     {
       key: 'order.cancelled',
       label: 'Order Cancelled',
+      type: 'TRANSACTIONAL',
+      source: 'ORDER_SERVICE',
+      variables: ['customer_name', 'order_number'],
+    },
+    {
+      key: 'order.refunded',
+      label: 'Order Refunded',
       type: 'TRANSACTIONAL',
       source: 'ORDER_SERVICE',
       variables: ['customer_name', 'order_number'],
