@@ -37,7 +37,7 @@ The legacy alias `keralagroceries` is normalized to `keralagrocery`; it must not
 
 The sync operation must be idempotent. Concurrent UI mounts must share one in-flight request so one source order cannot generate duplicate CentralHub notifications from the browser.
 
-Automatic order notifications are payment-gated at the Edge Function boundary:
+Automatic order notifications are payment-gated at every notification boundary (the sync Edge Function and the legacy authenticated push route):
 
 - A new-order or payment-confirmed notification is allowed only when the source order explicitly reports a successful payment (paid, completed, success, confirmed, or an equivalent authorised state).
 - pending, failed, refunded, cancelled, unpaid, and unknown payment states must never generate an automatic order notification.
