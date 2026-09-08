@@ -14,16 +14,22 @@ function hasInternalAccess(req: Request) {
   return token === configuredSecret;
 }
 
-function getAutomaticOrderDedupeKey(body: any) {
+function getNotificationDedupeKey(body: any) {
   const metadata = body?.metadata && typeof body.metadata === 'object' ? body.metadata : {};
   const eventType = String(metadata.event_type || body?.event_type || '').trim();
   const orderId = String(metadata.order_id || body?.orderId || body?.order_id || '').trim();
 
-  if (!['ORDER_RECEIVED', 'PAYMENT_CONFIRMED'].includes(eventType) || !orderId) {
-    return null;
+  if (['ORDER_RECEIVED', 'PAYMENT_CONFIRMED'].includes(eventType) && orderId) {
+    return String(metadata.dedupe_key || eventType + ':' + orderId).trim();
   }
 
-  return String(metadata.dedupe_key || `${eventType}:${orderId}`).trim();
+  const category = String(body?.category || metadata.category || '').trim();
+  const messageId = String(metadata.message_id || body?.message_id || '').trim();
+  if (category === 'customer_message' && messageId) {
+    return 'CUSTOMER_MESSAGE:' + messageId;
+  }
+
+  return null;
 }
 
 export async function POST(req: Request) {
@@ -48,22 +54,23 @@ export async function POST(req: Request) {
   }
 
   const supabase = getServiceClient();
-  const automaticOrderDedupeKey = getAutomaticOrderDedupeKey(body);
+  const notificationDedupeKey = getAutomaticOrderDedupeKey(body);
   const incomingMetadata = body.metadata && typeof body.metadata === 'object' ? body.metadata : {};
-  const notificationMetadata = automaticOrderDedupeKey
+  const storeId = body.storeId || body.store_id || incomingMetadata.store_id || null;
+  const notificationMetadata = notificationDedupeKey
     ? {
         ...incomingMetadata,
         source: 'centralhub-automatic-order-push',
-        dedupe_key: automaticOrderDedupeKey,
+        dedupe_key: notificationDedupeKey,
       }
     : incomingMetadata;
   let notification = null;
 
-  if (automaticOrderDedupeKey) {
+  if (notificationDedupeKey) {
     const { data: existing, error: existingError } = await supabase
       .from('system_notifications')
       .select('id')
-      .eq('metadata->>dedupe_key', automaticOrderDedupeKey)
+      .eq('metadata->>dedupe_key', notificationDedupeKey)
       .maybeSingle();
 
     if (existingError) return jsonError(existingError.message, 500);
@@ -82,7 +89,7 @@ export async function POST(req: Request) {
   if (body.notificationId) {
     const { data, error } = await supabase
       .from('system_notifications')
-      .select('id, user_id, title, message, action_url, severity, category')
+      .select('id, user_id, store_id, title, message, action_url, severity, category')
       .eq('id', body.notificationId)
       .single();
 
@@ -100,7 +107,7 @@ export async function POST(req: Request) {
       .from('system_notifications')
       .insert({
         user_id: body.userId || null,
-        store_id: body.storeId || null,
+        store_id: storeId,
         title,
         message,
         severity: body.severity || 'info',
@@ -109,15 +116,15 @@ export async function POST(req: Request) {
         is_read: false,
         metadata: notificationMetadata,
       })
-      .select('id, user_id, title, message, action_url, severity, category')
+      .select('id, user_id, store_id, title, message, action_url, severity, category')
       .single();
 
     if (error || !data) {
-      if (automaticOrderDedupeKey && error?.code === '23505') {
+      if (notificationDedupeKey && error?.code === '23505') {
         const { data: existing } = await supabase
           .from('system_notifications')
           .select('id')
-          .eq('metadata->>dedupe_key', automaticOrderDedupeKey)
+          .eq('metadata->>dedupe_key', notificationDedupeKey)
           .maybeSingle();
 
         if (existing) {
@@ -169,8 +176,11 @@ export async function POST(req: Request) {
       tag: `centralhub-${notification.id}`,
       severity: notification.severity,
       category: notification.category,
+      silent: false,
+      vibrate: notification.category === 'customer_message' ? [350, 100, 350, 100, 350] : [200, 100, 200],
+      requireInteraction: notification.category === 'customer_message',
       renotify: true,
-    }, { ttl: Number(body.ttl || 60 * 60), urgency: body.urgency || 'normal' });
+    }, { ttl: Number(body.ttl || 60 * 60), urgency: body.urgency || (notification.category === 'customer_message' ? 'high' : 'normal') });
 
     results.push({ id: subscription.id, ...result });
 
