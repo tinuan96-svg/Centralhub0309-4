@@ -33,10 +33,18 @@ self.addEventListener('push', (event) => {
     icon: payload.icon || '/app-icon.svg',
     badge: payload.badge || '/app-icon.svg',
     tag: payload.tag || payload.notificationId || 'centralhub-system',
+    // Chrome/Android controls the notification channel sound. A web push payload
+    // cannot force a spoken voice or override a muted device/channel.
+    silent: false,
+    vibrate: Array.isArray(payload.vibrate) ? payload.vibrate : [250, 100, 250],
+    requireInteraction: Boolean(payload.requireInteraction || payload.category === 'customer_message'),
     renotify: Boolean(payload.renotify || payload.notificationId),
     data: {
       url: payload.url || payload.action_url || DEFAULT_NOTIFICATION_URL,
       notificationId: payload.notificationId || payload.id || null,
+      category: payload.category || null,
+      storeId: payload.storeId || payload.store_id || payload.metadata?.store_id || null,
+      storeName: payload.storeName || payload.store_name || payload.metadata?.store_name || null,
     },
   };
 
