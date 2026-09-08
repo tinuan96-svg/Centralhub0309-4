@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { supabase } from '@/lib/supabase';
 import { useStore } from '@/lib/store/useStore';
+import { syncOrders } from '@/lib/services/orderSyncClient';
 import { OrderService } from '@/lib/services/orderService';
 import { OrderWithItems, OrderStatus, Store, PaymentStatus } from '@/lib/types';
 import { StoreService } from '@/lib/services/storeService';
@@ -179,13 +179,12 @@ export default function OrdersPage({ params, searchParams }: { params: any; sear
     setIsSyncing(true);
     setSyncError(null);
     try {
-      const { data, error } = await supabase.functions.invoke('sync-orders', {});
-      if (error) {
-        setSyncError(error.message || 'Sync failed');
-        console.error('Sync error:', error);
-      } else if (data?.failures && data.failures.length > 0) {
-        const failedStores = data.failures.map((f: any) => f.store).join(', ');
+      const data = await syncOrders();
+      if (data.failures && data.failures.length > 0) {
+        const failedStores = data.failures.map((f) => f.store).join(', ');
         setSyncError(`Sync partially failed for: ${failedStores}`);
+      } else if (!data.success) {
+        setSyncError(data.error || data.message || 'Sync failed');
       }
     } catch (e: any) {
       setSyncError(e?.message || 'Sync failed');
