@@ -25,7 +25,7 @@ public class MainActivity extends BridgeActivity {
         int screenWidthDp = getResources().getConfiguration().screenWidthDp;
         if (screenWidthDp >= 600) {
             webSettings.setLoadWithOverviewMode(true);
-            webSettings.setInitialScale(90);
+            bridge.getWebView().setInitialScale(90);
         } else {
             webSettings.setLoadWithOverviewMode(false);
         }
