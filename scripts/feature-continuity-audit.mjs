@@ -54,6 +54,10 @@ const requiredFiles = [
   'supabase/functions/app-release-manager/index.ts',
   'supabase/functions/marketing-provider-config/index.ts',
   'supabase/functions/sync-orders/index.ts',
+  'supabase/functions/whatsapp-webhook/index.ts',
+  'supabase/functions/customer-care-ai/index.ts',
+  'netlify/functions/customer-message-watchdog.ts',
+  'supabase/migrations/20260908060000_customer_message_notification_watchdog.sql',
   'supabase/functions/update-order-status/index.ts',
   'supabase/functions/site-health-worker/index.ts',
   'supabase/functions/site-health-readiness/index.ts',
@@ -75,6 +79,10 @@ const assertions = [
   { label: 'Server Web Push sender keeps VAPID/aes128gcm support', file: 'lib/server/webPush.ts', all: ['CENTRALHUB_VAPID_PRIVATE_KEY', 'sendWebPush', 'aes128gcm'] },
   { label: 'Push subscription endpoint remains user-scoped', file: 'app/api/push/subscribe/route.ts', all: ['getUserFromRequest', 'push_subscriptions', 'user.id', 'upsert'] },
   { label: 'Internal push sender remains secret-protected', file: 'app/api/push/send/route.ts', all: ['CENTRALHUB_PUSH_API_SECRET', 'system_notifications', 'sendWebPush'] },
+  { label: 'Customer-care webhook keeps AI-processing state and escalation push handoff', file: 'supabase/functions/whatsapp-webhook/index.ts', all: ['ai_processing_started_at', 'sendExistingCentralHubNotification', 'AI_ESCALATION:'] },
+  { label: 'Customer-care AI escalations remain immediately visible to humans', file: 'supabase/functions/customer-care-ai/index.ts', all: ['sendExistingCentralHubNotification', 'AI_ESCALATION:${metadata.ticket_id}', 'system_notifications'] },
+  { label: 'Customer-message watchdog preserves the 10-minute timeout and idempotency boundary', file: 'netlify/functions/customer-message-watchdog.ts', all: ['UNANSWERED_AFTER_MS = 10 * 60 * 1000', 'CUSTOMER_MESSAGE_UNANSWERED', 'CUSTOMER_MESSAGE_TIMEOUT:'] },
+  { label: 'Customer-care watchdog state is additive and indexed', file: 'supabase/migrations/20260908060000_customer_message_notification_watchdog.sql', all: ['ai_processing_started_at', 'idx_whatsapp_conversations_unanswered_watchdog'] },
   { label: 'Phone push test creates an in-app notification and sends to saved devices', file: 'app/api/push/test/route.ts', all: ['phone_push_test', 'push_subscriptions', 'sendWebPush'] },
   { label: 'Order service still delegates source refreshes to the canonical sync client', file: 'lib/services/orderService.ts', all: ['syncOrders', 'syncOrderFromSource'], any: ["functions.invoke('sync-orders'", 'syncOrders({'] },
   { label: 'Order actions still sync source status updates/refunds', file: 'lib/hooks/useOrderActions.ts', all: ["functions.invoke('update-order-status'", 'Source-store refund sync failed'] },
@@ -105,6 +113,7 @@ const assertions = [
 ];
 
 const forbidden = [
+  { label: 'WhatsApp webhook must not push every inbound customer message immediately', file: 'supabase/functions/whatsapp-webhook/index.ts', tokens: ['You have a message from customer'] },
   { label: 'Release page must not regress to direct one-shot Supabase Storage upload', file: 'app/marketing/apps/releases/page.tsx', tokens: ['.from(bucket)\n        .upload(release.artifact_path'] },
   { label: 'Browser resumable uploader must not embed provider secrets', file: 'lib/storage/resumableUpload.ts', tokens: ['service_account_json', 'private_key', 'MARKETING_TOKEN_ENCRYPTION_KEY'] },
 ];
