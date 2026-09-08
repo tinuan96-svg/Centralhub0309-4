@@ -3,7 +3,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey, X-Webhook-Secret",
 };
 
 type SyncRequest = { orderId?: string; storeSlug?: string };
@@ -62,10 +62,36 @@ async function notifyCentralHubPhonePush(eventType: "ORDER_RECEIVED" | "PAYMENT_
 
 
 async function isAuthorizedSyncRequest(req: Request) {
-  const configuredSecret = Deno.env.get("CENTRALHUB_PUSH_API_SECRET")?.trim() || "";
+  const configuredSecrets = [
+    Deno.env.get("CENTRALHUB_PUSH_API_SECRET")?.trim() || "",
+    Deno.env.get("CENTRALHUB_WEBHOOK_SECRET")?.trim() || "",
+  ].filter(Boolean);
   const authHeader = req.headers.get("authorization") || "";
   const token = authHeader.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() || "";
-  return Boolean(configuredSecret && token === configuredSecret);
+  const webhookSecret = req.headers.get("x-webhook-secret")?.trim() || "";
+
+  if (configuredSecrets.some((secret) => secret === token || secret === webhookSecret)) {
+    return true;
+  }
+
+  // Keep the store-to-CentralHub secret out of source control. The service-role
+  // client can read the protected runtime config row when no Edge secret is set.
+  try {
+    const chUrl = Deno.env.get("SUPABASE_URL") || "";
+    const chKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    if (!chUrl || !chKey) return false;
+    const ch = createClient(chUrl, chKey, { auth: { persistSession: false } });
+    const { data } = await ch
+      .from("app_config")
+      .select("value")
+      .eq("key", "malluspices_sync_secret")
+      .maybeSingle();
+    const storedSecret = String(data?.value || "").trim();
+    return Boolean(storedSecret && (storedSecret === token || storedSecret === webhookSecret));
+  } catch (error) {
+    console.error("[sync-orders] Authorization lookup failed", error instanceof Error ? error.message : "unknown error");
+    return false;
+  }
 }
 
 function isUuid(value: any): value is string {
