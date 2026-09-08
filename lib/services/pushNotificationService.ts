@@ -1,5 +1,15 @@
 import { supabase } from '@/lib/supabase';
 
+declare global {
+  interface Window {
+    CentralHubNative?: {
+      getFcmToken: () => string;
+      getPlatform: () => string;
+      getAppId: () => string;
+    };
+  }
+}
+
 export interface PushBrowserStatus {
   supported: boolean;
   permission: NotificationPermission | 'unsupported';
@@ -16,6 +26,14 @@ const VAPID_PUBLIC_KEY = (
   process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ||
   ''
 ).trim();
+const NATIVE_API_BASE = (
+  process.env.NEXT_PUBLIC_CENTRALHUB_API_URL ||
+  'https://centralhub.network'
+).replace(/\/+$/, '');
+
+function isNativeAndroid(): boolean {
+  return typeof window !== 'undefined' && Boolean(window.CentralHubNative?.getFcmToken);
+}
 
 function isSupportedBrowser(): boolean {
   return (
@@ -50,6 +68,18 @@ async function getAccessToken(): Promise<string> {
   return token;
 }
 
+async function getNativeFcmToken() {
+  if (!isNativeAndroid()) return null;
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const token = window.CentralHubNative?.getFcmToken()?.trim();
+    if (token) return token;
+    await new Promise((resolve) => window.setTimeout(resolve, 1000));
+  }
+
+  return null;
+}
+
 async function getRegistration(): Promise<ServiceWorkerRegistration> {
   if (!isSupportedBrowser()) {
     throw new Error('This browser does not support PWA push notifications.');
@@ -67,7 +97,7 @@ async function readServerSubscriptionCount(): Promise<number> {
     const token = await getAccessToken();
     const response = await fetch('/api/push/subscribe', {
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: 'Bearer ' + token,
       },
     });
     const json = await response.json().catch(() => null);
@@ -78,6 +108,33 @@ async function readServerSubscriptionCount(): Promise<number> {
 }
 
 export const PushNotificationService = {
+  async registerNativeDevice() {
+    const nativeToken = await getNativeFcmToken();
+    if (!nativeToken) return { supported: false, registered: false };
+
+    const accessToken = await getAccessToken();
+    const response = await fetch(NATIVE_API_BASE + '/api/push/native', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + accessToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        token: nativeToken,
+        platform: window.CentralHubNative?.getPlatform?.() || 'android',
+        appId: window.CentralHubNative?.getAppId?.() || 'com.centralhub.network',
+        deviceName: navigator.userAgent.slice(0, 160),
+      }),
+    });
+
+    const json = await response.json().catch(() => null);
+    if (!response.ok || !json?.success) {
+      throw new Error(json?.error || 'Could not register this Android device.');
+    }
+
+    return { supported: true, registered: true, id: json.id };
+  },
+
   async getStatus(): Promise<PushBrowserStatus> {
     if (!isSupportedBrowser()) {
       return {
@@ -138,7 +195,7 @@ export const PushNotificationService = {
     const response = await fetch('/api/push/subscribe', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: 'Bearer ' + token,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -168,7 +225,7 @@ export const PushNotificationService = {
     const response = await fetch('/api/push/test', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: 'Bearer ' + token,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({}),
