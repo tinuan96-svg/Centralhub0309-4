@@ -1,0 +1,9 @@
+{
+  "appId": "com.centralhub.network",
+  "appName": "CentralHub",
+  "webDir": "out",
+  "server": {
+    "url": "https://centralhub.network",
+    "cleartext": false
+  }
+}
