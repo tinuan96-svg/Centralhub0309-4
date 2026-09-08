@@ -27,7 +27,7 @@ const continuityCriticalRoutes = [
   '/analytics','/business-intelligence/executive','/business-intelligence/price-opportunities',
   '/business-intelligence/promotion-simulator','/business-intelligence/inventory','/business-intelligence/revenue-margin',
   '/business-intelligence/customers','/business-intelligence/ai-usage','/business-intelligence/automation','/competitors',
-  '/pricing','/pricing/approval','/finance','/profit-analysis','/banking','/finance/ledger','/finance/transactions',
+  '/pricing','/pricing/approval','/finance','/finance/planning','/profit-analysis','/banking','/finance/ledger','/finance/transactions',
   '/finance/mollie','/finance/payables','/expenses','/finance/p-and-l','/finance/profitability','/finance/alerts',
   '/finance/vat','/settings','/settings/notifications','/settings/users','/site-health','/inventory-management/reports/audit',
 ];
@@ -57,7 +57,7 @@ const navigationParityRoutes = [
   '/business-intelligence/inventory','/business-intelligence/revenue-margin','/business-intelligence/customers',
   '/marketing/intelligence','/business-intelligence/ai-usage','/business-intelligence/automation','/competitors','/pricing',
   '/pricing/approval','/pricing?tab=fixing','/pricing?tab=weekly','/pricing?tab=competitors','/pricing?tab=rules',
-  '/pricing?tab=history','/finance','/profit-analysis','/banking','/finance/ledger','/finance/transactions','/finance/mollie',
+  '/pricing?tab=history','/finance','/finance/planning','/profit-analysis','/banking','/finance/ledger','/finance/transactions','/finance/mollie',
   '/finance/payables','/expenses','/finance/p-and-l','/finance/profitability','/finance/alerts','/finance/vat','/settings',
   '/settings/notifications','/site-health','/settings/users','/inventory-management/reports/audit',
 ];

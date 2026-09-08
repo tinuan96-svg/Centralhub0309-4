@@ -176,6 +176,7 @@ export default function MobileHeader() {
     ] },
     { label: 'Finance', icon: '💰', key: '12 — finance', subItems: [
       { href: '/finance', label: 'Finance Overview' },
+      { href: '/finance/planning', label: 'Planning & Growth' },
       { href: '/profit-analysis', label: 'Profit Analysis' },
       { href: '/banking', label: 'Bank Accounts & Cashflow' },
       { href: '/finance/ledger', label: 'Chart of Accounts & Ledger' },
