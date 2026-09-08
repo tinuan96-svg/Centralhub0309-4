@@ -244,10 +244,36 @@ export default function FinanceTransactionsReconciliationClient() {
     setBulkSaving(false); return true;
   };
 
+
+  const classifyAndReconcileIds = async (ids: string[], category: string, acct: string) => {
+    const uniqueIds = Array.from(new Set(ids));
+    if (!uniqueIds.length) return true;
+    setBulkSaving(true); setError(null);
+    const { error: rpcError } = await supabase.rpc('classify_and_reconcile_financial_transactions', {
+      p_transaction_ids: uniqueIds,
+      p_transaction_category: category,
+      p_accounting_category: acct,
+      p_notes: 'Reconciled from Bank Reconciliation centre',
+    });
+    if (rpcError) { setError(rpcError.message); setBulkSaving(false); return false; }
+    const idSet = new Set(uniqueIds);
+    setRows(prev => prev.map(x => idSet.has(x.id) ? {
+      ...x,
+      transaction_category: effectiveCategory(category),
+      accounting_category: effectiveAccounting(category, acct),
+      classification_status: category === 'unknown' ? 'needs_review' : 'classified',
+      is_reconciled: true,
+      reconciliation_status: 'reconciled',
+      reconciliation_notes: 'Reconciled from Bank Reconciliation centre',
+    } : x));
+    setSelected(prev => { const next = new Set(prev); uniqueIds.forEach(id => next.delete(id)); return next; });
+    setBulkSaving(false); return true;
+  };
+
   const applyPending = async () => {
     if (!pending) return;
     const matchingIds = pending.matches.map(tx => tx.id);
-    const ok = await classifyIds([pending.sourceId, ...matchingIds], pending.category, pending.accounting);
+    const ok = await classifyAndReconcileIds([pending.sourceId, ...matchingIds], pending.category, pending.accounting);
     if (ok) setPending(null);
   };
 
@@ -260,7 +286,7 @@ export default function FinanceTransactionsReconciliationClient() {
 
   return <main className="p-4 sm:p-6 space-y-5 max-w-[1800px] mx-auto">
     <header className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
-      <div><p className="text-cyan-400 text-[10px] font-black uppercase tracking-[.25em]">CentralHub Finance</p><h1 className="text-2xl sm:text-3xl font-black text-white">Bank Reconciliation</h1><p className="text-sm text-slate-500 mt-1">Find, verify and reconcile bank movements quickly. Classification and reconciliation remain separate.</p></div>
+      <div><p className="text-cyan-400 text-[10px] font-black uppercase tracking-[.25em]">CentralHub Finance</p><h1 className="text-2xl sm:text-3xl font-black text-white">Bank Reconciliation</h1><p className="text-sm text-slate-500 mt-1">Find, verify and reconcile bank movements quickly. Apply a selected head to a matched group and reconcile it in one confirmation.</p></div>
       <div className="flex gap-2"><Link href="/finance" className="px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-[10px] font-black uppercase tracking-widest">Finance</Link><button onClick={load} className="px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-[10px] font-black uppercase tracking-widest">Refresh</button></div>
     </header>
 
@@ -301,11 +327,11 @@ export default function FinanceTransactionsReconciliationClient() {
         <div>
           <p className="text-[10px] font-black uppercase tracking-widest text-cyan-300">Matched name / description suggestions</p>
           <h2 className="text-lg font-black text-white">{pending.matches.length ? `${pending.matches.length} similar or matching transaction${pending.matches.length === 1 ? '' : 's'} found` : 'No other similar or matching transactions found'}</h2>
-          <p className="text-xs text-slate-400">Matches use similar names plus matching descriptions, merchants or references. Existing heads are shown for review. Only unreconciled rows can be updated.</p>
+          <p className="text-xs text-slate-400">Matches use similar names plus matching descriptions, merchants or references. Existing heads are shown for review. Apply & reconcile updates the selected head and reconciles every matched unreconciled row; Selected only changes only the head.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button disabled={bulkSaving} onClick={async () => { const ok = await classifyIds([pending.sourceId], pending.category, pending.accounting); if (ok) setPending(null); }} className="btn-secondary">Selected only</button>
-          <button disabled={bulkSaving || pendingMatchedTransactions.length === 0} onClick={applyPending} className="btn-primary">{bulkSaving ? 'Applying…' : `Apply to ${pendingTargetCount} transactions`}</button>
+          <button disabled={bulkSaving || pendingMatchedTransactions.length === 0} onClick={applyPending} className="btn-primary">{bulkSaving ? 'Applying…' : `Apply & reconcile ${pendingTargetCount} transactions`}</button>
           <button disabled={bulkSaving} onClick={() => setPending(null)} className="btn-secondary">Cancel</button>
         </div>
       </div>
@@ -319,7 +345,7 @@ export default function FinanceTransactionsReconciliationClient() {
           <div className="text-right whitespace-nowrap"><span className="text-slate-400">Current: </span><span className="text-white">{categories.find(c => c[0] === (tx.transaction_category || 'unknown'))?.[1] || 'Needs review'}</span><span className={`ml-2 ${tx.type === 'credit' ? 'text-emerald-300' : 'text-rose-300'}`}>{tx.type === 'credit' ? '+' : '-'}{formatCurrency(Number(tx.amount || 0))}</span></div>
         </div>)}
       </div>
-      {pending.matches.length > pendingPreviewMatches.length && <p className="text-[10px] text-slate-500">Showing the first {pendingPreviewMatches.length} matches. Apply will include all {pendingMatchedTransactions.length} additional unreconciled rows in this matching group.</p>}
+      {pending.matches.length > pendingPreviewMatches.length && <p className="text-[10px] text-slate-500">Showing the first {pendingPreviewMatches.length} matches. Apply & reconcile will include all {pendingMatchedTransactions.length} additional unreconciled rows in this matching group.</p>}
     </section>}
 
     <section className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden">
