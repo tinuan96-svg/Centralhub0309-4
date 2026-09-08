@@ -15,9 +15,13 @@ export async function POST(req: Request) {
     return new Response('Not available in static export', { status: 404 });
   }
 
-  const config = getWebPushConfigStatus();
-  if (!config.configured) {
-    return jsonError('Web Push keys are missing from the deployment environment.', 500, config.missing);
+  const webConfig = getWebPushConfigStatus();
+  const firebaseConfig = getFirebaseMessagingConfigStatus();
+  if (!webConfig.configured && !firebaseConfig.configured) {
+    return jsonError('No push provider is configured for CentralHub.', 500, {
+      web_missing: webConfig.missing,
+      native_missing: firebaseConfig.missing,
+    });
   }
 
   const { user, error } = await getUserFromRequest(req);
@@ -64,28 +68,30 @@ export async function POST(req: Request) {
   if (nativeError) return jsonError(nativeError.message, 500);
 
   const webResults: any[] = [];
-  for (const subscription of (subscriptions || []) as StoredPushSubscription[]) {
-    const result = await sendWebPush(subscription, {
-      title: notification.title,
-      body: notification.message,
-      url: notification.action_url || '/settings/notifications',
-      notificationId: notification.id,
-      tag: 'centralhub-test-' + notification.id,
-      renotify: true,
-    }, { ttl: 300, urgency: 'high' });
+  if (webConfig.configured) {
+    for (const subscription of (subscriptions || []) as StoredPushSubscription[]) {
+      const result = await sendWebPush(subscription, {
+        title: notification.title,
+        body: notification.message,
+        url: notification.action_url || '/settings/notifications',
+        notificationId: notification.id,
+        tag: 'centralhub-test-' + notification.id,
+        renotify: true,
+      }, { ttl: 300, urgency: 'high' });
 
-    webResults.push({ id: subscription.id, ...result });
+      webResults.push({ id: subscription.id, ...result });
 
-    if (result.status === 404 || result.status === 410) {
-      await supabase
-        .from('push_subscriptions')
-        .update({ is_enabled: false })
-        .eq('id', subscription.id);
+      if (result.status === 404 || result.status === 410) {
+        await supabase
+          .from('push_subscriptions')
+          .update({ is_enabled: false })
+          .eq('id', subscription.id);
+      }
     }
   }
 
   const nativeResults: any[] = [];
-  if (getFirebaseMessagingConfigStatus().configured) {
+  if (firebaseConfig.configured) {
     for (const device of nativeDevices || []) {
       const result = await sendFirebasePush(device.token, {
         title: notification.title,
@@ -110,7 +116,7 @@ export async function POST(req: Request) {
 
   const sent = webResults.filter((result) => result.ok).length
     + nativeResults.filter((result) => result.ok).length;
-  const attempted = webResults.length + nativeResults.length;
+  const attempted = (webConfig.configured ? webResults.length : 0) + (firebaseConfig.configured ? nativeResults.length : 0);
 
   return NextResponse.json({
     success: sent > 0,
@@ -119,7 +125,10 @@ export async function POST(req: Request) {
     attempted,
     web_sent: webResults.filter((result) => result.ok).length,
     native_sent: nativeResults.filter((result) => result.ok).length,
-    native_configured: getFirebaseMessagingConfigStatus().configured,
+    native_configured: firebaseConfig.configured,
+    web_configured: webConfig.configured,
+    enabled_native_devices: nativeDevices?.length || 0,
+    enabled_web_subscriptions: subscriptions?.length || 0,
     web_results: webResults,
     native_results: nativeResults,
     error: sent > 0 ? undefined : 'No configured push provider accepted the test.',
