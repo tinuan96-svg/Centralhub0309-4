@@ -68,6 +68,18 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
   const [sidebarPreference, setSidebarPreference] = useState<boolean | null>(null);
   const [stats, setStats] = useState({ pendingOrders: 0, lowStock: 0, backorders: 0, tickets: 0 });
   const touchStart = useRef<{ x: number; y: number; time: number } | null>(null);
+  const navScrollRef = useRef<HTMLElement | null>(null);
+  const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  const active = useCallback((href: string) => {
+    const base = href.split(/[?#]/)[0];
+    return pathname === base || pathname.startsWith(base + '/');
+  }, [pathname]);
+
+  const currentSectionKey = useMemo(
+    () => sections.find(section => section.items.some(item => active(item.href)))?.key || null,
+    [active]
+  );
 
   const fetchStats = useCallback(async () => {
     const [orders, stock, backorders, tickets] = await Promise.all([
@@ -88,10 +100,15 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
     if (savedCollapse === 'true' || savedCollapse === 'false') setSidebarPreference(savedCollapse === 'true');
     return () => window.removeEventListener('resize', onResize);
   }, []);
+
   useEffect(() => { fetchStats(); const id = setInterval(fetchStats, 300000); return () => clearInterval(id); }, [fetchStats]);
   useEffect(() => { const saved = localStorage.getItem('sidebar_classified_sections'); if (saved) { try { setExpanded(JSON.parse(saved)); } catch {} } }, []);
   useEffect(() => { if (mounted) localStorage.setItem('sidebar_classified_sections', JSON.stringify(expanded)); }, [expanded, mounted]);
-  useEffect(() => { const current = sections.find(s => s.items.some(i => { const base = i.href.split(/[?#]/)[0]; return pathname === base || pathname.startsWith(base + '/'); })); if (current && !expanded.includes(current.key)) setExpanded(v => [...v, current.key]); }, [pathname, expanded]);
+  useEffect(() => {
+    if (currentSectionKey && !expanded.includes(currentSectionKey)) {
+      setExpanded(v => [...v, currentSectionKey]);
+    }
+  }, [currentSectionKey, expanded]);
 
   const counts: Record<string, number> = { '02-network-sales': stats.pendingOrders, '03-catalog-inventory': stats.lowStock, '04-procurement': stats.backorders, '06-customer-growth': stats.tickets };
   const filtered = useMemo(() => {
@@ -103,6 +120,7 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
 
   const autoCollapsed = width < 1200;
   const collapsed = manualCollapsed || (sidebarPreference ?? autoCollapsed);
+
   const setCollapsed = useCallback((next: boolean) => {
     if (manualCollapsed) {
       if (next !== manualCollapsed) onToggleCollapse?.();
@@ -111,15 +129,42 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
     setSidebarPreference(next);
     localStorage.setItem('sidebar_classified_collapsed_v2', String(next));
   }, [manualCollapsed, onToggleCollapse]);
+
+  const keepSectionVisible = useCallback((key: string | null, behavior: ScrollBehavior = 'auto') => {
+    const nav = navScrollRef.current;
+    if (!nav) return;
+    if (!key) {
+      const saved = Number(sessionStorage.getItem('sidebar_classified_scroll_top') || '0');
+      if (Number.isFinite(saved) && saved >= 0) nav.scrollTop = saved;
+      return;
+    }
+    const section = sectionRefs.current[key];
+    if (!section) return;
+    const navRect = nav.getBoundingClientRect();
+    const sectionRect = section.getBoundingClientRect();
+    const padding = 18;
+    if (sectionRect.top < navRect.top + padding || sectionRect.bottom > navRect.bottom - padding) {
+      const target = nav.scrollTop + sectionRect.top - navRect.top - Math.max(16, (navRect.height - sectionRect.height) / 3);
+      nav.scrollTo({ top: Math.max(0, target), behavior });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!mounted || collapsed) return;
+    const frame = requestAnimationFrame(() => keepSectionVisible(currentSectionKey, 'auto'));
+    return () => cancelAnimationFrame(frame);
+  }, [mounted, collapsed, currentSectionKey, expanded, keepSectionVisible]);
+
   const collapseAfterNavigation = useCallback(() => {
-    // Preserve a wide navigation rail only on genuinely large desktop displays.
     if (width < 1600) setCollapsed(true);
   }, [setCollapsed, width]);
+
   const handleTouchStart = useCallback((event: React.TouchEvent<HTMLElement>) => {
     const touch = event.touches[0];
     if (!touch) return;
     touchStart.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
   }, []);
+
   const handleTouchEnd = useCallback((event: React.TouchEvent<HTMLElement>) => {
     const start = touchStart.current;
     touchStart.current = null;
@@ -128,12 +173,25 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
     const dx = touch.clientX - start.x;
     const dy = touch.clientY - start.y;
     const elapsed = Date.now() - start.time;
-    // Right-to-left swipe: enough horizontal travel, clearly more horizontal than vertical,
-    // and completed within a normal gesture duration so vertical scrolling stays untouched.
     if (dx <= -56 && Math.abs(dx) > Math.abs(dy) * 1.25 && elapsed < 900) setCollapsed(true);
   }, [collapsed, setCollapsed]);
+
   const toggle = (key: string) => setExpanded(v => v.includes(key) ? v.filter(x => x !== key) : [...v, key]);
-  const active = (href: string) => { const base = href.split(/[?#]/)[0]; return pathname === base || pathname.startsWith(base + '/'); };
+
+  const openSection = useCallback((key: string) => {
+    if (collapsed) {
+      setExpanded(v => v.includes(key) ? v : [...v, key]);
+      setCollapsed(false);
+      requestAnimationFrame(() => requestAnimationFrame(() => keepSectionVisible(key, 'smooth')));
+      return;
+    }
+    toggle(key);
+  }, [collapsed, keepSectionVisible, setCollapsed]);
+
+  const handleNavScroll = useCallback(() => {
+    if (collapsed || !navScrollRef.current) return;
+    sessionStorage.setItem('sidebar_classified_scroll_top', String(navScrollRef.current.scrollTop));
+  }, [collapsed]);
 
   return (
     <aside
@@ -148,14 +206,32 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
       </div>
       {!collapsed && <div className="px-4 pt-3"><div className="text-[9px] font-black uppercase tracking-[.2em] text-cyan-400">Business navigation</div><div className="text-[10px] text-slate-600 mt-1">Organised by what each area is used for</div></div>}
       <div className="p-3">{collapsed ? <button type="button" onClick={() => setCollapsed(false)} aria-label="Expand sidebar search" title="Expand sidebar search" className="w-full min-h-10 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 text-lg touch-manipulation">⌕</button> : <input value={navSearch} onChange={e => setNavSearch(e.target.value)} placeholder="Search navigation..." className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none" />}</div>
-      <nav className="flex-1 overflow-y-auto px-3 pb-4 space-y-1">
-        {mounted && filtered.map(section => <div key={section.key} className="mb-1">
-          <button type="button" onClick={() => { if (collapsed) { setCollapsed(false); setExpanded(v => v.includes(section.key) ? v : [...v, section.key]); } else { toggle(section.key); } }} title={collapsed ? `${section.label}: ${section.description}` : section.description} aria-expanded={expanded.includes(section.key)} className={`w-full min-h-[44px] touch-manipulation flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest ${pathname && section.items.some(i => active(i.href)) ? 'bg-cyan-500/10 text-cyan-300' : 'text-slate-400 hover:text-white'}`}>
-            <span className={collapsed ? 'w-full text-center text-xl' : 'truncate'}>{collapsed ? section.icon : <>{section.icon} {section.label}{counts[section.key] ? <span className="ml-2 text-[9px] text-amber-300">{counts[section.key]}</span> : null}</>}</span>
-            {!collapsed && <span>{expanded.includes(section.key) ? '−' : '+'}</span>}
-          </button>
-          {expanded.includes(section.key) && !collapsed && <div className="ml-3 mt-1 space-y-0.5 border-l border-slate-800 pl-2">{section.items.map(item => <Link key={item.href} href={item.href} onClick={collapseAfterNavigation} className={`block px-3 py-2 rounded-lg text-xs ${active(item.href) ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-200'}`}>{item.label}{item.badge ? ` (${item.badge})` : ''}</Link>)}</div>}
-        </div>)}
+      <nav ref={navScrollRef} onScroll={handleNavScroll} className="flex-1 overflow-y-auto px-3 pb-4 space-y-1">
+        {mounted && filtered.map(section => (
+          <div key={section.key} ref={el => { sectionRefs.current[section.key] = el; }} className="mb-1">
+            <button type="button" onClick={() => openSection(section.key)} title={collapsed ? `${section.label}: ${section.description}` : section.description} aria-expanded={expanded.includes(section.key)} className={`w-full min-h-[44px] touch-manipulation flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest ${currentSectionKey === section.key ? 'bg-cyan-500/10 text-cyan-300' : 'text-slate-400 hover:text-white'}`}>
+              <span className={collapsed ? 'w-full text-center text-xl' : 'truncate'}>{collapsed ? section.icon : <>{section.icon} {section.label}{counts[section.key] ? <span className="ml-2 text-[9px] text-amber-300">{counts[section.key]}</span> : null}</>}</span>
+              {!collapsed && <span>{expanded.includes(section.key) ? '−' : '+'}</span>}
+            </button>
+            {expanded.includes(section.key) && !collapsed && (
+              <div className="ml-3 mt-1 space-y-0.5 border-l border-slate-800 pl-2">
+                {section.items.map(item => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => {
+                      sessionStorage.setItem('sidebar_classified_last_section', section.key);
+                      collapseAfterNavigation();
+                    }}
+                    className={`block px-3 py-2 rounded-lg text-xs ${active(item.href) ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-200'}`}
+                  >
+                    {item.label}{item.badge ? ` (${item.badge})` : ''}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
       </nav>
       <div className="p-3 border-t border-slate-800 flex items-center justify-between"><div className="min-w-0"><div className="text-xs font-bold text-white truncate">{user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'}</div>{!collapsed && <div className="text-[10px] text-slate-600 truncate">{user?.email || ''}</div>}</div><button onClick={signOut} className="text-xs text-slate-500 hover:text-rose-300" title="Sign out">↪</button></div>
     </aside>
