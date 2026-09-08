@@ -130,12 +130,28 @@ export default function FinanceTransactionsReconciliationClient() {
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
+    const fetchAllTransactions = async () => {
+      const pageSize = 1000;
+      const all: Tx[] = [];
+      for (let from = 0; ; from += pageSize) {
+        const { data, error: pageError } = await supabase
+          .from('bank_transactions')
+          .select('*')
+          .order('transaction_date', { ascending: false })
+          .order('created_at', { ascending: false })
+          .range(from, from + pageSize - 1);
+        if (pageError) return { data: all, error: pageError };
+        all.push(...((data || []) as Tx[]));
+        if (!data || data.length < pageSize) break;
+      }
+      return { data: all, error: null };
+    };
     const [txResult, accountResult] = await Promise.all([
-      supabase.from('bank_transactions').select('*').order('transaction_date', { ascending: false }).order('created_at', { ascending: false }).limit(5000),
+      fetchAllTransactions(),
       supabase.from('store_bank_accounts').select('id,bank_name,account_name,account_number').order('bank_name', { ascending: true }),
     ]);
     if (txResult.error) setError(txResult.error.message);
-    setRows((txResult.data || []) as Tx[]);
+    setRows(txResult.data || []);
     setAccounts((accountResult.data || []) as Account[]);
     setSelected(new Set());
     setPending(null);
