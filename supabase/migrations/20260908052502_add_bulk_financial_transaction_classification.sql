@@ -72,5 +72,5 @@ BEGIN
 END;
 $$;
 
-REVOKE EXECUTE ON FUNCTION public.classify_financial_transactions(uuid[],text,text,text) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.classify_financial_transactions(uuid[],text,text,text) FROM anon, PUBLIC;
 GRANT EXECUTE ON FUNCTION public.classify_financial_transactions(uuid[],text,text,text) TO authenticated;
