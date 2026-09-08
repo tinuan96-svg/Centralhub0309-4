@@ -11,7 +11,7 @@ type Connection = { provider_id: string; status?: string | null; health_score?: 
 type SyncJob = { provider_id?: string | null; status?: string | null; error_message?: string | null; created_at?: string | null };
 const labels: Record<string, string> = { google: 'Google Merchant Center', meta: 'Meta Catalog' };
 
-export default function ProductFeedsClient() {
+export default function ProductFeedsClient(_props?: { params?: any; searchParams?: any }) {
   const { selectedStore } = useStore();
   const [connections, setConnections] = useState<Connection[]>([]);
   const [jobs, setJobs] = useState<SyncJob[]>([]);

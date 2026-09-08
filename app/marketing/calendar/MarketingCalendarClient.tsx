@@ -12,7 +12,7 @@ type View = 'month' | 'week' | 'list';
 const dateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const startOfWeek = (date: Date) => { const value = new Date(date); value.setDate(value.getDate() - value.getDay()); value.setHours(0, 0, 0, 0); return value; };
 
-export default function MarketingCalendarClient() {
+export default function MarketingCalendarClient(_props?: { params?: any; searchParams?: any }) {
   const { selectedStore } = useStore();
   const [currentMonth, setCurrentMonth] = useState(() => new Date());
   const [view, setView] = useState<View>('month');

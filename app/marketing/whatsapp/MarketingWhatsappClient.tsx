@@ -9,7 +9,7 @@ import { supabase } from '@/lib/supabase';
 type Outbound = { id: string; status?: string | null; delivered_at?: string | null; read_at?: string | null; failed_at?: string | null; created_at?: string | null };
 type Campaign = { id: string; name: string; status: string; provider_id: string; created_at?: string | null };
 
-export default function WhatsAppMarketing() {
+export default function WhatsAppMarketing(_props?: { params?: any; searchParams?: any }) {
   const { selectedStore } = useStore();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

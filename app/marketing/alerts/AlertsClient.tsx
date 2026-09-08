@@ -8,7 +8,7 @@ import { supabase } from '@/lib/supabase';
 
 type Insight = { id: string; title: string; description?: string | null; priority?: string | null; status?: string | null; created_at?: string | null };
 
-export default function AlertsClient() {
+export default function AlertsClient(_props?: { params?: any; searchParams?: any }) {
   const { selectedStore } = useStore();
   const [alerts, setAlerts] = useState<Insight[]>([]);
   const [loading, setLoading] = useState(true);
