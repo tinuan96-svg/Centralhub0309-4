@@ -15,7 +15,7 @@
     "audit:order-sync": "node scripts/order-sync-contract-audit.mjs",
     "cap:sync": "npx cap sync",
     "cap:open": "npx cap open android",
-    "validate:production": "npm run lint && npm run audit:routes && npm run audit:features && npm run audit:runtime && npx tsc --noEmit && npm run build && npm run audit:smoke"
+    "validate:production": "npm run lint && npm run audit:routes && npm run audit:features && npm run audit:runtime && npm run audit:order-sync && npx tsc --noEmit && npm run build && npm run audit:smoke"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",
