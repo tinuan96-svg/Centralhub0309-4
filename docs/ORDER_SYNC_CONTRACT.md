@@ -53,3 +53,12 @@ Any future order-sync change must:
 2. preserve the store slugs and order/status fields;
 3. run the order-sync contract audit;
 4. verify the deployed Edge Function and a live sync response before release.
+
+
+## Customer-care notification invariant
+
+- Inbound customer messages must not create an immediate push while AI customer care is actively processing or has successfully replied.
+- The customer-message watchdog is the only timeout path: it alerts after more than 10 minutes without a successful outbound reply.
+- An active AI-processing window and an open human-assistance ticket suppress duplicate timeout alerts.
+- AI-created human-assistance tickets generate an immediate support notification, keyed by `AI_ESCALATION:<ticket_id>` so retries remain idempotent.
+- Preserve these rules independently of the order-sync notification flow and its payment gate.
