@@ -1,17 +1,33 @@
-import { createClient } from '@supabase/supabase-js';
 import { supabase } from '../supabase';
 import { syncOrders } from './orderSyncClient';
 import { CommunicationService } from './comm/CommunicationService';
 import {
-  Order,
   OrderWithItems,
-  OrderItem,
   OrderStatus,
   PaymentStatus,
   OrderStatusHistory,
 } from '../types';
 
 import { ReconciliationService } from './banking/reconciliationService';
+
+const PAYMENT_REQUIRED_STATUSES = new Set<OrderStatus>([
+  'confirmed',
+  'picking',
+  'picked',
+  'packing',
+  'packed',
+  'ready_to_ship',
+  'shipment_booked',
+  'collected',
+  'shipped',
+  'at_local_depot',
+  'out_for_delivery',
+  'delivered',
+  'completed',
+  'delivery_attempted',
+  'ready_for_collection',
+  'delivery_rescheduled',
+]);
 
 export class OrderService {
   /**
@@ -43,14 +59,14 @@ export class OrderService {
   }
 
   /**
-   * Confirm payment and assign permanent order number
+   * Confirm payment and assign permanent order number. Only use after the payment
+   * is genuinely verified from the payment provider or bank evidence.
    */
   static async confirmPayment(
     orderId: string,
     paymentReference?: string
   ): Promise<{ success: boolean; orderNumber: string | null; error: string | null }> {
     try {
-      // Get current order
       const { data: order, error: fetchError } = await supabase
         .from('orders')
         .select('*')
@@ -61,26 +77,16 @@ export class OrderService {
         return { success: false, orderNumber: null, error: 'Order not found' };
       }
 
-      // Check if already confirmed
       if (order.payment_status === 'paid' && !order.order_number.startsWith('TEMP-')) {
         return { success: true, orderNumber: order.order_number, error: null };
       }
 
-      // Generate permanent order number
       if (!order.store_id) {
         return { success: false, orderNumber: null, error: 'Order has no store associated' };
       }
 
       const permanentOrderNumber = await this.generatePermanentOrderNumber(order.store_id);
 
-      // Stock deduction is handled automatically by the database trigger
-      // (handle_order_inventory_movement) when payment_status changes to 'paid'.
-      // Do NOT deduct stock here manually -- it would cause double deduction.
-
-      // Single atomic update: set payment_status, order_status, order_number, and inventory sync together
-      // Also set warehouse_status='pending' so the order appears in the picking queue automatically
-      // We allow the update if payment_status is 'pending' OR if order_status is 'pending_payment'
-      // This ensures we can fix orders that are stuck in 'pending_payment' even if already 'paid'
       const { data: updatedRows, error: updateError } = await supabase
         .from('orders')
         .update({
@@ -102,29 +108,25 @@ export class OrderService {
         return { success: false, orderNumber: null, error: 'Failed to confirm payment' };
       }
 
-      // If no rows were updated, another request already confirmed this order
       if (!updatedRows || updatedRows.length === 0) {
         return { success: true, orderNumber: permanentOrderNumber, error: null };
       }
 
       await this.createStatusHistory(orderId, null, 'confirmed', 'commit', true, 'Payment confirmed — inventory deducted');
 
-      // Trigger Payment Confirmed Communication
       CommunicationService.triggerEvent({
         eventType: 'PAYMENT_CONFIRMED',
         storeId: order.store_id,
-        orderId: orderId,
+        orderId,
         variables: {
           customer_name: order.customer_name,
-          order_number: permanentOrderNumber
+          order_number: permanentOrderNumber,
         },
-        idempotencyKey: `payment_confirmed:${orderId}`
+        idempotencyKey: `payment_confirmed:${orderId}`,
       }).catch(err => console.error('Failed to trigger PAYMENT_CONFIRMED comm:', err));
 
-      // 4. Apply gateway fees for accurate profit tracking
       ReconciliationService.applyGatewayFee(orderId).catch(e => console.error('Fee calculation failed:', e));
 
-      // Push status update to remote store via edge function
       supabase.functions.invoke('update-order-status', {
         body: { orderId, status: 'confirmed', notes: 'Payment confirmed' },
       }).catch(err => console.error('Remote status sync failed:', err));
@@ -136,22 +138,17 @@ export class OrderService {
     }
   }
 
-  /**
-   * Update payment status
-   */
   static async updatePaymentStatus(
     orderId: string,
     paymentStatus: PaymentStatus,
     paymentReference?: string
   ): Promise<{ success: boolean; error: string | null }> {
     try {
-      // If confirming payment, use the confirmPayment method
       if (paymentStatus === 'paid') {
         const result = await this.confirmPayment(orderId, paymentReference);
         return { success: result.success, error: result.error };
       }
 
-      // For other payment statuses, just update
       const { error } = await supabase
         .from('orders')
         .update({
@@ -173,7 +170,9 @@ export class OrderService {
   }
 
   /**
-   * Update order status with automatic inventory synchronization
+   * Update order status with automatic inventory synchronization. This never
+   * converts an unpaid order to paid; payment confirmation must go through the
+   * dedicated confirmPayment path after real payment evidence exists.
    */
   static async updateOrderStatus(
     orderId: string,
@@ -181,7 +180,6 @@ export class OrderService {
     notes?: string
   ): Promise<{ success: boolean; error: string | null }> {
     try {
-      // Get current order
       const { data: order, error: fetchError } = await supabase
         .from('orders')
         .select('*')
@@ -194,48 +192,37 @@ export class OrderService {
 
       const oldStatus = order.order_status as OrderStatus;
 
-      // Prevent duplicate status updates
       if (oldStatus === newStatus) {
         return { success: true, error: null };
       }
 
-      // Determine inventory action
-      // We rely on database triggers for inventory deduction (on payment)
-      // and restoration (on cancel/refund). This prevents double-deduction.
+      if (order.payment_status !== 'paid' && PAYMENT_REQUIRED_STATUSES.has(newStatus)) {
+        return {
+          success: false,
+          error: `Payment must be received before order ${order.order_number || ''} can move to ${newStatus.replace(/_/g, ' ')}.`,
+        };
+      }
+
       const inventoryAction = 'none';
 
-      // Get order items (required for inventory actions)
       const { data: items } = await supabase
         .from('order_items')
         .select('*')
         .eq('order_id', orderId);
 
-      // Only fail if an inventory action is required but items are missing
       if (inventoryAction !== 'none' && (!items || items.length === 0)) {
         return { success: false, error: 'No items found for order (required for inventory update)' };
       }
 
-      // Execute inventory action
-      // Inventory success is assumed as DB triggers handle the heavy lifting
-      let inventorySuccess = true;
+      const inventorySuccess = true;
 
-      // Update order status
       const updatePayload: any = {
         order_status: newStatus,
+        fulfillment_status: newStatus,
         updated_at: new Date().toISOString(),
         inventory_sync_status: 'synced',
         inventory_synced_at: new Date().toISOString(),
       };
-
-      // Ensure fulfillment_status is also updated to keep them in sync
-      // This prevents constraint failures if one was out of sync
-      updatePayload.fulfillment_status = newStatus;
-
-      // If the order is moved to "confirmed" via the status dropdown, also set payment_status
-      // Only do this if payment is still pending -- the trigger handles stock deduction
-      if (newStatus === 'confirmed' && order.payment_status !== 'paid') {
-        updatePayload.payment_status = 'paid';
-      }
 
       const { error: updateError } = await supabase
         .from('orders')
@@ -246,18 +233,17 @@ export class OrderService {
         console.error('OrderService.updateOrderStatus error:', updateError);
         return {
           success: false,
-          error: `Database update failed: ${updateError.message} (${updateError.code || 'no code'})`
+          error: `Database update failed: ${updateError.message} (${updateError.code || 'no code'})`,
         };
       }
 
-      // Trigger Communication based on status
       const commEventMap: Record<string, any> = {
-        'picking': 'ORDER_PROCESSING',
-        'packing': 'ORDER_PROCESSING',
-        'shipped': 'ORDER_DISPATCHED',
-        'delivered': 'ORDER_DELIVERED',
-        'cancelled': 'ORDER_CANCELLED',
-        'refunded': 'ORDER_REFUNDED'
+        picking: 'ORDER_PROCESSING',
+        packing: 'ORDER_PROCESSING',
+        shipped: 'ORDER_DISPATCHED',
+        delivered: 'ORDER_DELIVERED',
+        cancelled: 'ORDER_CANCELLED',
+        refunded: 'ORDER_REFUNDED',
       };
 
       const eventType = commEventMap[newStatus];
@@ -265,18 +251,17 @@ export class OrderService {
         CommunicationService.triggerEvent({
           eventType,
           storeId: order.store_id,
-          orderId: orderId,
+          orderId,
           variables: {
             customer_name: order.customer_name,
             order_number: order.order_number,
             tracking_number: order.tracking_number || '',
-            tracking_url: order.carrier === 'DHL' ? `https://www.dhl.com/en/express/tracking.html?AWB=${order.tracking_number}` : ''
+            tracking_url: order.carrier === 'DHL' ? `https://www.dhl.com/en/express/tracking.html?AWB=${order.tracking_number}` : '',
           },
-          idempotencyKey: `${eventType.toLowerCase()}:${orderId}`
+          idempotencyKey: `${eventType.toLowerCase()}:${orderId}`,
         }).catch(err => console.error(`Failed to trigger ${eventType} comm:`, err));
       }
 
-      // Create status history
       await this.createStatusHistory(
         orderId,
         oldStatus,
@@ -286,7 +271,6 @@ export class OrderService {
         notes || `Status changed from ${oldStatus} to ${newStatus}`
       );
 
-      // Push status update to remote store via edge function
       supabase.functions.invoke('update-order-status', {
         body: { orderId, status: newStatus, notes },
       }).catch(err => console.error('Remote status sync failed:', err));
@@ -298,21 +282,15 @@ export class OrderService {
     }
   }
 
-  /**
-   * Determine what inventory action to take based on status change
-   */
   private static getInventoryAction(
     oldStatus: OrderStatus,
     newStatus: OrderStatus
   ): 'reserve' | 'commit' | 'release' | 'return' | 'none' {
-    if (newStatus === 'cancelled') return 'none'; // No reserved stock to release
+    if (newStatus === 'cancelled') return 'none';
     if (newStatus === 'refunded') return 'return';
     return 'none';
   }
 
-  /**
-   * Create status history entry
-   */
   private static async createStatusHistory(
     orderId: string,
     oldStatus: OrderStatus | null,
@@ -333,9 +311,6 @@ export class OrderService {
     ]);
   }
 
-  /**
-   * Enrich order items with product details (brand, weight, unit) from the products table
-   */
   private static async enrichItemsWithProducts(items: any[]): Promise<any[]> {
     const productIds = items
       .map(i => i.product_id)
@@ -343,13 +318,11 @@ export class OrderService {
 
     if (productIds.length === 0) return items;
 
-    // Try to fetch with image_url first
     let { data: products, error }: { data: any[] | null; error: any } = await supabase
       .from('products')
       .select('id, brand, weight, unit, image_url')
       .in('id', productIds);
 
-    // If it fails (e.g. image_url column missing), fallback to basic fields
     if (error) {
       console.warn('Could not fetch image_url from products, falling back:', error.message);
       const { data: retryData } = await supabase
@@ -365,7 +338,7 @@ export class OrderService {
         brand: p.brand || null,
         weight: p.weight ?? null,
         unit: p.unit || null,
-        image_url: (p as any).image_url || null
+        image_url: (p as any).image_url || null,
       });
     });
 
@@ -381,9 +354,6 @@ export class OrderService {
     });
   }
 
-  /**
-   * Get all orders with items, optionally filtered and paginated
-   */
   static async getAllOrders(options: {
     storeId?: string | null;
     page?: number;
@@ -402,7 +372,7 @@ export class OrderService {
       paymentStatus = 'all',
       search = '',
       startDate,
-      endDate
+      endDate,
     } = options;
 
     try {
@@ -412,7 +382,6 @@ export class OrderService {
         .from('orders')
         .select(orderColumns, { count: 'exact' });
 
-      // Apply filters
       if (storeId) {
         query = query.eq('store_id', storeId);
       }
@@ -432,14 +401,9 @@ export class OrderService {
         query = query.or(`order_number.ilike.%${search}%,customer_name.ilike.%${search}%,customer_email.ilike.%${search}%`);
       }
 
-      if (startDate) {
-        query = query.gte('created_at', startDate);
-      }
-      if (endDate) {
-        query = query.lte('created_at', endDate);
-      }
+      if (startDate) query = query.gte('created_at', startDate);
+      if (endDate) query = query.lte('created_at', endDate);
 
-      // Pagination
       const from = (page - 1) * pageSize;
       const to = from + pageSize - 1;
 
@@ -457,7 +421,6 @@ export class OrderService {
       const orderIds = orders.map(o => o.id);
       const itemsByOrder = new Map<string, any[]>();
 
-      // 2. Fetch items for this page's orders
       const { data: batchItems, error: itemsError } = await supabase
         .from('order_items')
         .select('*')
@@ -470,13 +433,12 @@ export class OrderService {
             ...item,
             product_name: item.product_name || 'Unknown Product',
             product_image: item.product_image || null,
-            cost_price: item.cost_price || null
+            cost_price: item.cost_price || null,
           });
           itemsByOrder.set(item.order_id, list);
         });
       }
 
-      // 3. Combine data
       const normalizedOrders = orders.map(order => {
         const fetchedItems = itemsByOrder.get(order.id);
         let items = (fetchedItems && fetchedItems.length > 0)
@@ -495,17 +457,16 @@ export class OrderService {
           product_image: item.product_image || item.image || null,
           brand: item.brand || null,
           weight: item.weight ?? null,
-          unit: item.unit || null
+          unit: item.unit || null,
         }));
 
         return {
           ...order,
-          items: items,
-          item_count: items.length
+          items,
+          item_count: items.length,
         };
       }) as any[];
 
-      // 4. Enrichment
       const allItems = normalizedOrders.flatMap(o => o.items || []);
       if (allItems.length > 0) {
         const enrichedItems = await OrderService.enrichItemsWithProducts(allItems);
@@ -527,9 +488,6 @@ export class OrderService {
     }
   }
 
-  /**
-   * Get single order with items
-   */
   static async getOrderById(orderId: string): Promise<OrderWithItems | null> {
     try {
       const { data: order, error } = await supabase.from('orders').select('*').eq('id', orderId).single();
@@ -557,7 +515,6 @@ export class OrderService {
       let mappedItems: any[] = [];
 
       if (itemsError || !items || items.length === 0) {
-        // Fall back to the JSONB items column on the order itself
         const jsonbItems = Array.isArray((order as any).items) ? (order as any).items : [];
         mappedItems = jsonbItems.map((item: any) => ({
           id: item.id || `item-${orderId}-${item.product_id || item.name || Math.random()}`,
@@ -571,7 +528,7 @@ export class OrderService {
           cost_price: item.cost_price ?? null,
           brand: item.brand || null,
           weight: item.weight ?? null,
-          unit: item.unit || null
+          unit: item.unit || null,
         }));
       } else {
         mappedItems = items.map((item: any) => {
@@ -580,7 +537,7 @@ export class OrderService {
             ...item,
             product_name: item.product_name || prod?.name || 'Unknown Product',
             product_image: item.product_image || null,
-            cost_price: item.cost_price || prod?.cost_price || null
+            cost_price: item.cost_price || prod?.cost_price || null,
           };
         });
       }
@@ -592,52 +549,39 @@ export class OrderService {
     }
   }
 
-  /**
-   * Get order status history
-   */
   static async getOrderStatusHistory(orderId: string): Promise<OrderStatusHistory[]> {
-    const { data, error } = await supabase.from('order_status_history').select('*').eq('order_id', orderId).order('created_at', { ascending: false });
+    const { data } = await supabase.from('order_status_history').select('*').eq('order_id', orderId).order('created_at', { ascending: false });
     return data || [];
   }
 
-  /**
-   * Cancel order and release inventory
-   */
   static async cancelOrder(orderId: string, reason?: string): Promise<{ success: boolean; error: string | null }> {
     return this.updateOrderStatus(orderId, 'cancelled', reason || 'Order cancelled');
   }
 
-  /**
-   * Process refund and return stock
-   */
   static async refundOrder(orderId: string, reason?: string): Promise<{ success: boolean; error: string | null }> {
     try {
       const { data: order } = await supabase.from('orders').select('*').eq('id', orderId).single();
       if (!order) return { success: false, error: 'Order not found' };
 
-      // We only update status here. The database trigger 'trg_order_inventory_movement'
-      // will automatically restore stock to products and central_inventory
-      // when order_status changes to 'refunded'.
       const { error } = await supabase.from('orders').update({
         order_status: 'refunded',
         payment_status: 'refunded',
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
       }).eq('id', orderId);
 
       if (error) throw error;
 
       await this.createStatusHistory(orderId, order.order_status, 'refunded', 'return', true, reason || 'Order refunded');
 
-      // Trigger Refunded Communication
       CommunicationService.triggerEvent({
         eventType: 'ORDER_REFUNDED',
         storeId: order.store_id,
-        orderId: orderId,
+        orderId,
         variables: {
           customer_name: order.customer_name,
-          order_number: order.order_number
+          order_number: order.order_number,
         },
-        idempotencyKey: `order_refunded:${orderId}`
+        idempotencyKey: `order_refunded:${orderId}`,
       }).catch(err => console.error('Failed to trigger ORDER_REFUNDED comm:', err));
 
       return { success: true, error: null };
@@ -646,12 +590,8 @@ export class OrderService {
     }
   }
 
-  /**
-   * Sync a single order's items from its source website
-   */
   static async syncOrderFromSource(orderId: string): Promise<{ success: boolean; error: string | null }> {
     try {
-      // 1. Get order and store info
       const { data: order } = await supabase
         .from('orders')
         .select('id, store_id, stores(slug)')
@@ -661,8 +601,6 @@ export class OrderService {
       if (!order || !(order as any).stores?.slug) return { success: false, error: 'Order source not found' };
 
       const slug = (order as any).stores.slug.toLowerCase();
-
-      // Use the edge function for syncing to avoid client-side environment variable issues
       const data = await syncOrders({ orderId, storeSlug: slug });
 
       if (!data.success) {
@@ -676,12 +614,8 @@ export class OrderService {
     }
   }
 
-  /**
-   * Delete order and its related data
-   */
   static async deleteOrder(orderId: string): Promise<{ success: boolean; error: string | null }> {
     try {
-      // 1. Get order and store info for remote sync
       const { data: order } = await supabase
         .from('orders')
         .select('id, store_id, stores(slug)')
@@ -690,17 +624,15 @@ export class OrderService {
 
       const storeSlug = (order as any)?.stores?.slug;
 
-      // 2. Delete locally
       const { error } = await supabase.from('orders').delete().eq('id', orderId);
       if (error) throw error;
 
-      // 3. Trigger background delete for remote if needed
       if (storeSlug) {
-          fetch('/api/orders/delete', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orderId, storeSlug }),
-          }).catch(err => console.error('Remote order delete failed:', err));
+        fetch('/api/orders/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId, storeSlug }),
+        }).catch(err => console.error('Remote order delete failed:', err));
       }
       return { success: true, error: null };
     } catch (error: any) {
