@@ -19,6 +19,22 @@ const timeLabel = (value?: string | null) => {
   return date.toLocaleDateString([], { day: '2-digit', month: 'short' });
 };
 
+const messageStatusLabel = (status: WhatsAppMessage['status']) => {
+  if (status === 'read') return 'Read';
+  if (status === 'delivered') return 'Delivered';
+  if (status === 'failed') return 'Failed';
+  if (status === 'sent') return 'Sent';
+  return 'Received';
+};
+
+const messageStatusGlyph = (status: WhatsAppMessage['status']) => {
+  if (status === 'failed') return '!';
+  if (status === 'read') return '✓✓';
+  if (status === 'delivered') return '✓✓';
+  if (status === 'sent') return '✓';
+  return '·';
+};
+
 export default function DashboardStoreChat() {
   const [open, setOpen] = useState(false);
   const [conversations, setConversations] = useState<ConversationWithStore[]>([]);
@@ -285,7 +301,7 @@ export default function DashboardStoreChat() {
                               <WhatsAppMessageContent message={msg} />
                               <div className="mt-1 flex items-center justify-end gap-1 text-[9px] opacity-60">
                                 <span>{timeLabel(msg.created_at)}</span>
-                                {msg.direction === 'outbound' && <span>{msg.status === 'failed' ? '!' : msg.status === 'read' ? '✓✓' : '✓'}</span>}
+                                {msg.direction === 'outbound' && <span title={`WhatsApp status: ${messageStatusLabel(msg.status)}`}>{messageStatusGlyph(msg.status)} {messageStatusLabel(msg.status)}</span>}
                               </div>
                             </div>
                           </div>
