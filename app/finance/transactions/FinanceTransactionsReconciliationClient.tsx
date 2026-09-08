@@ -105,12 +105,6 @@ const findTransactionMatch = (source: Tx, candidate: Tx) => {
 const reconciled = (tx: Tx) => Boolean(tx.is_reconciled) || tx.reconciliation_status === 'reconciled';
 const effectiveCategory = (category: string) => category === 'savings_allocation' ? 'transfer' : category;
 const effectiveAccounting = (category: string, accounting: string) => category === 'savings_allocation' ? 'transfer' : accounting;
-const needsClassificationUpdate = (tx: Tx, category: string, accounting: string) => (
-  tx.transaction_category !== effectiveCategory(category)
-  || tx.accounting_category !== effectiveAccounting(category, accounting)
-  || tx.classification_status === 'needs_review'
-);
-
 export default function FinanceTransactionsReconciliationClient() {
   const searchParams = useSearchParams();
   const [rows, setRows] = useState<Tx[]>([]);
@@ -252,9 +246,7 @@ export default function FinanceTransactionsReconciliationClient() {
 
   const applyPending = async () => {
     if (!pending) return;
-    const matchingIds = pending.matches
-      .filter(tx => needsClassificationUpdate(tx, pending.category, pending.accounting))
-      .map(tx => tx.id);
+    const matchingIds = pending.matches.map(tx => tx.id);
     const ok = await classifyIds([pending.sourceId, ...matchingIds], pending.category, pending.accounting);
     if (ok) setPending(null);
   };
@@ -263,8 +255,8 @@ export default function FinanceTransactionsReconciliationClient() {
   const uniqueClassifications = categories.filter(c => rows.some(x => (x.transaction_category || 'unknown') === c[0]));
   const pendingSource = pending ? rows.find(x => x.id === pending.sourceId) : null;
   const pendingPreviewMatches = pending?.matches.slice(0, 60) || [];
-  const pendingTargetMatches = pending ? pending.matches.filter(x => needsClassificationUpdate(x, pending.category, pending.accounting)) : [];
-  const pendingTargetCount = pendingTargetMatches.length + (pending ? 1 : 0);
+  const pendingMatchedTransactions = pending?.matches || [];
+  const pendingTargetCount = pendingMatchedTransactions.length + (pending ? 1 : 0);
 
   return <main className="p-4 sm:p-6 space-y-5 max-w-[1800px] mx-auto">
     <header className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
@@ -313,7 +305,7 @@ export default function FinanceTransactionsReconciliationClient() {
         </div>
         <div className="flex flex-wrap gap-2">
           <button disabled={bulkSaving} onClick={async () => { const ok = await classifyIds([pending.sourceId], pending.category, pending.accounting); if (ok) setPending(null); }} className="btn-secondary">Selected only</button>
-          <button disabled={bulkSaving || pendingTargetMatches.length === 0} onClick={applyPending} className="btn-primary">{bulkSaving ? 'Applying…' : `Apply to ${pendingTargetCount} transactions`}</button>
+          <button disabled={bulkSaving || pendingMatchedTransactions.length === 0} onClick={applyPending} className="btn-primary">{bulkSaving ? 'Applying…' : `Apply to ${pendingTargetCount} transactions`}</button>
           <button disabled={bulkSaving} onClick={() => setPending(null)} className="btn-secondary">Cancel</button>
         </div>
       </div>
@@ -327,7 +319,7 @@ export default function FinanceTransactionsReconciliationClient() {
           <div className="text-right whitespace-nowrap"><span className="text-slate-400">Current: </span><span className="text-white">{categories.find(c => c[0] === (tx.transaction_category || 'unknown'))?.[1] || 'Needs review'}</span><span className={`ml-2 ${tx.type === 'credit' ? 'text-emerald-300' : 'text-rose-300'}`}>{tx.type === 'credit' ? '+' : '-'}{formatCurrency(Number(tx.amount || 0))}</span></div>
         </div>)}
       </div>
-      {pending.matches.length > pendingPreviewMatches.length && <p className="text-[10px] text-slate-500">Showing the first {pendingPreviewMatches.length} matches. Apply will include all {pendingTargetMatches.length} additional unreconciled rows that need this head.</p>}
+      {pending.matches.length > pendingPreviewMatches.length && <p className="text-[10px] text-slate-500">Showing the first {pendingPreviewMatches.length} matches. Apply will include all {pendingMatchedTransactions.length} additional unreconciled rows in this matching group.</p>}
     </section>}
 
     <section className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden">

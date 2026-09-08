@@ -1,6 +1,7 @@
 -- Bulk classification for repeated bank transactions.
 -- The UI uses this RPC after the administrator confirms the matched rows.
 -- Reconciled rows remain protected from bulk reclassification.
+-- A NULL notes argument preserves existing transaction notes.
 
 CREATE OR REPLACE FUNCTION public.classify_financial_transactions(
   p_transaction_ids uuid[],
@@ -52,7 +53,7 @@ BEGIN
         ELSE 'other_expense'
       END,
       accounting_category = v_accounting,
-      notes = p_notes,
+      notes = COALESCE(p_notes, notes),
       classification_status = CASE WHEN v_category = 'unknown' THEN 'needs_review' ELSE 'classified' END,
       classified_at = v_now,
       classified_by = auth.uid(),
