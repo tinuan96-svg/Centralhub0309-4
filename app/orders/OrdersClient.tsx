@@ -112,7 +112,6 @@ export default function OrdersPage({ params, searchParams }: { params: any; sear
   const [showArchived, setShowArchived] = useState(false);
   const [detailOrder, setDetailOrder] = useState<OrderWithItems | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [showCreateOrder, setShowCreateOrder] = useState(false);
 
   const [totalCount, setTotalCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
@@ -266,7 +265,7 @@ export default function OrdersPage({ params, searchParams }: { params: any; sear
          </div>
          <div className="flex items-center gap-2 sm:gap-3">
             <button onClick={() => setShowArchived(!showArchived)} className={`flex-1 md:flex-none px-3 sm:px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${showArchived ? 'bg-slate-800 text-white' : 'text-slate-500'}`}>{showArchived ? 'Hide Archived' : 'Show Archived'}</button>
-            <button onClick={() => setShowCreateOrder(true)} className="flex-1 md:flex-none px-4 sm:px-6 py-2.5 sm:py-3 bg-cyan-600 hover:bg-cyan-500 text-white rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-cyan-900/30">+ New Order</button>
+            
          </div>
       </div>
 
@@ -369,12 +368,7 @@ export default function OrdersPage({ params, searchParams }: { params: any; sear
              </button>
            ))}
         </div>
-        <button
-          onClick={() => setShowCreateOrder(true)}
-          className="px-6 py-3.5 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl shadow-blue-900/40 active:scale-[0.98] transition-all"
-        >
-          New Order
-        </button>
+        
       </div>
 
       {detailOrder && <OrderDetailSheet order={detailOrder} store={stores.find(s => s.id === detailOrder.store_id)} onClose={() => setDetailOrder(null)} onStatusChange={handleStatusChange} onConfirmPayment={handleConfirmPayment} onCancel={handleCancelOrder} onRefund={handleRefundOrder} onDelete={handleDeleteOrder} onPrintSlip={handlePrintPackingSlip} onPrintInvoice={handlePrintInvoice} onCreateShipment={handleCreateShipment} onZebraPrint={handleZebraPrint} onRefreshFromSource={o => handleRefreshFromSource(o.id)} isActionLoading={isActionLoading} />}
