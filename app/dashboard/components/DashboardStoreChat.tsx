@@ -301,7 +301,7 @@ export default function DashboardStoreChat() {
                               <WhatsAppMessageContent message={msg} />
                               <div className="mt-1 flex items-center justify-end gap-1 text-[9px] opacity-60">
                                 <span>{timeLabel(msg.created_at)}</span>
-                                {msg.direction === 'outbound' && <span title={`WhatsApp status: ${messageStatusLabel(msg.status)}`}>{messageStatusGlyph(msg.status)} {messageStatusLabel(msg.status)}</span>}
+                                {msg.direction === 'outbound' && <span title={msg.delivery_error_message || `WhatsApp status: ${messageStatusLabel(msg.status)}`}>{messageStatusGlyph(msg.status)} {messageStatusLabel(msg.status)}</span>}
                               </div>
                             </div>
                           </div>
