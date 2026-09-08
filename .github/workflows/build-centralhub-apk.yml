@@ -56,4 +56,4 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-# Build marker: rebuild the APK from the latest main revision when web-only changes are made.
+# Build marker: rebuild the APK from the latest main revision when web-only changes are made.\n# Fold compact-sidebar verification build.
