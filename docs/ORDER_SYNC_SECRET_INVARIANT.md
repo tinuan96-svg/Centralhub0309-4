@@ -24,5 +24,6 @@ This file is the non-negotiable boundary for CentralHub order syncing.
 - Do not loosen the payment gate: automatic order notifications require an explicit successful source payment and must never be emitted for pending, failed, refunded, cancelled, unpaid, or unknown payment states.
 - Do not replace canonical store identity with order-number parsing. Store-branded notification assets must be selected from stores.id/stores.slug.
 - Do not change the Edge Function JWT/custom-auth boundary without a reviewed migration for every existing store webhook caller.
+- Do not restore immediate inbound customer_message pushes; preserve the 10-minute unanswered-message watchdog and immediate AI human-assistance escalation notifications.
 
 Run npm run audit:order-sync before merging changes that touch Orders, Topbar, AppLayout, SyncStatus, orderService, or sync routes.
