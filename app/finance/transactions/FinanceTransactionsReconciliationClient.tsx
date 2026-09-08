@@ -126,9 +126,18 @@ const ledgerTransactionCategory = (ledger: Ledger) => {
   if (ledger.ledger_type === 'liability') return 'financing';
   return 'other_expense';
 };
-const ledgerAccountingCategory = (ledger: Ledger) => ledger.pnl_class && ledger.pnl_class !== 'none'
-  ? ledger.pnl_class
-  : ledger.ledger_type || 'other';
+const ledgerAccountingCategory = (ledger: Ledger) => {
+  if (ledger.pnl_class === 'revenue' || ledger.pnl_class === 'other_income') return 'revenue';
+  if (ledger.pnl_class === 'cogs') return 'cogs';
+  if (ledger.pnl_class === 'variable_expense') return 'variable_cost';
+  if (ledger.pnl_class === 'operating_expense') return 'operating_expense';
+  if (ledger.pnl_class === 'finance_cost') return 'finance_cost';
+  if (ledger.pnl_class === 'tax') return 'tax';
+  if (ledger.ledger_type === 'asset' || ledger.ledger_type === 'liability' || ledger.ledger_type === 'equity' || ledger.ledger_type === 'internal') {
+    return ledger.ledger_type === 'internal' ? 'transfer' : ledger.ledger_type;
+  }
+  return 'other';
+};
 export default function FinanceTransactionsReconciliationClient() {
   const searchParams = useSearchParams();
   const [rows, setRows] = useState<Tx[]>([]);
