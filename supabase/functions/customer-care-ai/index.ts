@@ -5,7 +5,7 @@ const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-
 const SUPPORT_CATEGORIES = ['refund','missing_order','wrong_item','damaged_item','delivery_issue','payment_issue','complaint','account_issue','other'] as const
 
 async function sendExistingCentralHubNotification(notificationId: string) {
- const siteUrl=(Deno.env.get('CENTRALHUB_SITE_URL')||'https://centralhub.network').replace(/\\/$/,'')
+ const siteUrl=(Deno.env.get('CENTRALHUB_SITE_URL')||'https://centralhub.network').replace(/\/$/,'')
  const pushSecret=Deno.env.get('CENTRALHUB_PUSH_API_SECRET')||''
  if(!pushSecret) return
  try {
