@@ -38,6 +38,7 @@ const requiredFiles = [
   'components/MobileBottomNav.tsx',
   'app/fold-mobile-fixes.css',
   'app/layout.tsx',
+  'android/app/src/main/java/com/centralhub/network/MainActivity.java',
   'public/sw.js',
   'lib/hooks/useOrderActions.ts',
   'lib/services/orderService.ts',
@@ -63,9 +64,10 @@ const requiredFiles = [
 ];
 
 const assertions = [
-  { label: 'Samsung Fold mobile shell stays active through Fold inner-width screens', file: 'components/MobileLayout.tsx', all: ['(max-width: 1023px)', 'MobileLayout'] },
+  { label: 'Samsung Fold cover uses mobile shell and unfolded inner screen uses desktop shell', file: 'components/MobileLayout.tsx', all: ['(max-width: 699px)', 'ClassifiedSidebar', 'MobileHeader'] },
   { label: 'Samsung Fold overlay fix is globally loaded', file: 'app/layout.tsx', all: ['./fold-mobile-fixes.css'] },
-  { label: 'Samsung Fold overlay fix keeps overlays visible from 700px to 1023px', file: 'app/fold-mobile-fixes.css', all: ['min-width: 700px', 'max-width: 1023px', 'display: flex !important'] },
+  { label: 'Android Back returns through WebView history before closing the app', file: 'android/app/src/main/java/com/centralhub/network/MainActivity.java', all: ['onBackPressed', 'canGoBack', 'history.back'] },
+  { label: 'Samsung Fold overlay fix remains cover-scoped', file: 'app/fold-mobile-fixes.css', all: ['Cover-display-only hardening', '699px', '700px'] },
   { label: 'Authenticated app shell redirects signed-out users to login and refreshes stale sessions', file: 'components/AuthProvider.tsx', all: ["router.replace('/login')", 'supabase.auth.refreshSession', "event==='SIGNED_OUT'"] },
   { label: 'Android/PWA service worker can show and route push notifications', file: 'public/sw.js', all: ["addEventListener('push'", "addEventListener('notificationclick'", 'showNotification'] },
   { label: 'Notification settings page exposes phone push setup and testing', file: 'app/settings/notifications/page.tsx', all: ['PushNotificationService', 'Enable phone alerts', 'Send test'], any: ['NEXT_PUBLIC_CENTRALHUB_VAPID_PUBLIC_KEY', 'VAPID public key'] },
@@ -74,9 +76,9 @@ const assertions = [
   { label: 'Push subscription endpoint remains user-scoped', file: 'app/api/push/subscribe/route.ts', all: ['getUserFromRequest', 'push_subscriptions', 'user.id', 'upsert'] },
   { label: 'Internal push sender remains secret-protected', file: 'app/api/push/send/route.ts', all: ['CENTRALHUB_PUSH_API_SECRET', 'system_notifications', 'sendWebPush'] },
   { label: 'Phone push test creates an in-app notification and sends to saved devices', file: 'app/api/push/test/route.ts', all: ['phone_push_test', 'push_subscriptions', 'sendWebPush'] },
-  { label: 'Order service still delegates source refreshes to sync-orders Edge Function', file: 'lib/services/orderService.ts', all: ["functions.invoke('sync-orders'", 'syncOrderFromSource'] },
+  { label: 'Order service still delegates source refreshes to the canonical sync client', file: 'lib/services/orderService.ts', all: ['syncOrders', 'syncOrderFromSource'], any: ["functions.invoke('sync-orders'", 'syncOrders({'] },
   { label: 'Order actions still sync source status updates/refunds', file: 'lib/hooks/useOrderActions.ts', all: ["functions.invoke('update-order-status'", 'Source-store refund sync failed'] },
-  { label: 'Orders page keeps operational workflow and background sync affordances', file: 'app/orders/OrdersClient.tsx', all: ['pending_payment', 'ready_to_ship', 'setInterval'], any: ["functions.invoke('sync-orders'", 'syncOrderFromSource'] },
+  { label: 'Orders page keeps operational workflow and background sync affordances', file: 'app/orders/OrdersClient.tsx', all: ['pending_payment', 'ready_to_ship', 'setInterval'], any: ["functions.invoke('sync-orders'", 'syncOrderFromSource', 'syncOrders'] },
   { label: 'Four-store inbound order sync preserves targeted sync and mismatch reporting', file: 'supabase/functions/sync-orders/index.ts', all: ['tamilretail', 'storeSlug is required when orderId is supplied', 'mismatched_count', 'partial_success'], any: ['signedTamilRequest("pull"', 'signed_gateway', 'direct_service_role'] },
   { label: 'Outbound status sync supports store push and records sync state', file: 'supabase/functions/update-order-status/index.ts', all: ['markSync("synced")', 'markSync("failed"', 'paymentStatus: order.payment_status'], any: ['signedTamilRequest("update_status"', 'signed_gateway', 'direct_service_role', 'Remote credentials are not configured'] },
   { label: 'Expiry page uses central inventory and retains permanent write-off history', file: 'app/inventory-management/expiry/ExpiryClient.tsx', all: ['central_inventory', 'inventory_expiry_writeoffs', 'historicalWriteoffValue', 'Recorded Expiry Losses'] },
