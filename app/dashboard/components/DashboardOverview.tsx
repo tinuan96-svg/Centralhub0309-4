@@ -28,7 +28,7 @@ export default function DashboardOverview({ refreshKey, appearance = 'dark', con
     const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })); const a = document.createElement('a'); a.href = url; a.download = 'centralhub-dashboard-report.csv'; a.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   return <>
-    <section className="ch-model-shell ch-visual-console ch-live-console" data-appearance={appearance} aria-label="Visual business dashboard">
+    <section className="ch-model-shell ch-visual-console ch-live-console ch-rich-console" data-appearance={appearance} aria-label="Visual business dashboard">
       <h1 className="sr-only">Business dashboard</h1>
       <DashboardFilterBar compact lastUpdated={report?.loadedAt || null} loading={loading} onRefresh={refresh} actions={<>{controls}<button type="button" onClick={exportReport} disabled={!report || loading} className="ch-button ch-console-icon" title="Export figures" aria-label="Export dashboard figures"><Download size={16} /></button></>} />
       <DashboardLiveStatus connection={connection} loading={loading} error={!!error} updatedAt={report?.loadedAt || null} />
@@ -36,8 +36,8 @@ export default function DashboardOverview({ refreshKey, appearance = 'dark', con
       {loading && !report && <div role="status" aria-label="Loading dashboard" className="ch-kpi-grid">{Array.from({ length: 6 }, (_, i) => <div key={i} className="ch-panel h-28 animate-pulse"><div className="h-3 w-20 bg-slate-700/50 rounded mb-5" /><div className="h-7 w-28 bg-slate-700/50 rounded" /></div>)}</div>}
       {report && <div className="ch-visual-surface">
         <p className="ch-console-scope">{report.start.toLocaleDateString('en-GB')} – {report.end.toLocaleDateString('en-GB')} · {selectedStoreId === 'all' ? 'All stores' : stores[0]?.name || 'Selected store'}</p>
-        <SecurityPulse selectedStoreId={selectedStoreId} compact />
         <ReferenceDashboard report={report} selectedStoreId={selectedStoreId} timeRange={timeRange} />
+        <SecurityPulse selectedStoreId={selectedStoreId} compact />
         <div className="ch-visual-comparisons"><DashboardKpiGrid compact current={report.current} previous={report.previous} /></div>
         <SectionVisuals report={report} selectedStoreId={selectedStoreId} refreshKey={report.loadedAt.getTime()} />
       </div>}

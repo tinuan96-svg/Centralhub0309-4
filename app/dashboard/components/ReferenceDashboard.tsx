@@ -84,6 +84,21 @@ export default function ReferenceDashboard({ report, selectedStoreId, timeRange 
       <HealthRadar axes={[{ label: 'Paid', value: ratio(paid.length, report.orders.length), detail: 'Eligible paid / all orders' }, { label: 'Delivery', value: ratio(delivered, paid.length), detail: 'Delivered / paid orders' }, { label: 'Repeat', value: ratio(repeat, buyers.size), detail: 'Repeat / identified buyers' }, { label: 'Costs', value: ratio(recorded, paid.length), detail: 'Recorded costs / paid orders' }, { label: 'Stock', value: ratio(stocked, report.inventory.length), detail: 'Positive stock / stock records' }]} />
     </section>
     <Panel title="Sales & profitability" subtitle="Store comparison · before fees & overhead" className="ch-model-profit"><StoreScatter stores={scatter} /></Panel>
+
+    <section className="ch-rate-strip" aria-label="Operating rates">
+      {[
+        { label: 'Paid order rate', value: ratio(paid.length, report.orders.length), detail: 'Eligible paid / all orders' },
+        { label: 'Delivery completion', value: ratio(delivered, paid.length), detail: 'Delivered / paid orders' },
+        { label: 'Repeat buyer rate', value: ratio(repeat, buyers.size), detail: 'Repeat / identified buyers' },
+        { label: 'Recorded cost coverage', value: ratio(recorded, paid.length), detail: 'Recorded costs / paid orders' },
+      ].map(rate => <div key={rate.label} title={rate.detail}><span>{rate.label}</span><strong>{rate.value === null ? '—' : rate.value.toFixed(1) + '%'}</strong><div className="ch-rate-track" aria-hidden="true"><i style={{ width: (rate.value === null ? 0 : Math.max(0, Math.min(100, rate.value))) + '%' }} /></div></div>)}
+    </section>
+    <Panel title="Store sales mix" subtitle="Paid product sales · selected period" className="ch-store-mix">
+      {scatter.map((store, index) => {
+        const share = ratio(store.revenue, report.current.totalRevenue);
+        return <div className="ch-store-mix-row" key={store.id}><div><span>{store.name}</span><strong>{formatCurrency(store.revenue)}</strong></div><div className="ch-rate-track" aria-hidden="true"><i style={{ width: Math.max(0, Math.min(100, share ?? 0)) + '%', background: MODEL_COLORS[index % MODEL_COLORS.length] }} /></div><small>{share === null ? 'No sales baseline' : share.toFixed(1) + '% of product sales'} · {paid.filter(order => (order.store_id || 'unassigned') === store.id).length} paid orders</small></div>;
+      })}
+    </Panel>
     <Panel title="Repeat customers" className="ch-model-customer"><GradientRing segmented label="Repeat buyer ratio" value={ratio(repeat, buyers.size)} detail={`${repeat} of ${buyers.size} identified buyers`} /><div className="ch-visual-metrics"><VisualMetric label="Single-order buyers" value={buyers.size - repeat} /><VisualMetric label="Orders / buyer" value={buyers.size ? ([...buyers.values()].reduce((sum, count) => sum + count, 0) / buyers.size).toFixed(2) : '—'} /></div></Panel>
     <Panel title="Weekly sales" className="ch-model-weekly"><WeeklyColumns series={series.map(s => ({ id: s.id, name: s.name, values: s.data }))} dates={dates.slice(-7)} /></Panel>
     <Panel title="Order activity" className="ch-model-activity"><ActivityCalendar days={[...calendar.values()]} start={start} end={end} /></Panel>
