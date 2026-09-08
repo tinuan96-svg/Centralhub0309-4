@@ -51,9 +51,14 @@ export async function POST(req: Request) {
     return jsonError('Unauthorized push sender request.', 401);
   }
 
-  const config = getWebPushConfigStatus();
-  if (!config.configured) {
-    return jsonError('Web Push keys are missing from the deployment environment.', 500, config.missing);
+  const webConfig = getWebPushConfigStatus();
+  const firebaseConfig = getFirebaseMessagingConfigStatus();
+
+  if (!webConfig.configured && !firebaseConfig.configured) {
+    return jsonError('No push provider is configured for CentralHub.', 500, {
+      web_missing: webConfig.missing,
+      native_missing: firebaseConfig.missing,
+    });
   }
 
   let body: any;
@@ -207,42 +212,43 @@ export async function POST(req: Request) {
   if (nativeError) return jsonError(nativeError.message, 500);
 
   const webResults: any[] = [];
-  for (const subscription of (subscriptions || []) as StoredPushSubscription[]) {
-    const result = await sendWebPush(subscription, {
-      title: notification.title,
-      body: notification.message,
-      url: notification.action_url || '/dashboard',
-      notificationId: notification.id,
-      tag: 'centralhub-' + notification.id,
-      severity: notification.severity,
-      category: notification.category,
-      icon: storeBrand.webIcon,
-      badge: storeBrand.webIcon,
-      storeId: notificationStoreId,
-      storeName: storeBrand.name,
-      storeSlug: storeBrand.slug,
-      silent: false,
-      vibrate: notification.category === 'customer_message' ? [350, 100, 350, 100, 350] : [200, 100, 200],
-      requireInteraction: notification.category === 'customer_message',
-      renotify: true,
-    }, {
-      ttl: Number(body.ttl || 60 * 60),
-      urgency: body.urgency || (notification.category === 'customer_message' ? 'high' : 'normal'),
-    });
+  if (webConfig.configured) {
+    for (const subscription of (subscriptions || []) as StoredPushSubscription[]) {
+      const result = await sendWebPush(subscription, {
+        title: notification.title,
+        body: notification.message,
+        url: notification.action_url || '/dashboard',
+        notificationId: notification.id,
+        tag: 'centralhub-' + notification.id,
+        severity: notification.severity,
+        category: notification.category,
+        icon: storeBrand.webIcon,
+        badge: storeBrand.webIcon,
+        storeId: notificationStoreId,
+        storeName: storeBrand.name,
+        storeSlug: storeBrand.slug,
+        silent: false,
+        vibrate: notification.category === 'customer_message' ? [350, 100, 350, 100, 350] : [200, 100, 200],
+        requireInteraction: notification.category === 'customer_message',
+        renotify: true,
+      }, {
+        ttl: Number(body.ttl || 60 * 60),
+        urgency: body.urgency || (notification.category === 'customer_message' ? 'high' : 'normal'),
+      });
 
-    webResults.push({ id: subscription.id, ...result });
+      webResults.push({ id: subscription.id, ...result });
 
-    if (result.status === 404 || result.status === 410) {
-      await supabase
-        .from('push_subscriptions')
-        .update({ is_enabled: false })
-        .eq('id', subscription.id);
+      if (result.status === 404 || result.status === 410) {
+        await supabase
+          .from('push_subscriptions')
+          .update({ is_enabled: false })
+          .eq('id', subscription.id);
+      }
     }
   }
 
   const nativeResults: any[] = [];
-  const firebaseConfigured = getFirebaseMessagingConfigStatus().configured;
-  if (firebaseConfigured) {
+  if (firebaseConfig.configured) {
     for (const device of nativeDevices || []) {
       const result = await sendFirebasePush(device.token, {
         title: notification.title,
@@ -269,7 +275,7 @@ export async function POST(req: Request) {
 
   const sent = webResults.filter((result) => result.ok).length
     + nativeResults.filter((result) => result.ok).length;
-  const attempted = webResults.length + nativeResults.length;
+  const attempted = (webConfig.configured ? webResults.length : 0) + (firebaseConfig.configured ? nativeResults.length : 0);
 
   if (!attempted) {
     return NextResponse.json({
@@ -277,8 +283,11 @@ export async function POST(req: Request) {
       notification_id: notification.id,
       sent: 0,
       attempted: 0,
-      native_configured: firebaseConfigured,
-      message: 'Notification saved, but no enabled phone subscriptions matched it.',
+      native_configured: firebaseConfig.configured,
+      web_configured: webConfig.configured,
+      enabled_web_subscriptions: subscriptions?.length || 0,
+      enabled_native_devices: nativeDevices?.length || 0,
+      message: 'Notification saved, but no enabled phone subscriptions matched a configured provider.',
     });
   }
 
@@ -289,7 +298,8 @@ export async function POST(req: Request) {
     attempted,
     web_sent: webResults.filter((result) => result.ok).length,
     native_sent: nativeResults.filter((result) => result.ok).length,
-    native_configured: firebaseConfigured,
+    native_configured: firebaseConfig.configured,
+    web_configured: webConfig.configured,
     web_results: webResults,
     native_results: nativeResults,
   }, { status: sent > 0 ? 200 : 502 });
