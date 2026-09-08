@@ -273,17 +273,74 @@ serve(async (req) => {
 
     if (value?.statuses?.[0]) {
       const statusUpdate = value.statuses[0]
-      const status = statusUpdate.status
+      const status = String(statusUpdate.status || '').toLowerCase()
       const waId = statusUpdate.id
-      await db.from('whatsapp_messages').update({ status }).eq('wa_message_id', waId)
+      const now = new Date().toISOString()
+
+      // Meta can deliver status callbacks concurrently or out of order. Keep
+      // the message and delivery log monotonic so a late "sent" cannot undo
+      // "delivered" or "read".
+      const messagePreviousStatuses: Record<string, string[]> = {
+        sent: ['received'],
+        delivered: ['received', 'sent', 'failed'],
+        read: ['received', 'sent', 'delivered', 'failed'],
+        failed: ['received', 'sent'],
+      }
+      const allowedMessageStatuses = messagePreviousStatuses[status] || []
+      if (allowedMessageStatuses.length) {
+        await db.from('whatsapp_messages')
+          .update({ status, updated_at: now })
+          .eq('wa_message_id', waId)
+          .in('status', allowedMessageStatuses)
+      }
+
+      const logPreviousStatuses: Record<string, string[]> = {
+        delivered: ['sent', 'failed'],
+        read: ['sent', 'delivered', 'failed'],
+        failed: ['sent'],
+      }
+      const allowedLogStatuses = logPreviousStatuses[status] || []
       const updateData: any = { status }
-      if (status === 'delivered') updateData.delivered_at = new Date().toISOString()
-      if (status === 'read') updateData.read_at = new Date().toISOString()
-      if (status === 'failed') { updateData.failed_at = new Date().toISOString(); updateData.error_code = statusUpdate.errors?.[0]?.code; updateData.error_message = statusUpdate.errors?.[0]?.title }
-      await db.from('whatsapp_outbound_log').update(updateData).eq('wa_message_id', waId)
-      const notifUpdateData: any = { status, updated_at: new Date().toISOString() }
-      if (status === 'failed') notifUpdateData.error_message = statusUpdate.errors?.[0]?.title || 'Meta reported delivery failure'
-      await db.from('order_whatsapp_notifications').update(notifUpdateData).eq('wa_message_id', waId)
+      if (status === 'delivered') {
+        updateData.delivered_at = now
+        updateData.error_code = null
+        updateData.error_message = null
+      }
+      if (status === 'read') {
+        updateData.read_at = now
+        updateData.error_code = null
+        updateData.error_message = null
+      }
+      if (status === 'failed') {
+        updateData.failed_at = now
+        updateData.error_code = statusUpdate.errors?.[0]?.code
+        updateData.error_message = statusUpdate.errors?.[0]?.title || 'Meta reported delivery failure'
+      }
+      if (allowedLogStatuses.length) {
+        await db.from('whatsapp_outbound_log')
+          .update(updateData)
+          .eq('wa_message_id', waId)
+          .in('status', allowedLogStatuses)
+      }
+
+      const notificationPreviousStatuses: Record<string, string[]> = {
+        delivered: ['pending', 'sent', 'failed'],
+        read: ['pending', 'sent', 'delivered', 'failed'],
+        failed: ['pending', 'sent'],
+      }
+      const allowedNotificationStatuses = notificationPreviousStatuses[status] || []
+      if (allowedNotificationStatuses.length) {
+        const notificationUpdate: any = { status, updated_at: now }
+        if (status === 'failed') {
+          notificationUpdate.error_message = statusUpdate.errors?.[0]?.title || 'Meta reported delivery failure'
+        } else {
+          notificationUpdate.error_message = null
+        }
+        await db.from('order_whatsapp_notifications')
+          .update(notificationUpdate)
+          .eq('wa_message_id', waId)
+          .in('status', allowedNotificationStatuses)
+      }
     }
 
     if (eventRowId) await db.from('whatsapp_webhook_events').update({ processing_status: 'processed', processed_at: new Date().toISOString(), error_message: null }).eq('id', eventRowId)
