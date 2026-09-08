@@ -45,6 +45,7 @@ async function notifyCentralHubPhonePush(eventType: "ORDER_RECEIVED" | "PAYMENT_
         ? `Order ${orderNumber} has been confirmed${amountText}.`
         : `Order ${orderNumber} from ${customerName}${amountText}.`,
       url: "/orders",
+      storeId: order.store_id || null,
       severity: "info",
       category: confirmed ? "order_confirmed" : "order_received",
       metadata: {
@@ -234,6 +235,34 @@ function mapOrder(order: any, storeId: string) {
   ]);
   if (mapped.payment_status !== "paid" && operationalPaid.has(status)) mapped.payment_status = "paid";
   return mapped;
+}
+
+const SUCCESSFUL_PAYMENT_STATUSES = new Set([
+  "paid",
+  "completed",
+  "complete",
+  "success",
+  "successful",
+  "confirmed",
+  "authorised",
+  "authorized",
+]);
+
+function isSuccessfulSourcePayment(order: any, mapped: any) {
+  const rawPayment = text(
+    order.payment_status
+      ?? order.paymentStatus
+      ?? order.payment_state
+      ?? order.paymentState
+  ).trim().toLowerCase();
+
+  // Notifications are intentionally fail-closed. Do not infer payment success
+  // from an operational status such as confirmed, picking, or completed.
+  return Boolean(
+    rawPayment
+      && SUCCESSFUL_PAYMENT_STATUSES.has(rawPayment)
+      && mapped.payment_status === "paid"
+  );
 }
 
 async function fetchDirectBundle(source: SourceConfig, orderId?: string): Promise<Bundle> {
@@ -433,9 +462,10 @@ async function persistBundle(ch: any, storeSlug: string, bundle: Bundle, specifi
         || (existing.order_status !== "confirmed" && mapped.order_status === "confirmed")
       )
     );
-    if (!existing) {
+    const paymentSuccessful = isSuccessfulSourcePayment(remoteOrder, mapped);
+    if (!existing && paymentSuccessful) {
       phonePushEvents.push({ eventType: "ORDER_RECEIVED", order: mapped });
-    } else if (paymentConfirmed) {
+    } else if (existing && paymentConfirmed && paymentSuccessful) {
       phonePushEvents.push({ eventType: "PAYMENT_CONFIRMED", order: mapped });
     }
     if (existing?.inventory_sync_status === "synced") {
