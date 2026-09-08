@@ -5,8 +5,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { StoreService } from '@/lib/services/storeService';
 import { AuthService } from '@/lib/services/authService';
+import { syncOrders } from '@/lib/services/orderSyncClient';
 import { designTokens, getInputClasses, Button } from '@/lib/design-system';
-import { supabase } from '@/lib/supabase';
 import GlobalSearchOverlay from '@/app/dashboard/components/GlobalSearchOverlay';
 import NotificationPanel from '@/app/dashboard/components/NotificationPanel';
 
@@ -48,7 +48,7 @@ export default function Topbar() {
     window.addEventListener('keydown', handleKeyDown);
 
     // Auto-sync orders from remote stores on load
-    supabase.functions.invoke('sync-orders').catch(err => console.error('Auto-sync failed:', err));
+    void syncOrders().catch(err => console.error('Auto-sync failed:', err));
 
     const { data: authListener } = AuthService.onAuthStateChange((event, session) => {
       (async () => {
@@ -86,20 +86,17 @@ export default function Topbar() {
     if (isSyncing) return;
     setIsSyncing(true);
     try {
-      const { data, error } = await supabase.functions.invoke('sync-orders');
+      const data = await syncOrders();
 
-      if (error) {
-        alert(`Sync Failed: ${error.message || 'Unknown error'}`);
-      } else if (data?.success) {
-        if (data.message) {
-          alert(data.message);
-        } else {
-          alert(`Sync Complete!\n- ${data.imported || 0} Orders\n- ${data.items_synced || 0} Items`);
-          router.refresh();
-          window.location.reload();
-        }
+      if (data.failures && data.failures.length > 0) {
+        const failedStores = data.failures.map((failure) => failure.store).join(', ');
+        alert(`Sync Failed for: ${failedStores}\\n${data.failures.map((failure) => failure.error).join('\\n')}`);
+      } else if (data.success) {
+        alert(data.message || `Sync Complete!\\n- ${data.imported || 0} Orders\\n- ${data.items_synced || 0} Items`);
+        router.refresh();
+        window.location.reload();
       } else {
-        alert(`Sync Failed: ${data?.error || 'Unknown error'}`);
+        alert(`Sync Failed: ${data.error || data.message || 'Unknown error'}`);
       }
     } catch (err: any) {
       console.error('Sync error details:', err);
