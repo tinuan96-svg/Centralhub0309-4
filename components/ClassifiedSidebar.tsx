@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { designTokens } from '@/lib/design-system';
 import { useAuth } from '@/components/AuthProvider';
 import { supabase } from '@/lib/supabase';
@@ -41,22 +41,14 @@ const sections: NavSection[] = [
     { href: '/marketing/creative-library', label: 'Creative Library' }, { href: '/marketing/budgets', label: 'Marketing Budgets' }, { href: '/marketing/apps', label: 'App Marketing & Stores' }, { href: '/marketing/apps/releases', label: 'App Releases' }, { href: '/marketing/customer-journey', label: 'Customer Journey' }, { href: '/marketing/alerts', label: 'Marketing Alerts' }, { href: '/marketing/ai', label: 'AI Marketing & SEO' }, { href: '/marketing/integrations', label: 'Marketing Integrations' }, { href: '/marketing/settings', label: 'Marketing Settings' },
   ] },
   { key: '07-analytics', label: 'Analytics', icon: '📈', description: 'Website, GA4, realtime visitors, search, attribution and app analytics', items: [
-    { href: '/analytics', label: 'Analytics Overview' },
-    { href: '/analytics#growth', label: 'Growth & Trends' },
-    { href: '/analytics#website-ga4', label: 'Website & GA4' },
-    { href: '/analytics#realtime', label: 'Realtime Visitors' },
-    { href: '/analytics#visitors', label: 'Visitor Tracking' },
-    { href: '/analytics#traffic-attribution', label: 'Traffic & Attribution' },
-    { href: '/analytics#geography', label: 'Geography & Devices' },
-    { href: '/analytics#ecommerce', label: 'Ecommerce Analytics' },
-    { href: '/analytics#search-console', label: 'Google Search Console' },
-    { href: '/analytics#apps', label: 'Play & App Store Analytics' },
-    { href: '/analytics#health', label: 'Analytics Data Health' },
+    { href: '/analytics', label: 'Analytics Overview' }, { href: '/analytics#growth', label: 'Growth & Trends' }, { href: '/analytics#website-ga4', label: 'Website & GA4' },
+    { href: '/analytics#realtime', label: 'Realtime Visitors' }, { href: '/analytics#visitors', label: 'Visitor Tracking' }, { href: '/analytics#traffic-attribution', label: 'Traffic & Attribution' },
+    { href: '/analytics#geography', label: 'Geography & Devices' }, { href: '/analytics#ecommerce', label: 'Ecommerce Analytics' }, { href: '/analytics#search-console', label: 'Google Search Console' },
+    { href: '/analytics#apps', label: 'Play & App Store Analytics' }, { href: '/analytics#health', label: 'Analytics Data Health' },
   ] },
   { key: '07-intelligence', label: 'Intelligence & Decisions', icon: '🧠', description: 'Analysis, competitors and commercial decisions', items: [
     { href: '/business-intelligence/executive', label: 'Executive BI' }, { href: '/business-intelligence/price-opportunities', label: 'Price Opportunities' }, { href: '/business-intelligence/inventory', label: 'Inventory BI' }, { href: '/business-intelligence/revenue-margin', label: 'Revenue & Margin' }, { href: '/business-intelligence/customers', label: 'Customer BI' }, { href: '/marketing/intelligence', label: 'Marketing BI' }, { href: '/business-intelligence/ai-usage', label: 'AI Usage' }, { href: '/business-intelligence/automation', label: 'Automation BI' }, { href: '/business-intelligence/promotion-simulator', label: 'Promotion Simulator' },
-    { href: '/competitors', label: 'Competitor Intelligence' },
-    { href: '/pricing', label: 'Pricing Overview' }, { href: '/pricing/approval', label: 'Pricing Approval Centre' }, { href: '/pricing?tab=fixing', label: 'Price Fixing' }, { href: '/pricing?tab=weekly', label: 'Weekly Pricing Strategy' }, { href: '/pricing?tab=competitors', label: 'Competitive Pricing' }, { href: '/pricing?tab=rules', label: 'Pricing Rules' }, { href: '/pricing?tab=history', label: 'Price History' },
+    { href: '/competitors', label: 'Competitor Intelligence' }, { href: '/pricing', label: 'Pricing Overview' }, { href: '/pricing/approval', label: 'Pricing Approval Centre' }, { href: '/pricing?tab=fixing', label: 'Price Fixing' }, { href: '/pricing?tab=weekly', label: 'Weekly Pricing Strategy' }, { href: '/pricing?tab=competitors', label: 'Competitive Pricing' }, { href: '/pricing?tab=rules', label: 'Pricing Rules' }, { href: '/pricing?tab=history', label: 'Price History' },
   ] },
   { key: '08-finance', label: 'Finance & Control', icon: '💰', description: 'Bank, expenses, ledgers, payables, P&L and profitability', items: [
     { href: '/finance', label: 'Finance Overview' }, { href: '/finance/planning', label: 'Planning & Growth' }, { href: '/profit-analysis', label: 'Profit Analysis' }, { href: '/banking', label: 'Bank Accounts & Cashflow' }, { href: '/finance/ledger', label: 'Chart of Accounts & Ledger' }, { href: '/finance/transactions', label: 'Bank Reconciliation' }, { href: '/finance/mollie', label: 'Mollie Audit' }, { href: '/finance/payables', label: 'Supplier Payables' }, { href: '/expenses', label: 'Business Expenses' }, { href: '/finance/p-and-l', label: 'Profit & Loss' }, { href: '/finance/profitability', label: 'Profitability' }, { href: '/finance/alerts', label: 'Financial Alerts' }, { href: '/finance/vat', label: 'VAT Control' },
@@ -75,6 +67,7 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
   const [width, setWidth] = useState(1200);
   const [sidebarPreference, setSidebarPreference] = useState<boolean | null>(null);
   const [stats, setStats] = useState({ pendingOrders: 0, lowStock: 0, backorders: 0, tickets: 0 });
+  const touchStart = useRef<{ x: number; y: number; time: number } | null>(null);
 
   const fetchStats = useCallback(async () => {
     const [orders, stock, backorders, tickets] = await Promise.all([
@@ -92,9 +85,7 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
     const onResize = () => setWidth(window.innerWidth);
     window.addEventListener('resize', onResize);
     const savedCollapse = localStorage.getItem('sidebar_classified_collapsed_v2');
-    if (savedCollapse === 'true' || savedCollapse === 'false') {
-      setSidebarPreference(savedCollapse === 'true');
-    }
+    if (savedCollapse === 'true' || savedCollapse === 'false') setSidebarPreference(savedCollapse === 'true');
     return () => window.removeEventListener('resize', onResize);
   }, []);
   useEffect(() => { fetchStats(); const id = setInterval(fetchStats, 300000); return () => clearInterval(id); }, [fetchStats]);
@@ -112,25 +103,47 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
 
   const autoCollapsed = width < 1200;
   const collapsed = manualCollapsed || (sidebarPreference ?? autoCollapsed);
-  const setCollapsed = (next: boolean) => {
+  const setCollapsed = useCallback((next: boolean) => {
     if (manualCollapsed) {
-      onToggleCollapse?.();
+      if (next !== manualCollapsed) onToggleCollapse?.();
       return;
     }
     setSidebarPreference(next);
     localStorage.setItem('sidebar_classified_collapsed_v2', String(next));
-  };
+  }, [manualCollapsed, onToggleCollapse]);
+  const collapseAfterNavigation = useCallback(() => {
+    // Preserve a wide navigation rail only on genuinely large desktop displays.
+    if (width < 1600) setCollapsed(true);
+  }, [setCollapsed, width]);
+  const handleTouchStart = useCallback((event: React.TouchEvent<HTMLElement>) => {
+    const touch = event.touches[0];
+    if (!touch) return;
+    touchStart.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+  }, []);
+  const handleTouchEnd = useCallback((event: React.TouchEvent<HTMLElement>) => {
+    const start = touchStart.current;
+    touchStart.current = null;
+    const touch = event.changedTouches[0];
+    if (!start || !touch || collapsed) return;
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+    const elapsed = Date.now() - start.time;
+    // Right-to-left swipe: enough horizontal travel, clearly more horizontal than vertical,
+    // and completed within a normal gesture duration so vertical scrolling stays untouched.
+    if (dx <= -56 && Math.abs(dx) > Math.abs(dy) * 1.25 && elapsed < 900) setCollapsed(true);
+  }, [collapsed, setCollapsed]);
   const toggle = (key: string) => setExpanded(v => v.includes(key) ? v.filter(x => x !== key) : [...v, key]);
   const active = (href: string) => { const base = href.split(/[?#]/)[0]; return pathname === base || pathname.startsWith(base + '/'); };
 
   return (
-    <aside data-collapsed={collapsed ? 'true' : 'false'} className={`centralhub-sidebar ${collapsed ? designTokens.layout.sidebarWidthCollapsed : designTokens.layout.sidebarWidth} ${designTokens.colors.background.main} border-r ${designTokens.colors.border.default} h-screen sticky top-0 flex flex-col transition-all duration-300 ease-in-out z-50`}>
+    <aside
+      data-collapsed={collapsed ? 'true' : 'false'}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      className={`centralhub-sidebar ${collapsed ? designTokens.layout.sidebarWidthCollapsed : designTokens.layout.sidebarWidth} ${designTokens.colors.background.main} border-r ${designTokens.colors.border.default} h-screen sticky top-0 flex flex-col transition-all duration-300 ease-in-out z-50`}
+    >
       <div className="p-4 border-b border-slate-800 flex items-center justify-between gap-2">
-        {collapsed ? (
-          <Link href="/dashboard" aria-label="CentralHub dashboard" className="font-black text-white text-sm">CH</Link>
-        ) : (
-          <Link href="/dashboard" className="font-black text-white">CentralHub</Link>
-        )}
+        {collapsed ? <Link href="/dashboard" onClick={collapseAfterNavigation} aria-label="CentralHub dashboard" className="font-black text-white text-sm">CH</Link> : <Link href="/dashboard" onClick={collapseAfterNavigation} className="font-black text-white">CentralHub</Link>}
         <button type="button" onClick={() => setCollapsed(!collapsed)} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} className="min-w-9 min-h-9 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 touch-manipulation">{collapsed ? '→' : '←'}</button>
       </div>
       {!collapsed && <div className="px-4 pt-3"><div className="text-[9px] font-black uppercase tracking-[.2em] text-cyan-400">Business navigation</div><div className="text-[10px] text-slate-600 mt-1">Organised by what each area is used for</div></div>}
@@ -141,7 +154,7 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
             <span className={collapsed ? 'w-full text-center text-xl' : 'truncate'}>{collapsed ? section.icon : <>{section.icon} {section.label}{counts[section.key] ? <span className="ml-2 text-[9px] text-amber-300">{counts[section.key]}</span> : null}</>}</span>
             {!collapsed && <span>{expanded.includes(section.key) ? '−' : '+'}</span>}
           </button>
-          {expanded.includes(section.key) && !collapsed && <div className="ml-3 mt-1 space-y-0.5 border-l border-slate-800 pl-2">{section.items.map(item => <Link key={item.href} href={item.href} className={`block px-3 py-2 rounded-lg text-xs ${active(item.href) ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-200'}`}>{item.label}{item.badge ? ` (${item.badge})` : ''}</Link>)}</div>}
+          {expanded.includes(section.key) && !collapsed && <div className="ml-3 mt-1 space-y-0.5 border-l border-slate-800 pl-2">{section.items.map(item => <Link key={item.href} href={item.href} onClick={collapseAfterNavigation} className={`block px-3 py-2 rounded-lg text-xs ${active(item.href) ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-200'}`}>{item.label}{item.badge ? ` (${item.badge})` : ''}</Link>)}</div>}
         </div>)}
       </nav>
       <div className="p-3 border-t border-slate-800 flex items-center justify-between"><div className="min-w-0"><div className="text-xs font-bold text-white truncate">{user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'}</div>{!collapsed && <div className="text-[10px] text-slate-600 truncate">{user?.email || ''}</div>}</div><button onClick={signOut} className="text-xs text-slate-500 hover:text-rose-300" title="Sign out">↪</button></div>
