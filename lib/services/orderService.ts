@@ -15,6 +15,34 @@ import { ReconciliationService } from './banking/reconciliationService';
 
 export class OrderService {
   /**
+   * Generate the permanent store-specific number for an existing imported order.
+   * CentralHub may confirm an order that already came from a storefront, but it
+   * never creates a new customer order here.
+   */
+  private static async generatePermanentOrderNumber(storeId: string): Promise<string> {
+    const { data: store } = await supabase
+      .from('stores')
+      .select('name')
+      .eq('id', storeId)
+      .maybeSingle();
+
+    let prefix = 'ORD';
+    if (store) {
+      if (store.name.toLowerCase().includes('kerala')) prefix = 'KG';
+      else if (store.name.toLowerCase().includes('pocket')) prefix = 'PG';
+    }
+
+    const { count } = await supabase
+      .from('orders')
+      .select('*', { count: 'exact', head: true })
+      .eq('store_id', storeId)
+      .eq('payment_status', 'paid')
+      .like('order_number', `${prefix}%`);
+
+    return `${prefix}${2501 + (count || 0)}`;
+  }
+
+  /**
    * Confirm payment and assign permanent order number
    */
   static async confirmPayment(
