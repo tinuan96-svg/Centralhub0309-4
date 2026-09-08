@@ -11,88 +11,13 @@ type SourceConfig = { slug: string; url?: string; key?: string };
 type Bundle = { orders: any[]; order_items: any[]; products: any[] };
 
 function reply(body: any, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
+  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 }
 
 function errorMessage(error: any) {
   if (!error) return "Unknown error";
   if (typeof error === "string") return error;
   return error.message || error.details || String(error);
-}
-
-
-async function notifyCentralHubPhonePush(eventType: "ORDER_RECEIVED" | "PAYMENT_CONFIRMED", order: any) {
-  const secret = Deno.env.get("CENTRALHUB_PUSH_API_SECRET") || "";
-  if (!secret) return { sent: false, skipped: true, reason: "CENTRALHUB_PUSH_API_SECRET is not configured" };
-
-  const orderNumber = text(order.order_number) || "new order";
-  const customerName = text(order.customer_name) || "Customer";
-  const amount = money(order.total);
-  const amountText = amount > 0 ? ` — £${amount.toFixed(2)}` : "";
-  const confirmed = eventType === "PAYMENT_CONFIRMED";
-  const response = await fetch("https://centralhub.network/api/push/send", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${secret}`,
-    },
-    body: JSON.stringify({
-      title: confirmed ? "Order confirmed" : "New order received",
-      message: confirmed
-        ? `Order ${orderNumber} has been confirmed${amountText}.`
-        : `Order ${orderNumber} from ${customerName}${amountText}.`,
-      url: "/orders",
-      storeId: order.store_id || null,
-      severity: "info",
-      category: confirmed ? "order_confirmed" : "order_received",
-      metadata: {
-        source: "supabase-sync-orders",
-        event_type: eventType,
-        order_id: order.id || null,
-        order_number: order.order_number || null,
-      },
-    }),
-  });
-
-  if (!response.ok) throw new Error(`CentralHub phone push failed (${response.status})`);
-  return await response.json().catch(() => ({ sent: true }));
-}
-
-
-async function isAuthorizedSyncRequest(req: Request) {
-  const configuredSecrets = [
-    Deno.env.get("CENTRALHUB_PUSH_API_SECRET")?.trim() || "",
-    Deno.env.get("CENTRALHUB_WEBHOOK_SECRET")?.trim() || "",
-  ].filter(Boolean);
-  const authHeader = req.headers.get("authorization") || "";
-  const token = authHeader.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() || "";
-  const webhookSecret = req.headers.get("x-webhook-secret")?.trim() || "";
-
-  if (configuredSecrets.some((secret) => secret === token || secret === webhookSecret)) {
-    return true;
-  }
-
-  // Keep the store-to-CentralHub secret out of source control. The service-role
-  // client can read the protected runtime config row when no Edge secret is set.
-  try {
-    const chUrl = Deno.env.get("SUPABASE_URL") || "";
-    const chKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-    if (!chUrl || !chKey) return false;
-    const ch = createClient(chUrl, chKey, { auth: { persistSession: false } });
-    const { data } = await ch
-      .from("app_config")
-      .select("value")
-      .eq("key", "malluspices_sync_secret")
-      .maybeSingle();
-    const storedSecret = String(data?.value || "").trim();
-    return Boolean(storedSecret && (storedSecret === token || storedSecret === webhookSecret));
-  } catch (error) {
-    console.error("[sync-orders] Authorization lookup failed", error instanceof Error ? error.message : "unknown error");
-    return false;
-  }
 }
 
 function isUuid(value: any): value is string {
@@ -130,45 +55,92 @@ function safeUuid(preferred: any, namespace: string) {
 }
 
 function addressParts(order: any) {
-  const shipping = order.shipping_address && typeof order.shipping_address === "object"
-    ? order.shipping_address
-    : {};
-  const line1 = text(order.delivery_address)
-    || text(order.shipping_address_line1)
-    || text(shipping.line1)
-    || text(shipping.address_line1);
-  const line2 = text(order.shipping_address_line2)
-    || text(shipping.line2)
-    || text(shipping.address_line2);
+  const shipping = order.shipping_address && typeof order.shipping_address === "object" ? order.shipping_address : {};
+  const line1 = text(order.delivery_address) || text(order.shipping_address_line1) || text(shipping.line1) || text(shipping.address_line1);
+  const line2 = text(order.shipping_address_line2) || text(shipping.line2) || text(shipping.address_line2);
   return {
     address: [line1, line2].filter(Boolean).join(", "),
     city: text(order.delivery_city) || text(order.shipping_city) || text(shipping.city),
-    postcode: text(order.delivery_postcode)
-      || text(order.shipping_postcode)
-      || text(shipping.postal_code)
-      || text(shipping.postcode),
+    postcode: text(order.delivery_postcode) || text(order.shipping_postcode) || text(shipping.postal_code) || text(shipping.postcode),
   };
 }
 
+async function notifyCentralHubPhonePush(eventType: "ORDER_RECEIVED" | "PAYMENT_CONFIRMED", order: any) {
+  const secret = Deno.env.get("CENTRALHUB_PUSH_API_SECRET") || "";
+  if (!secret) return { sent: false, skipped: true, reason: "CENTRALHUB_PUSH_API_SECRET is not configured" };
+
+  const orderNumber = text(order.order_number) || "new order";
+  const customerName = text(order.customer_name) || "Customer";
+  const amount = money(order.total);
+  const amountText = amount > 0 ? ` — £${amount.toFixed(2)}` : "";
+  const confirmed = eventType === "PAYMENT_CONFIRMED";
+  const response = await fetch("https://centralhub.network/api/push/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${secret}` },
+    body: JSON.stringify({
+      title: confirmed ? "Order confirmed" : "New order received",
+      message: confirmed ? `Order ${orderNumber} has been confirmed${amountText}.` : `Order ${orderNumber} from ${customerName}${amountText}.`,
+      url: "/orders",
+      storeId: order.store_id || null,
+      severity: "info",
+      category: confirmed ? "order_confirmed" : "order_received",
+      metadata: {
+        source: "supabase-sync-orders",
+        event_type: eventType,
+        order_id: order.id || null,
+        order_number: order.order_number || null,
+        basis: "payment_status_paid_only",
+      },
+    }),
+  });
+
+  if (!response.ok) throw new Error(`CentralHub phone push failed (${response.status})`);
+  return await response.json().catch(() => ({ sent: true }));
+}
+
+async function isAuthorizedSyncRequest(req: Request) {
+  const configuredSecrets = [
+    Deno.env.get("CENTRALHUB_PUSH_API_SECRET")?.trim() || "",
+    Deno.env.get("CENTRALHUB_WEBHOOK_SECRET")?.trim() || "",
+  ].filter(Boolean);
+  const authHeader = req.headers.get("authorization") || "";
+  const token = authHeader.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() || "";
+  const webhookSecret = req.headers.get("x-webhook-secret")?.trim() || "";
+
+  if (configuredSecrets.some((secret) => secret === token || secret === webhookSecret)) return true;
+
+  try {
+    const chUrl = Deno.env.get("SUPABASE_URL") || "";
+    const chKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    if (!chUrl || !chKey) return false;
+    const ch = createClient(chUrl, chKey, { auth: { persistSession: false } });
+    const { data } = await ch.from("app_config").select("value").eq("key", "malluspices_sync_secret").maybeSingle();
+    const storedSecret = String(data?.value || "").trim();
+    return Boolean(storedSecret && (storedSecret === token || storedSecret === webhookSecret));
+  } catch (error) {
+    console.error("[sync-orders] Authorization lookup failed", error instanceof Error ? error.message : "unknown error");
+    return false;
+  }
+}
+
+const SUCCESSFUL_PAYMENT_STATUSES = new Set(["paid", "completed", "complete", "success", "successful", "confirmed", "authorised", "authorized"]);
+
 function mapOrder(order: any, storeId: string) {
   const paymentMethodMap: Record<string, string> = {
-    card: "card", online: "card", cod: "cod", mollie: "mollie",
-    paypal: "paypal", wallet: "wallet", globalpayments: "globalpayments",
-    trustpayments: "trustpayments", clearpay: "clearpay",
+    card: "card", online: "card", cod: "cod", mollie: "mollie", paypal: "paypal", wallet: "wallet",
+    globalpayments: "globalpayments", trustpayments: "trustpayments", clearpay: "clearpay",
   };
   const statusMap: Record<string, string> = {
-    pending: "pending_payment", pending_payment: "pending_payment", paid: "paid",
-    confirmed: "confirmed", processing: "packing", picking: "picking", picked: "picked",
-    packing: "packing", packed: "packed", ready_to_ship: "ready_to_ship",
-    shipment_booked: "shipment_booked", collected: "collected", shipped: "shipped",
-    at_local_depot: "at_local_depot", out_for_delivery: "out_for_delivery",
-    delivered: "delivered", completed: "completed", cancelled: "cancelled",
-    refunded: "refunded", delivery_attempted: "delivery_attempted",
-    ready_for_collection: "ready_for_collection", delivery_rescheduled: "delivery_rescheduled",
-    returned: "returned", failed: "failed",
+    pending: "pending_payment", pending_payment: "pending_payment", paid: "paid", confirmed: "confirmed",
+    processing: "packing", picking: "picking", picked: "picked", packing: "packing", packed: "packed",
+    ready_to_ship: "ready_to_ship", shipment_booked: "shipment_booked", collected: "collected", shipped: "shipped",
+    at_local_depot: "at_local_depot", out_for_delivery: "out_for_delivery", delivered: "delivered", completed: "completed",
+    cancelled: "cancelled", refunded: "refunded", delivery_attempted: "delivery_attempted", ready_for_collection: "ready_for_collection",
+    delivery_rescheduled: "delivery_rescheduled", returned: "returned", failed: "failed",
   };
   const paymentStatusMap: Record<string, string> = {
-    pending: "pending", paid: "paid", completed: "paid", failed: "failed", refunded: "refunded",
+    pending: "pending", paid: "paid", completed: "paid", complete: "paid", success: "paid", successful: "paid",
+    confirmed: "paid", authorised: "paid", authorized: "paid", failed: "failed", refunded: "refunded",
   };
 
   const method = String(order.payment_method || "card").toLowerCase();
@@ -176,6 +148,7 @@ function mapOrder(order: any, storeId: string) {
   const deliveryFee = money(order.delivery_fee ?? order.delivery_charge ?? order.shipping_cost);
   const subtotal = order.subtotal != null ? money(order.subtotal) : money(total - deliveryFee);
   const status = statusMap[String(order.order_status || order.status || "pending").toLowerCase()] || "pending_payment";
+  const rawPayment = String(order.payment_status ?? order.paymentStatus ?? order.payment_state ?? order.paymentState ?? "pending").toLowerCase();
   const address = addressParts(order);
   const mollieId = order.mollie_payment_id || (method === "mollie" ? order.payment_reference : null);
   const legacyEstimate = money(order.gateway_fee_estimated ?? order.payment_fee);
@@ -195,7 +168,7 @@ function mapOrder(order: any, storeId: string) {
     delivery_fee: deliveryFee,
     total,
     payment_method: paymentMethodMap[method] || "card",
-    payment_status: paymentStatusMap[String(order.payment_status || "pending").toLowerCase()] || "pending",
+    payment_status: paymentStatusMap[rawPayment] || "pending",
     order_status: status,
     payment_reference: order.payment_reference || mollieId || null,
     mollie_payment_id: mollieId || null,
@@ -221,48 +194,17 @@ function mapOrder(order: any, storeId: string) {
     } else {
       mapped.gateway_fee_net = legacyEstimate;
       mapped.gateway_fee_source = "store_estimate";
-      mapped.gateway_fee_meta = {
-        estimate_origin: "malluspices_legacy_formula",
-        store_order_number: order.order_number || null,
-      };
+      mapped.gateway_fee_meta = { estimate_origin: "malluspices_legacy_formula", store_order_number: order.order_number || null };
     }
   }
 
-  const operationalPaid = new Set([
-    "confirmed", "picking", "picked", "packing", "packed", "ready_to_ship",
-    "shipment_booked", "collected", "shipped", "at_local_depot",
-    "out_for_delivery", "delivered", "completed",
-  ]);
-  if (mapped.payment_status !== "paid" && operationalPaid.has(status)) mapped.payment_status = "paid";
+  // Fail closed: never infer payment success from operational fulfilment status.
   return mapped;
 }
 
-const SUCCESSFUL_PAYMENT_STATUSES = new Set([
-  "paid",
-  "completed",
-  "complete",
-  "success",
-  "successful",
-  "confirmed",
-  "authorised",
-  "authorized",
-]);
-
 function isSuccessfulSourcePayment(order: any, mapped: any) {
-  const rawPayment = text(
-    order.payment_status
-      ?? order.paymentStatus
-      ?? order.payment_state
-      ?? order.paymentState
-  ).trim().toLowerCase();
-
-  // Notifications are intentionally fail-closed. Do not infer payment success
-  // from an operational status such as confirmed, picking, or completed.
-  return Boolean(
-    rawPayment
-      && SUCCESSFUL_PAYMENT_STATUSES.has(rawPayment)
-      && mapped.payment_status === "paid"
-  );
+  const rawPayment = text(order.payment_status ?? order.paymentStatus ?? order.payment_state ?? order.paymentState).trim().toLowerCase();
+  return Boolean(rawPayment && SUCCESSFUL_PAYMENT_STATUSES.has(rawPayment) && mapped.payment_status === "paid");
 }
 
 async function fetchDirectBundle(source: SourceConfig, orderId?: string): Promise<Bundle> {
@@ -309,52 +251,29 @@ async function signedTamilRequest(action: string, params: Record<string, any> = 
   if (!secret) throw new Error("CentralHub signed gateway is not configured");
   const payload = JSON.stringify({ action, params });
   const timestamp = Date.now().toString();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const signature = toHex(await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(`${timestamp}.${payload}`),
-  ));
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const signature = toHex(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${timestamp}.${payload}`)));
 
-  const response = await fetch(
-    "https://gokapknjocmgciwnxnxr.supabase.co/functions/v1/centralhub-orders",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ timestamp, payload, signature }),
-    },
-  );
+  const response = await fetch("https://gokapknjocmgciwnxnxr.supabase.co/functions/v1/centralhub-orders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ timestamp, payload, signature }),
+  });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok || data?.success === false) {
-    throw new Error(data?.error || `TamilRetail gateway failed (${response.status})`);
-  }
+  if (!response.ok || data?.success === false) throw new Error(data?.error || `TamilRetail gateway failed (${response.status})`);
   return data;
 }
 
 async function persistBundle(ch: any, storeSlug: string, bundle: Bundle, specificOrderId?: string) {
-  const { data: store, error: storeError } = await ch
-    .from("stores")
-    .select("id")
-    .ilike("slug", storeSlug)
-    .maybeSingle();
+  const { data: store, error: storeError } = await ch.from("stores").select("id").ilike("slug", storeSlug).maybeSingle();
   if (storeError || !store) return { success: false, error: `Store not found: ${storeSlug}` };
 
-  const orders = (bundle.orders || []).filter((order: any) =>
-    !String(order.order_number || "").toLowerCase().startsWith("compat-test-")
-  );
+  const orders = (bundle.orders || []).filter((order: any) => !String(order.order_number || "").toLowerCase().startsWith("compat-test-"));
   const items = bundle.order_items || [];
   const products = bundle.products || [];
 
   if (!orders.length) {
-    return specificOrderId
-      ? { success: false, orders: 0, items: 0, error: `Order ${specificOrderId} was not found on ${storeSlug}` }
-      : { success: true, orders: 0, items: 0 };
+    return specificOrderId ? { success: false, orders: 0, items: 0, error: `Order ${specificOrderId} was not found on ${storeSlug}` } : { success: true, orders: 0, items: 0 };
   }
 
   const productByRemoteId = new Map(products.map((product: any) => [product.id, product]));
@@ -364,41 +283,25 @@ async function persistBundle(ch: any, storeSlug: string, bundle: Bundle, specifi
     if (isUuid(product.centralhub_product_id)) candidateIds.add(product.centralhub_product_id);
     if (isUuid(product.source_product_id)) candidateIds.add(product.source_product_id);
   }
-  for (const item of items) {
-    if (isUuid(item.centralhub_product_id)) candidateIds.add(item.centralhub_product_id);
-  }
+  for (const item of items) if (isUuid(item.centralhub_product_id)) candidateIds.add(item.centralhub_product_id);
 
-  const centralIdResult = candidateIds.size
-    ? await ch.from("products").select("id").in("id", [...candidateIds])
-    : { data: [], error: null };
+  const centralIdResult = candidateIds.size ? await ch.from("products").select("id").in("id", [...candidateIds]) : { data: [], error: null };
   if (centralIdResult.error) throw centralIdResult.error;
   const validCentralIds = new Set((centralIdResult.data || []).map((product: any) => product.id));
 
-  const skus = [...new Set([
-    ...products.map((product: any) => product.sku),
-    ...items.map((item: any) => item.sku),
-  ].filter(Boolean))];
-  const skuResult = skus.length
-    ? await ch.from("products").select("id,sku").in("sku", skus)
-    : { data: [], error: null };
+  const skus = [...new Set([...products.map((product: any) => product.sku), ...items.map((item: any) => item.sku)].filter(Boolean))];
+  const skuResult = skus.length ? await ch.from("products").select("id,sku").in("sku", skus) : { data: [], error: null };
   if (skuResult.error) throw skuResult.error;
   const centralBySku = new Map((skuResult.data || []).map((product: any) => [product.sku, product.id]));
 
   const orderIds = orders.map((order: any) => order.id);
-  const existingByIdResult = await ch
-    .from("orders")
-    .select("id,order_number,inventory_sync_status,order_status,payment_status")
-    .in("id", orderIds);
+  const existingByIdResult = await ch.from("orders").select("id,order_number,inventory_sync_status,order_status,payment_status").in("id", orderIds);
   if (existingByIdResult.error) throw existingByIdResult.error;
   const existingById = new Map((existingByIdResult.data || []).map((order: any) => [order.id, order]));
 
   const orderNumbers = [...new Set(orders.map((order: any) => order.order_number).filter(Boolean))];
   const existingByNumberResult = orderNumbers.length
-    ? await ch
-        .from("orders")
-        .select("id,order_number,inventory_sync_status,order_status,payment_status")
-        .eq("store_id", store.id)
-        .in("order_number", orderNumbers)
+    ? await ch.from("orders").select("id,order_number,inventory_sync_status,order_status,payment_status").eq("store_id", store.id).in("order_number", orderNumbers)
     : { data: [], error: null };
   if (existingByNumberResult.error) throw existingByNumberResult.error;
   const existingByNumber = new Map((existingByNumberResult.data || []).map((order: any) => [order.order_number, order]));
@@ -420,12 +323,7 @@ async function persistBundle(ch: any, storeSlug: string, bundle: Bundle, specifi
 
     for (const item of remoteItems) {
       const product = productByRemoteId.get(item.product_id) as any;
-      const preferred = [
-        item.centralhub_product_id,
-        product?.centralhub_product_id,
-        product?.source_product_id,
-        product?.id,
-      ].find((value) => isUuid(value) && validCentralIds.has(value));
+      const preferred = [item.centralhub_product_id, product?.centralhub_product_id, product?.source_product_id, product?.id].find((value) => isUuid(value) && validCentralIds.has(value));
       const sku = item.sku || product?.sku || null;
       const centralProductId = preferred || (sku ? centralBySku.get(sku) : undefined);
 
@@ -456,28 +354,17 @@ async function persistBundle(ch: any, storeSlug: string, bundle: Bundle, specifi
     const mapped = mapOrder(remoteOrder, store.id);
     mapped.id = targetOrderId;
     const existing = existingById.get(remoteOrder.id) || numberMatch;
-    const paymentConfirmed = Boolean(
-      existing && (
-        (existing.payment_status !== "paid" && mapped.payment_status === "paid")
-        || (existing.order_status !== "confirmed" && mapped.order_status === "confirmed")
-      )
-    );
     const paymentSuccessful = isSuccessfulSourcePayment(remoteOrder, mapped);
-    if (!existing && paymentSuccessful) {
-      phonePushEvents.push({ eventType: "ORDER_RECEIVED", order: mapped });
-    } else if (existing && paymentConfirmed && paymentSuccessful) {
-      phonePushEvents.push({ eventType: "PAYMENT_CONFIRMED", order: mapped });
-    }
+    const paymentConfirmed = Boolean(existing && existing.payment_status !== "paid" && mapped.payment_status === "paid" && paymentSuccessful);
+
+    if (!existing && paymentSuccessful) phonePushEvents.push({ eventType: "ORDER_RECEIVED", order: mapped });
+    else if (paymentConfirmed) phonePushEvents.push({ eventType: "PAYMENT_CONFIRMED", order: mapped });
+
     if (existing?.inventory_sync_status === "synced") {
       mapped.inventory_sync_status = "synced";
       mapped.stock_deducted = true;
     }
-    mapped.items = mappedItems.map((item: any) => ({
-      name: item.product_name,
-      quantity: item.quantity,
-      price: item.unit_price,
-      product_id: item.product_id,
-    }));
+    mapped.items = mappedItems.map((item: any) => ({ name: item.product_name, quantity: item.quantity, price: item.unit_price, product_id: item.product_id }));
 
     validOrders.push(mapped);
     validItems.push(...mappedItems);
@@ -516,30 +403,16 @@ async function persistBundle(ch: any, storeSlug: string, bundle: Bundle, specifi
   }
 
   if (specificOrderId && mismatches.length) {
-    return {
-      success: false,
-      orders: 0,
-      items: 0,
-      mismatched_orders: mismatches,
-      error: `Order ${specificOrderId} has unmapped product(s): ${mismatches[0].missing_skus.join(", ")}`,
-    };
+    return { success: false, orders: 0, items: 0, mismatched_orders: mismatches, error: `Order ${specificOrderId} has unmapped product(s): ${mismatches[0].missing_skus.join(", ")}` };
   }
 
-  return {
-    success: true,
-    orders: validOrders.length,
-    items: validItems.length,
-    mismatched_orders: mismatches.length ? mismatches : undefined,
-    phone_push_events: phonePushResults.length ? phonePushResults : undefined,
-  };
+  return { success: true, orders: validOrders.length, items: validItems.length, mismatched_orders: mismatches.length ? mismatches : undefined, phone_push_events: phonePushResults.length ? phonePushResults : undefined };
 }
 
 async function syncSource(chUrl: string, chKey: string, source: SourceConfig, orderId?: string) {
   const ch = createClient(chUrl, chKey);
   try {
-    const bundle: Bundle = source.slug === "tamilretail" && (!source.url || !source.key)
-      ? await signedTamilRequest("pull", { orderId: orderId || null })
-      : await fetchDirectBundle(source, orderId);
+    const bundle: Bundle = source.slug === "tamilretail" && (!source.url || !source.key) ? await signedTamilRequest("pull", { orderId: orderId || null }) : await fetchDirectBundle(source, orderId);
     return await persistBundle(ch, source.slug, bundle, orderId);
   } catch (error) {
     return { success: false, error: errorMessage(error) };
@@ -549,10 +422,7 @@ async function syncSource(chUrl: string, chKey: string, source: SourceConfig, or
 async function withTimeout(promise: Promise<any>, timeoutMs = 45000) {
   return Promise.race([
     promise,
-    new Promise((resolve) => setTimeout(
-      () => resolve({ success: false, error: `Sync timed out after ${timeoutMs / 1000}s` }),
-      timeoutMs,
-    )),
+    new Promise((resolve) => setTimeout(() => resolve({ success: false, error: `Sync timed out after ${timeoutMs / 1000}s` }), timeoutMs)),
   ]);
 }
 
@@ -568,79 +438,38 @@ async function parseRequest(req: Request): Promise<SyncRequest> {
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
   if (!["GET", "POST"].includes(req.method)) return reply({ success: false, error: "Method not allowed" }, 405);
-  if (!(await isAuthorizedSyncRequest(req))) {
-    return reply({ success: false, error: "Unauthorized sync request" }, 401);
-  }
+  if (!(await isAuthorizedSyncRequest(req))) return reply({ success: false, error: "Unauthorized sync request" }, 401);
 
   try {
     const chUrl = Deno.env.get("SUPABASE_URL") || "";
     const chKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
     const request = await parseRequest(req);
-    if (request.orderId && !request.storeSlug) {
-      return reply({ success: false, error: "storeSlug is required when orderId is supplied" }, 400);
-    }
+    if (request.orderId && !request.storeSlug) return reply({ success: false, error: "storeSlug is required when orderId is supplied" }, 400);
 
     const sources: SourceConfig[] = [
-      {
-        slug: "malluspices",
-        url: Deno.env.get("MALLUSPICES_SUPABASE_URL"),
-        key: Deno.env.get("MALLUSPICES_SUPABASE_SERVICE_ROLE_KEY"),
-      },
-      {
-        slug: "pocketgrocery",
-        url: Deno.env.get("POCKET_SUPABASE_URL"),
-        key: Deno.env.get("POCKET_SUPABASE_SERVICE_ROLE_KEY"),
-      },
-      {
-        slug: "keralagrocery",
-        url: Deno.env.get("SOURCE3_SUPABASE_URL") || Deno.env.get("KERALA_SUPABASE_URL"),
-        key: Deno.env.get("SOURCE3_SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("KERALA_SUPABASE_SERVICE_ROLE_KEY"),
-      },
-      {
-        slug: "tamilretail",
-      },
+      { slug: "malluspices", url: Deno.env.get("MALLUSPICES_SUPABASE_URL"), key: Deno.env.get("MALLUSPICES_SUPABASE_SERVICE_ROLE_KEY") },
+      { slug: "pocketgrocery", url: Deno.env.get("POCKET_SUPABASE_URL"), key: Deno.env.get("POCKET_SUPABASE_SERVICE_ROLE_KEY") },
+      { slug: "keralagrocery", url: Deno.env.get("SOURCE3_SUPABASE_URL") || Deno.env.get("KERALA_SUPABASE_URL"), key: Deno.env.get("SOURCE3_SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("KERALA_SUPABASE_SERVICE_ROLE_KEY") },
+      { slug: "tamilretail" },
     ];
 
-    const selected = request.storeSlug
-      ? sources.filter((source) => source.slug === request.storeSlug)
-      : sources;
-    if (request.storeSlug && !selected.length) {
-      return reply({ success: false, error: `Unsupported store: ${request.storeSlug}` }, 400);
-    }
+    const selected = request.storeSlug ? sources.filter((source) => source.slug === request.storeSlug) : sources;
+    if (request.storeSlug && !selected.length) return reply({ success: false, error: `Unsupported store: ${request.storeSlug}` }, 400);
 
     const results = await Promise.all(selected.map(async (source) => {
       const usesTamilGateway = source.slug === "tamilretail" && (!source.url || !source.key);
       if ((!source.url || !source.key) && !usesTamilGateway) {
-        return {
-          store: source.slug,
-          configured: false,
-          success: false,
-          orders: 0,
-          items: 0,
-          error: `Source credentials are not configured for ${source.slug}`,
-        };
+        return { store: source.slug, configured: false, success: false, orders: 0, items: 0, error: `Source credentials are not configured for ${source.slug}` };
       }
       const result: any = await withTimeout(syncSource(chUrl, chKey, source, request.orderId));
-      return {
-        store: source.slug,
-        configured: true,
-        transport: usesTamilGateway ? "signed_gateway" : "direct_service_role",
-        ...result,
-      };
+      return { store: source.slug, configured: true, transport: usesTamilGateway ? "signed_gateway" : "direct_service_role", ...result };
     }));
 
     const imported = results.reduce((sum: number, result: any) => sum + Number(result.orders || 0), 0);
     const itemsSynced = results.reduce((sum: number, result: any) => sum + Number(result.items || 0), 0);
     const mismatches = results.flatMap((result: any) => result.mismatched_orders || []);
-    const failures = results
-      .filter((result: any) => !result.success)
-      .map((result: any) => ({ store: result.store, error: result.error || "Unknown sync failure" }));
-    const warnings = results
-      .filter((result: any) => result.success && (result.mismatched_orders?.length || 0) > 0)
-      .map((result: any) => ({
-        store: result.store,
-        warning: `${result.mismatched_orders.length} order(s) skipped because product mappings are missing`,
-      }));
+    const failures = results.filter((result: any) => !result.success).map((result: any) => ({ store: result.store, error: result.error || "Unknown sync failure" }));
+    const warnings = results.filter((result: any) => result.success && (result.mismatched_orders?.length || 0) > 0).map((result: any) => ({ store: result.store, warning: `${result.mismatched_orders.length} order(s) skipped because product mappings are missing` }));
 
     return reply({
       success: failures.length === 0,
@@ -654,9 +483,7 @@ Deno.serve(async (req: Request) => {
       stores: results,
       failures: failures.length ? failures : undefined,
       warnings: warnings.length ? warnings : undefined,
-      message: failures.length
-        ? `Sync completed with ${failures.length} store failure(s).`
-        : `Sync complete: ${imported} order(s) imported or refreshed.`,
+      message: failures.length ? `Sync completed with ${failures.length} store failure(s).` : `Sync complete: ${imported} order(s) imported or refreshed.`,
     });
   } catch (error) {
     return reply({ success: false, error: errorMessage(error) }, 500);
