@@ -1,5 +1,5 @@
-import MarketingAnalyticsClient from './MarketingAnalyticsClient';
+import { redirect } from 'next/navigation';
 
-export default function Page({ params, searchParams }: { params: any; searchParams: any }) {
-  return <MarketingAnalyticsClient />;
+export default function MarketingAnalyticsLegacyRoute() {
+  redirect('/analytics#traffic-attribution');
 }

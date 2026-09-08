@@ -38,10 +38,20 @@ const sections: NavSection[] = [
   { key: '10-marketing', label: 'Marketing', icon: '📣', description: 'Campaigns, promotions, audiences and customer growth', items: [
     { href: '/marketing', label: 'Marketing Overview' }, { href: '/marketing/campaigns', label: 'Campaigns' }, { href: '/marketing/promotions', label: 'Promotions' }, { href: '/marketing/segments', label: 'Segments' }, { href: '/marketing/calendar', label: 'Marketing Calendar' },
     { href: '/marketing/whatsapp', label: 'WhatsApp Marketing' }, { href: '/marketing/email', label: 'Email Marketing' }, { href: '/marketing/social', label: 'Social Media' }, { href: '/marketing/product-feeds', label: 'Product Feeds' }, { href: '/marketing/tracking', label: 'Tracking' }, { href: '/marketing/audiences', label: 'Audiences' },
-    { href: '/marketing/creative-library', label: 'Creative Library' }, { href: '/marketing/budgets', label: 'Marketing Budgets' }, { href: '/marketing/analytics', label: 'Marketing Analytics' }, { href: '/marketing/apps', label: 'App Marketing & Stores' }, { href: '/marketing/apps/releases', label: 'App Releases' }, { href: '/marketing/customer-journey', label: 'Customer Journey' }, { href: '/marketing/alerts', label: 'Marketing Alerts' }, { href: '/marketing/ai', label: 'AI Marketing & SEO' }, { href: '/marketing/integrations', label: 'Marketing Integrations' }, { href: '/marketing/settings', label: 'Marketing Settings' },
+    { href: '/marketing/creative-library', label: 'Creative Library' }, { href: '/marketing/budgets', label: 'Marketing Budgets' }, { href: '/marketing/apps', label: 'App Marketing & Stores' }, { href: '/marketing/apps/releases', label: 'App Releases' }, { href: '/marketing/customer-journey', label: 'Customer Journey' }, { href: '/marketing/alerts', label: 'Marketing Alerts' }, { href: '/marketing/ai', label: 'AI Marketing & SEO' }, { href: '/marketing/integrations', label: 'Marketing Integrations' }, { href: '/marketing/settings', label: 'Marketing Settings' },
   ] },
-  { key: '07-analytics', label: 'Analytics', icon: '📈', description: 'Store analytics, GA4, realtime activity and attribution', items: [
+  { key: '07-analytics', label: 'Analytics', icon: '📈', description: 'Website, GA4, realtime visitors, search, attribution and app analytics', items: [
     { href: '/analytics', label: 'Analytics Overview' },
+    { href: '/analytics#growth', label: 'Growth & Trends' },
+    { href: '/analytics#website-ga4', label: 'Website & GA4' },
+    { href: '/analytics#realtime', label: 'Realtime Visitors' },
+    { href: '/analytics#visitors', label: 'Visitor Tracking' },
+    { href: '/analytics#traffic-attribution', label: 'Traffic & Attribution' },
+    { href: '/analytics#geography', label: 'Geography & Devices' },
+    { href: '/analytics#ecommerce', label: 'Ecommerce Analytics' },
+    { href: '/analytics#search-console', label: 'Google Search Console' },
+    { href: '/analytics#apps', label: 'Play & App Store Analytics' },
+    { href: '/analytics#health', label: 'Analytics Data Health' },
   ] },
   { key: '07-intelligence', label: 'Intelligence & Decisions', icon: '🧠', description: 'Analysis, competitors and commercial decisions', items: [
     { href: '/business-intelligence/executive', label: 'Executive BI' }, { href: '/business-intelligence/price-opportunities', label: 'Price Opportunities' }, { href: '/business-intelligence/inventory', label: 'Inventory BI' }, { href: '/business-intelligence/revenue-margin', label: 'Revenue & Margin' }, { href: '/business-intelligence/customers', label: 'Customer BI' }, { href: '/marketing/intelligence', label: 'Marketing BI' }, { href: '/business-intelligence/ai-usage', label: 'AI Usage' }, { href: '/business-intelligence/automation', label: 'Automation BI' }, { href: '/business-intelligence/promotion-simulator', label: 'Promotion Simulator' },
@@ -90,7 +100,7 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
   useEffect(() => { fetchStats(); const id = setInterval(fetchStats, 300000); return () => clearInterval(id); }, [fetchStats]);
   useEffect(() => { const saved = localStorage.getItem('sidebar_classified_sections'); if (saved) { try { setExpanded(JSON.parse(saved)); } catch {} } }, []);
   useEffect(() => { if (mounted) localStorage.setItem('sidebar_classified_sections', JSON.stringify(expanded)); }, [expanded, mounted]);
-  useEffect(() => { const current = sections.find(s => s.items.some(i => pathname === i.href || pathname.startsWith(i.href.split('?')[0] + '/'))); if (current && !expanded.includes(current.key)) setExpanded(v => [...v, current.key]); }, [pathname, expanded]);
+  useEffect(() => { const current = sections.find(s => s.items.some(i => { const base = i.href.split(/[?#]/)[0]; return pathname === base || pathname.startsWith(base + '/'); })); if (current && !expanded.includes(current.key)) setExpanded(v => [...v, current.key]); }, [pathname, expanded]);
 
   const counts: Record<string, number> = { '02-network-sales': stats.pendingOrders, '03-catalog-inventory': stats.lowStock, '04-procurement': stats.backorders, '06-customer-growth': stats.tickets };
   const filtered = useMemo(() => {
@@ -100,8 +110,6 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
     return allowed.map(s => ({ ...s, items: s.items.filter(i => i.label.toLowerCase().includes(q) || i.href.toLowerCase().includes(q)) })).filter(s => s.label.toLowerCase().includes(q) || s.items.length);
   }, [navSearch, isAdmin, disabledNavKeys]);
 
-  // On the unfolded Fold, keep the sidebar compact by default. The header
-  // toggle lets the user expand it when the full labels are needed.
   const autoCollapsed = width < 1200;
   const collapsed = manualCollapsed || (sidebarPreference ?? autoCollapsed);
   const setCollapsed = (next: boolean) => {
@@ -113,7 +121,7 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
     localStorage.setItem('sidebar_classified_collapsed_v2', String(next));
   };
   const toggle = (key: string) => setExpanded(v => v.includes(key) ? v.filter(x => x !== key) : [...v, key]);
-  const active = (href: string) => href.includes('?') ? pathname === href.split('?')[0] : pathname === href || pathname.startsWith(href + '/');
+  const active = (href: string) => { const base = href.split(/[?#]/)[0]; return pathname === base || pathname.startsWith(base + '/'); };
 
   return (
     <aside data-collapsed={collapsed ? 'true' : 'false'} className={`centralhub-sidebar ${collapsed ? designTokens.layout.sidebarWidthCollapsed : designTokens.layout.sidebarWidth} ${designTokens.colors.background.main} border-r ${designTokens.colors.border.default} h-screen sticky top-0 flex flex-col transition-all duration-300 ease-in-out z-50`}>
@@ -123,56 +131,14 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
         ) : (
           <Link href="/dashboard" className="font-black text-white">CentralHub</Link>
         )}
-        <button
-          type="button"
-          onClick={() => setCollapsed(!collapsed)}
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          className="min-w-9 min-h-9 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 touch-manipulation"
-        >
-          {collapsed ? '→' : '←'}
-        </button>
+        <button type="button" onClick={() => setCollapsed(!collapsed)} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} className="min-w-9 min-h-9 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 touch-manipulation">{collapsed ? '→' : '←'}</button>
       </div>
       {!collapsed && <div className="px-4 pt-3"><div className="text-[9px] font-black uppercase tracking-[.2em] text-cyan-400">Business navigation</div><div className="text-[10px] text-slate-600 mt-1">Organised by what each area is used for</div></div>}
-      <div className="p-3">
-        {collapsed ? (
-          <button
-            type="button"
-            onClick={() => setCollapsed(false)}
-            aria-label="Expand sidebar search"
-            title="Expand sidebar search"
-            className="w-full min-h-10 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 text-lg touch-manipulation"
-          >
-            ⌕
-          </button>
-        ) : (
-          <input
-            value={navSearch}
-            onChange={e => setNavSearch(e.target.value)}
-            placeholder="Search navigation..."
-            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none"
-          />
-        )}
-      </div>
+      <div className="p-3">{collapsed ? <button type="button" onClick={() => setCollapsed(false)} aria-label="Expand sidebar search" title="Expand sidebar search" className="w-full min-h-10 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 text-lg touch-manipulation">⌕</button> : <input value={navSearch} onChange={e => setNavSearch(e.target.value)} placeholder="Search navigation..." className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none" />}</div>
       <nav className="flex-1 overflow-y-auto px-3 pb-4 space-y-1">
         {mounted && filtered.map(section => <div key={section.key} className="mb-1">
-          <button
-            type="button"
-            onClick={() => {
-              if (collapsed) {
-                setCollapsed(false);
-                setExpanded(v => v.includes(section.key) ? v : [...v, section.key]);
-              } else {
-                toggle(section.key);
-              }
-            }}
-            title={collapsed ? `${section.label}: ${section.description}` : section.description}
-            aria-expanded={expanded.includes(section.key)}
-            className={`w-full min-h-[44px] touch-manipulation flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest ${pathname && section.items.some(i => active(i.href)) ? 'bg-cyan-500/10 text-cyan-300' : 'text-slate-400 hover:text-white'}`}
-          >
-            <span className={collapsed ? 'w-full text-center text-xl' : 'truncate'}>
-              {collapsed ? section.icon : <>{section.icon} {section.label}{counts[section.key] ? <span className="ml-2 text-[9px] text-amber-300">{counts[section.key]}</span> : null}</>}
-            </span>
+          <button type="button" onClick={() => { if (collapsed) { setCollapsed(false); setExpanded(v => v.includes(section.key) ? v : [...v, section.key]); } else { toggle(section.key); } }} title={collapsed ? `${section.label}: ${section.description}` : section.description} aria-expanded={expanded.includes(section.key)} className={`w-full min-h-[44px] touch-manipulation flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest ${pathname && section.items.some(i => active(i.href)) ? 'bg-cyan-500/10 text-cyan-300' : 'text-slate-400 hover:text-white'}`}>
+            <span className={collapsed ? 'w-full text-center text-xl' : 'truncate'}>{collapsed ? section.icon : <>{section.icon} {section.label}{counts[section.key] ? <span className="ml-2 text-[9px] text-amber-300">{counts[section.key]}</span> : null}</>}</span>
             {!collapsed && <span>{expanded.includes(section.key) ? '−' : '+'}</span>}
           </button>
           {expanded.includes(section.key) && !collapsed && <div className="ml-3 mt-1 space-y-0.5 border-l border-slate-800 pl-2">{section.items.map(item => <Link key={item.href} href={item.href} className={`block px-3 py-2 rounded-lg text-xs ${active(item.href) ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-200'}`}>{item.label}{item.badge ? ` (${item.badge})` : ''}</Link>)}</div>}
