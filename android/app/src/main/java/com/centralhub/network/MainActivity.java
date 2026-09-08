@@ -19,7 +19,16 @@ public class MainActivity extends BridgeActivity {
 
         WebSettings webSettings = bridge.getWebView().getSettings();
         webSettings.setUseWideViewPort(true);
-        webSettings.setLoadWithOverviewMode(false);
+        // The inner Fold display has a wide layout, but the default WebView scale
+        // makes the admin shell feel oversized. Apply a modest zoom-out only there;
+        // the cover display keeps its existing responsive scale.
+        int screenWidthDp = getResources().getConfiguration().screenWidthDp;
+        if (screenWidthDp >= 600) {
+            webSettings.setLoadWithOverviewMode(true);
+            webSettings.setInitialScale(90);
+        } else {
+            webSettings.setLoadWithOverviewMode(false);
+        }
 
         bridge.getWebView().addJavascriptInterface(
                 new CentralHubNativeBridge(this),
