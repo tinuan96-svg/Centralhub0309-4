@@ -14,6 +14,18 @@ function hasInternalAccess(req: Request) {
   return token === configuredSecret;
 }
 
+function getAutomaticOrderDedupeKey(body: any) {
+  const metadata = body?.metadata && typeof body.metadata === 'object' ? body.metadata : {};
+  const eventType = String(metadata.event_type || body?.event_type || '').trim();
+  const orderId = String(metadata.order_id || body?.orderId || body?.order_id || '').trim();
+
+  if (!['ORDER_RECEIVED', 'PAYMENT_CONFIRMED'].includes(eventType) || !orderId) {
+    return null;
+  }
+
+  return String(metadata.dedupe_key || `${eventType}:${orderId}`).trim();
+}
+
 export async function POST(req: Request) {
   if (process.env.NEXT_OUTPUT?.trim() === 'export') {
     return new Response('Not available in static export', { status: 404 });
@@ -36,7 +48,36 @@ export async function POST(req: Request) {
   }
 
   const supabase = getServiceClient();
+  const automaticOrderDedupeKey = getAutomaticOrderDedupeKey(body);
+  const incomingMetadata = body.metadata && typeof body.metadata === 'object' ? body.metadata : {};
+  const notificationMetadata = automaticOrderDedupeKey
+    ? {
+        ...incomingMetadata,
+        source: 'centralhub-automatic-order-push',
+        dedupe_key: automaticOrderDedupeKey,
+      }
+    : incomingMetadata;
   let notification = null;
+
+  if (automaticOrderDedupeKey) {
+    const { data: existing, error: existingError } = await supabase
+      .from('system_notifications')
+      .select('id')
+      .eq('metadata->>dedupe_key', automaticOrderDedupeKey)
+      .maybeSingle();
+
+    if (existingError) return jsonError(existingError.message, 500);
+    if (existing) {
+      return NextResponse.json({
+        success: true,
+        deduped: true,
+        notification_id: existing.id,
+        sent: 0,
+        attempted: 0,
+        message: 'Duplicate automatic order notification ignored.',
+      });
+    }
+  }
 
   if (body.notificationId) {
     const { data, error } = await supabase
@@ -66,12 +107,33 @@ export async function POST(req: Request) {
         category: body.category || 'phone_push',
         action_url: body.url || body.action_url || '/dashboard',
         is_read: false,
-        metadata: body.metadata || {},
+        metadata: notificationMetadata,
       })
       .select('id, user_id, title, message, action_url, severity, category')
       .single();
 
-    if (error || !data) return jsonError(error?.message || 'Could not create notification.', 500);
+    if (error || !data) {
+      if (automaticOrderDedupeKey && error?.code === '23505') {
+        const { data: existing } = await supabase
+          .from('system_notifications')
+          .select('id')
+          .eq('metadata->>dedupe_key', automaticOrderDedupeKey)
+          .maybeSingle();
+
+        if (existing) {
+          return NextResponse.json({
+            success: true,
+            deduped: true,
+            notification_id: existing.id,
+            sent: 0,
+            attempted: 0,
+            message: 'Duplicate automatic order notification ignored.',
+          });
+        }
+      }
+
+      return jsonError(error?.message || 'Could not create notification.', 500);
+    }
     notification = data;
   }
 
