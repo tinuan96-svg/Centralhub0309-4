@@ -1,5 +1,12 @@
 const DEFAULT_NOTIFICATION_URL = '/dashboard';
 
+const STORE_NOTIFICATION_ICONS = {
+  malluspices: '/notification-logos/malluspices.svg',
+  keralagrocery: '/notification-logos/keralagrocery.svg',
+  pocketgrocery: '/notification-logos/pocketgrocery.svg',
+  tamilretail: '/notification-logos/tamilretail.svg',
+};
+
 self.addEventListener('install', () => {
   self.skipWaiting();
 });
@@ -28,10 +35,17 @@ self.addEventListener('push', (event) => {
   }
 
   const title = payload.title || 'CentralHub';
+  const storeSlug = String(
+    payload.storeSlug
+      || payload.store_slug
+      || payload.metadata?.store_slug
+      || ''
+  ).trim().toLowerCase();
+  const storeIcon = STORE_NOTIFICATION_ICONS[storeSlug] || '/app-icon.svg';
   const options = {
     body: payload.body || payload.message || 'New CentralHub notification',
-    icon: payload.icon || '/app-icon.svg',
-    badge: payload.badge || '/app-icon.svg',
+    icon: payload.icon || storeIcon,
+    badge: payload.badge || storeIcon,
     tag: payload.tag || payload.notificationId || 'centralhub-system',
     // Chrome/Android controls the notification channel sound. A web push payload
     // cannot force a spoken voice or override a muted device/channel.
@@ -45,6 +59,7 @@ self.addEventListener('push', (event) => {
       category: payload.category || null,
       storeId: payload.storeId || payload.store_id || payload.metadata?.store_id || null,
       storeName: payload.storeName || payload.store_name || payload.metadata?.store_name || null,
+      storeSlug: storeSlug || null,
     },
   };
 
