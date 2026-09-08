@@ -60,6 +60,36 @@ export async function POST(req: Request) {
 
   const notificationDetails = buildNotification(eventType, body);
   const supabase = getServiceClient();
+  const orderId = String(body.orderId || body.order_id || '').trim();
+  const dedupeKey = orderId ? `${eventType}:${orderId}` : null;
+
+  if (dedupeKey) {
+    const { data: existing, error: existingError } = await supabase
+      .from('system_notifications')
+      .select('id')
+      .eq('metadata->>dedupe_key', dedupeKey)
+      .maybeSingle();
+
+    if (existingError) return jsonError(existingError.message, 500);
+    if (existing) {
+      return NextResponse.json({
+        success: true,
+        deduped: true,
+        notification_id: existing.id,
+        sent: 0,
+        attempted: 0,
+        message: 'Duplicate automatic order notification ignored.',
+      });
+    }
+  }
+
+  const notificationMetadata = {
+    source: 'centralhub-automatic-order-push',
+    event_type: eventType,
+    order_id: orderId || null,
+    order_number: body.orderNumber || body.order_number || null,
+    ...(dedupeKey ? { dedupe_key: dedupeKey } : {}),
+  };
 
   const { data: notification, error: notificationError } = await supabase
     .from('system_notifications')
@@ -72,17 +102,31 @@ export async function POST(req: Request) {
       category: notificationDetails.category,
       action_url: notificationDetails.url,
       is_read: false,
-      metadata: {
-        source: 'centralhub-automatic-phone-push',
-        event_type: eventType,
-        order_id: body.orderId || body.order_id || null,
-        order_number: body.orderNumber || body.order_number || null,
-      },
+      metadata: notificationMetadata,
     })
     .select('id, title, message, action_url, severity, category')
     .single();
 
   if (notificationError || !notification) {
+    if (dedupeKey && notificationError?.code === '23505') {
+      const { data: existing } = await supabase
+        .from('system_notifications')
+        .select('id')
+        .eq('metadata->>dedupe_key', dedupeKey)
+        .maybeSingle();
+
+      if (existing) {
+        return NextResponse.json({
+          success: true,
+          deduped: true,
+          notification_id: existing.id,
+          sent: 0,
+          attempted: 0,
+          message: 'Duplicate automatic order notification ignored.',
+        });
+      }
+    }
+
     return jsonError(notificationError?.message || 'Could not create automatic notification.', 500);
   }
 
