@@ -2,6 +2,15 @@ name: Build CentralHub Android APK
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'android/**'
+      - 'capacitor.config.ts'
+      - 'next.config.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/build-centralhub-apk.yml'
 
 permissions:
   contents: read
