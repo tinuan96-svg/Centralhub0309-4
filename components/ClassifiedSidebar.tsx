@@ -102,12 +102,15 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
   }, []);
 
   useEffect(() => { fetchStats(); const id = setInterval(fetchStats, 300000); return () => clearInterval(id); }, [fetchStats]);
-  useEffect(() => { const saved = localStorage.getItem('sidebar_classified_sections'); if (saved) { try { setExpanded(JSON.parse(saved)); } catch {} } }, []);
+  useEffect(() => {
+    const saved = localStorage.getItem('sidebar_classified_sections');
+    if (saved) { try { setExpanded(JSON.parse(saved)); } catch {} }
+    const last = sessionStorage.getItem('sidebar_classified_last_section');
+    if (last) setExpanded(v => v.includes(last) ? v : [...v, last]);
+  }, []);
   useEffect(() => { if (mounted) localStorage.setItem('sidebar_classified_sections', JSON.stringify(expanded)); }, [expanded, mounted]);
   useEffect(() => {
-    if (currentSectionKey && !expanded.includes(currentSectionKey)) {
-      setExpanded(v => [...v, currentSectionKey]);
-    }
+    if (currentSectionKey && !expanded.includes(currentSectionKey)) setExpanded(v => [...v, currentSectionKey]);
   }, [currentSectionKey, expanded]);
 
   const counts: Record<string, number> = { '02-network-sales': stats.pendingOrders, '03-catalog-inventory': stats.lowStock, '04-procurement': stats.backorders, '06-customer-growth': stats.tickets };
@@ -118,7 +121,9 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
     return allowed.map(s => ({ ...s, items: s.items.filter(i => i.label.toLowerCase().includes(q) || i.href.toLowerCase().includes(q)) })).filter(s => s.label.toLowerCase().includes(q) || s.items.length);
   }, [navSearch, isAdmin, disabledNavKeys]);
 
-  const autoCollapsed = width < 1200;
+  // Keep the sidebar stable on desktop/fold layouts. Only narrow phone-sized views
+  // auto-collapse after navigation; the active section and scroll position persist.
+  const autoCollapsed = width < 900;
   const collapsed = manualCollapsed || (sidebarPreference ?? autoCollapsed);
 
   const setCollapsed = useCallback((next: boolean) => {
@@ -156,7 +161,7 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
   }, [mounted, collapsed, currentSectionKey, expanded, keepSectionVisible]);
 
   const collapseAfterNavigation = useCallback(() => {
-    if (width < 1600) setCollapsed(true);
+    if (width < 900) setCollapsed(true);
   }, [setCollapsed, width]);
 
   const handleTouchStart = useCallback((event: React.TouchEvent<HTMLElement>) => {
