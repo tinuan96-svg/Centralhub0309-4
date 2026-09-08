@@ -19,79 +19,206 @@ const continuityCriticalRoutes = [
   '/customers',
   '/inventory',
   '/inventory/visibility',
+  '/inventory/bulk',
+  '/inventory-audit',
   '/inventory-management',
   '/inventory-management/stock',
   '/inventory-management/adjustments',
   '/inventory-management/movements',
+  '/inventory-management/reports',
+  '/inventory-management/warehouses',
+  '/inventory-management/barcode',
+  '/inventory-management/packaging',
   '/inventory-management/expiry',
+  '/inventory-management/sync',
   '/inventory-management/purchase-orders',
   '/inventory-management/grn',
+  '/procurement',
   '/backorder-planning',
   '/suppliers',
   '/suppliers/invoices',
   '/suppliers/pricing',
+  '/suppliers/comparison',
+  '/picking',
   '/packing',
   '/shipping',
+  '/shipping/tracking',
+  '/shipping/calculator',
   '/customer-care/inbox',
+  '/customer-care/conversations',
   '/customer-care/tickets',
   '/customer-care/channels',
+  '/customer-care/ai-assistant',
+  '/customer-care/knowledge-base',
+  '/customer-care/templates',
+  '/customer-care/automations',
   '/marketing',
+  '/marketing/campaigns',
+  '/marketing/promotions',
+  '/marketing/segments',
+  '/marketing/calendar',
+  '/marketing/whatsapp',
+  '/marketing/email',
+  '/marketing/social',
+  '/marketing/product-feeds',
+  '/marketing/tracking',
+  '/marketing/audiences',
+  '/marketing/creative-library',
+  '/marketing/budgets',
   '/marketing/analytics',
   '/marketing/apps',
   '/marketing/apps/releases',
+  '/marketing/customer-journey',
+  '/marketing/alerts',
+  '/marketing/ai',
   '/marketing/integrations',
+  '/marketing/settings',
   '/marketing/intelligence',
   '/analytics',
   '/business-intelligence/executive',
+  '/business-intelligence/price-opportunities',
+  '/business-intelligence/promotion-simulator',
   '/business-intelligence/inventory',
   '/business-intelligence/revenue-margin',
+  '/business-intelligence/customers',
+  '/business-intelligence/ai-usage',
   '/business-intelligence/automation',
   '/competitors',
   '/pricing',
   '/pricing/approval',
   '/finance',
+  '/profit-analysis',
   '/banking',
+  '/finance/ledger',
   '/finance/transactions',
   '/finance/mollie',
   '/finance/payables',
+  '/expenses',
   '/finance/p-and-l',
   '/finance/profitability',
+  '/finance/alerts',
   '/finance/vat',
-  '/finance/mollie',
+  '/settings',
   '/settings/notifications',
+  '/settings/users',
   '/site-health',
+  '/inventory-management/reports/audit',
 ];
 
 // These high-value routes must remain discoverable on both desktop and mobile navigation.
+// Query/hash variants are included here because losing one of those links can silently hide
+// a working pricing or approval view even when the underlying page still exists.
 const navigationParityRoutes = [
   '/dashboard',
   '/stores',
+  '/inventory/visibility',
+  '/settings/master-data/stores',
   '/orders',
   '/sync-status',
+  '/customers',
   '/inventory',
-  '/inventory/visibility',
+  '/inventory/bulk',
+  '/business-intelligence/executive#approvals',
+  '/settings/master-data/categories',
+  '/settings/master-data/brands',
+  '/inventory-management/sync',
   '/inventory-management',
+  '/inventory-management/stock',
+  '/inventory-management/adjustments',
+  '/inventory-management/movements',
+  '/inventory-audit',
+  '/inventory-management/reports',
+  '/inventory-management/warehouses',
+  '/inventory-management/barcode',
+  '/inventory-management/packaging',
   '/inventory-management/expiry',
+  '/procurement',
   '/backorder-planning',
+  '/inventory-management/purchase-orders',
+  '/suppliers/invoices',
+  '/inventory-management/grn',
   '/suppliers',
+  '/suppliers/pricing',
+  '/suppliers/comparison',
+  '/picking',
   '/packing',
   '/shipping',
+  '/shipping/tracking',
+  '/shipping/calculator',
   '/customer-care/inbox',
+  '/customer-care/conversations',
+  '/customer-care/tickets',
   '/customer-care/channels',
+  '/customer-care/ai-assistant',
+  '/customer-care/knowledge-base',
+  '/customer-care/templates',
+  '/customer-care/automations',
   '/marketing',
+  '/marketing/campaigns',
+  '/marketing/promotions',
+  '/marketing/segments',
+  '/marketing/calendar',
+  '/marketing/whatsapp',
+  '/marketing/email',
+  '/marketing/social',
+  '/marketing/product-feeds',
+  '/marketing/tracking',
+  '/marketing/audiences',
+  '/marketing/creative-library',
+  '/marketing/budgets',
+  '/marketing/analytics',
   '/marketing/apps',
   '/marketing/apps/releases',
+  '/marketing/customer-journey',
+  '/marketing/alerts',
+  '/marketing/ai',
+  '/marketing/integrations',
+  '/marketing/settings',
   '/analytics',
   '/business-intelligence/executive',
+  '/business-intelligence/price-opportunities',
+  '/business-intelligence/promotion-simulator',
+  '/business-intelligence/inventory',
+  '/business-intelligence/revenue-margin',
+  '/business-intelligence/customers',
+  '/marketing/intelligence',
+  '/business-intelligence/ai-usage',
+  '/business-intelligence/automation',
+  '/competitors',
+  '/pricing',
+  '/pricing/approval',
+  '/pricing?tab=fixing',
+  '/pricing?tab=weekly',
+  '/pricing?tab=competitors',
+  '/pricing?tab=rules',
+  '/pricing?tab=history',
+  '/finance',
+  '/profit-analysis',
   '/banking',
+  '/finance/ledger',
+  '/finance/transactions',
+  '/finance/mollie',
+  '/finance/payables',
+  '/expenses',
+  '/finance/p-and-l',
+  '/finance/profitability',
+  '/finance/alerts',
   '/finance/vat',
+  '/settings',
   '/settings/notifications',
   '/site-health',
+  '/settings/users',
+  '/inventory-management/reports/audit',
 ];
 
 const navigationParityFiles = [
   path.join(root, 'components', 'ClassifiedSidebar.tsx'),
   path.join(root, 'components', 'MobileHeader.tsx'),
+];
+
+const standaloneAnalyticsMarkers = [
+  { file: 'components/ClassifiedSidebar.tsx', markers: ["key: '07-analytics'", "label: 'Analytics'", "href: '/analytics', label: 'Analytics Overview'"] },
+  { file: 'components/MobileHeader.tsx', markers: ["key: '10.5 — analytics'", "label: 'Analytics'", "href: '/analytics', label: 'Analytics Overview'"] },
 ];
 
 const continuityCriticalFiles = [
@@ -175,14 +302,48 @@ const missingCriticalPages = continuityCriticalRoutes.filter((route) => !exists(
 const missingCriticalFiles = continuityCriticalFiles.filter((file) => !fs.existsSync(path.join(root, file)));
 
 const navigationParityFailures = [];
+const navigationTexts = new Map();
 for (const file of navigationParityFiles) {
   if (!fs.existsSync(file)) {
     navigationParityFailures.push(`${path.relative(root, file)} is missing`);
     continue;
   }
   const text = fs.readFileSync(file, 'utf8');
+  navigationTexts.set(file, text);
   for (const route of navigationParityRoutes) {
     if (!text.includes(route)) navigationParityFailures.push(`${route} missing from ${path.relative(root, file)}`);
+  }
+}
+
+// Beyond the critical route list, compare every literal href in the two navigation catalogs.
+// This catches the exact regression that previously hid Analytics and other working pages.
+if (navigationParityFiles.every((file) => navigationTexts.has(file))) {
+  const hrefPattern = /href:\s*["'`]([^"'`]+)["'`]/g;
+  const catalogs = navigationParityFiles.map((file) => {
+    const targets = new Set();
+    for (const match of navigationTexts.get(file).matchAll(hrefPattern)) {
+      if (match[1]?.startsWith('/')) targets.add(match[1]);
+    }
+    return { file, targets };
+  });
+  const [desktop, mobile] = catalogs;
+  for (const target of desktop.targets) {
+    if (!mobile.targets.has(target)) navigationParityFailures.push(`${target} exists in desktop navigation but is missing from mobile/Fold navigation`);
+  }
+  for (const target of mobile.targets) {
+    if (!desktop.targets.has(target)) navigationParityFailures.push(`${target} exists in mobile/Fold navigation but is missing from desktop navigation`);
+  }
+}
+
+for (const assertion of standaloneAnalyticsMarkers) {
+  const full = path.join(root, assertion.file);
+  if (!fs.existsSync(full)) {
+    navigationParityFailures.push(`${assertion.file} is missing`);
+    continue;
+  }
+  const text = fs.readFileSync(full, 'utf8');
+  for (const marker of assertion.markers) {
+    if (!text.includes(marker)) navigationParityFailures.push(`Standalone Analytics section marker missing from ${assertion.file}: ${marker}`);
   }
 }
 
@@ -212,7 +373,7 @@ const report = [
   ...missingCriticalFiles.map((file) => `- ${file}`),
   contentAssertionFailures.length ? 'Continuity implementation assertions failed:' : 'Continuity implementation assertions: PASS',
   ...contentAssertionFailures.map((failure) => `- ${failure}`),
-  navigationParityFailures.length ? 'Desktop/mobile navigation parity failures:' : `Desktop/mobile navigation parity: PASS (${navigationParityRoutes.length} guarded)`,
+  navigationParityFailures.length ? 'Desktop/mobile navigation parity failures:' : `Desktop/mobile navigation parity: PASS (${navigationParityRoutes.length} guarded + full catalog comparison)`,
   ...navigationParityFailures.map((failure) => `- ${failure}`),
 ].join('\n');
 
