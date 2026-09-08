@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { supabase } from '../supabase';
+import { syncOrders } from './orderSyncClient';
 import { InventoryService } from './inventoryService';
 import { CommunicationService } from './comm/CommunicationService';
 import {
@@ -853,12 +854,10 @@ export class OrderService {
       const slug = (order as any).stores.slug.toLowerCase();
 
       // Use the edge function for syncing to avoid client-side environment variable issues
-      const { data, error } = await supabase.functions.invoke('sync-orders', {
-        body: { orderId, storeSlug: slug }
-      });
+      const data = await syncOrders({ orderId, storeSlug: slug });
 
-      if (error || !data?.success) {
-        return { success: false, error: data?.error || error?.message || 'Failed to sync from source' };
+      if (!data.success) {
+        return { success: false, error: data.error || data.message || 'Failed to sync from source' };
       }
 
       return { success: true, error: null };
