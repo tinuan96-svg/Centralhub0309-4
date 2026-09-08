@@ -5,20 +5,40 @@ import { ZebraPrintService } from '../services/shipping/zebraPrintService';
 import { OrderWithItems, OrderStatus, Store } from '../types';
 import { supabase } from '../supabase';
 
+const PAID_FULFILMENT_ONLY = new Set<OrderStatus>([
+  'confirmed', 'picking', 'picked', 'packing', 'packed', 'ready_to_ship', 'shipment_booked',
+  'collected', 'shipped', 'at_local_depot', 'out_for_delivery', 'delivered', 'completed',
+  'delivery_attempted', 'ready_for_collection', 'delivery_rescheduled'
+]);
+
 export function useOrderActions(onSuccess?: () => void) {
   const [isActionLoading, setIsActionLoading] = useState(false);
 
   const handleStatusChange = useCallback(async (id: string, status: OrderStatus) => {
     setIsActionLoading(true);
     try {
+      if (PAID_FULFILMENT_ONLY.has(status)) {
+        const { data: order, error: lookupError } = await supabase
+          .from('orders')
+          .select('payment_status, order_number')
+          .eq('id', id)
+          .maybeSingle();
+        if (lookupError) throw lookupError;
+        if (order?.payment_status !== 'paid') {
+          alert(`Payment must be received before ${order?.order_number || 'this order'} can enter fulfilment. Use Confirm Payment only after the payment is actually verified.`);
+          return;
+        }
+      }
+
       const { success, error } = await OrderService.updateOrderStatus(id, status);
       if (success) {
         onSuccess?.();
       } else {
         alert(`Failed to update status: ${error}`);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      alert(`Failed to update status: ${e?.message || 'Unknown error'}`);
     } finally {
       setIsActionLoading(false);
     }
@@ -50,15 +70,11 @@ export function useOrderActions(onSuccess?: () => void) {
 
     setIsActionLoading(true);
     try {
-      // 1. Perform cancellation via single atomic service call
-      // The backend/DB trigger handles all central_inventory restoration logic.
-      // We NEVER touch products.stock directly in frontend.
       const { success, error } = await OrderService.cancelOrder(orderId, reason);
 
       if (success) {
         onSuccess?.();
       } else {
-        // Show clear error message from backend
         alert(`Failed to cancel order: ${error || 'Unknown error'}`);
       }
     } catch (e: any) {
@@ -79,11 +95,7 @@ export function useOrderActions(onSuccess?: () => void) {
       const { success, error } = await OrderService.refundOrder(orderId, reason);
       if (success) {
         const { data: syncData, error: syncError } = await supabase.functions.invoke('update-order-status', {
-          body: {
-            orderId,
-            status: 'refunded',
-            notes: reason || 'Order refunded',
-          },
+          body: { orderId, status: 'refunded', notes: reason || 'Order refunded' },
         });
 
         if (syncError || syncData?.success === false) {
@@ -124,7 +136,6 @@ export function useOrderActions(onSuccess?: () => void) {
 
   const handleZebraPrint = useCallback(async (order: OrderWithItems) => {
     try {
-      // 1. Check if shipment exists
       const { data: shipment, error: shipError } = await supabase
         .from('shipments')
         .select('*')
@@ -138,7 +149,6 @@ export function useOrderActions(onSuccess?: () => void) {
         return;
       }
 
-      // 2. Generate ZPL
       const zpl = ZebraPrintService.generateLabelZPL({
         orderNumber: order.order_number,
         customerName: order.customer_name,
@@ -148,7 +158,6 @@ export function useOrderActions(onSuccess?: () => void) {
         carrier: shipment.carrier || 'DHL'
       });
 
-      // 3. Print
       const result = await ZebraPrintService.printZPL(zpl);
       if (result.success) {
         alert('Label sent to Zebra printer!');
@@ -163,11 +172,15 @@ export function useOrderActions(onSuccess?: () => void) {
   }, []);
 
   const handleCreateShipment = useCallback(async (order: OrderWithItems) => {
+    if (order.payment_status !== 'paid') {
+      alert('Shipment creation is blocked until payment is actually received.');
+      return;
+    }
+
     setIsActionLoading(true);
     try {
       const weightGrams = (order.items || []).reduce((sum, item) => {
-        const itemWeight = (item as any).product?.weight_grams ||
-                          ((item as any).product?.weight_kg ? (item as any).product.weight_kg * 1000 : 500);
+        const itemWeight = (item as any).product?.weight_grams || ((item as any).product?.weight_kg ? (item as any).product.weight_kg * 1000 : 500);
         return sum + (itemWeight * item.quantity);
       }, 0) || 500;
 
@@ -185,10 +198,7 @@ export function useOrderActions(onSuccess?: () => void) {
       });
 
       if (result.success) {
-        // Auto-print to Zebra after successful creation
-        if (confirm('Shipment created! Print label to Zebra ZD421D?')) {
-          await handleZebraPrint(order);
-        }
+        if (confirm('Shipment created! Print label to Zebra ZD421D?')) await handleZebraPrint(order);
         onSuccess?.();
       } else {
         alert(`Failed to create shipment: ${result.error}`);
@@ -248,11 +258,8 @@ export function useOrderActions(onSuccess?: () => void) {
     setIsActionLoading(true);
     try {
       const { success, error } = await OrderService.syncOrderFromSource(orderId);
-      if (success) {
-        onSuccess?.();
-      } else {
-        alert(`Failed to sync from source: ${error}`);
-      }
+      if (success) onSuccess?.();
+      else alert(`Failed to sync from source: ${error}`);
     } catch (e) {
       console.error(e);
     } finally {
