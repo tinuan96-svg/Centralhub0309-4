@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { NotificationService, SystemNotification } from '@/lib/services/system/notificationService';
 import { PushBrowserStatus, PushNotificationService } from '@/lib/services/pushNotificationService';
+import { getStoreNotificationBrand } from '@/lib/notifications/storeNotificationBrand';
 
 export default function NotificationSettingsPage() {
   const [notifications, setNotifications] = useState<SystemNotification[]>([]);
@@ -128,7 +129,31 @@ export default function NotificationSettingsPage() {
     </div>
 
     <div className="rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden">
-      {loading ? <div className="p-10 text-center text-slate-500">Loading notifications…</div> : notifications.length === 0 ? <div className="p-12 text-center text-slate-500">No notifications available.</div> : <div className="divide-y divide-slate-800/70">{notifications.map(n => <div key={n.id} className={`p-4 ${n.is_read ? 'opacity-60' : ''}`}><div className="flex justify-between gap-4"><div><div className="font-bold text-white">{n.title}</div><div className="text-sm text-slate-400 mt-1">{n.message}</div></div><span className="text-[10px] uppercase text-slate-500">{n.severity}</span></div></div>)}</div>}
+      {loading ? <div className="p-10 text-center text-slate-500">Loading notifications…</div> : notifications.length === 0 ? <div className="p-12 text-center text-slate-500">No notifications available.</div> : <div className="divide-y divide-slate-800/70">{notifications.map(n => {
+        const storeSlug = typeof n.metadata?.store_slug === 'string' ? n.metadata.store_slug : null;
+        const storeName = typeof n.metadata?.store_name === 'string' ? n.metadata.store_name : null;
+        const storeBrand = getStoreNotificationBrand(storeSlug, storeName);
+        const storeLogo = typeof n.metadata?.store_logo_url === 'string'
+          ? n.metadata.store_logo_url
+          : storeSlug ? storeBrand.webIcon : null;
+
+        return <div key={n.id} className={`p-4 ${n.is_read ? 'opacity-60' : ''}`}>
+          <div className="flex justify-between gap-4">
+            <div className="flex gap-3 min-w-0">
+              <div className="w-9 h-9 rounded-lg overflow-hidden shrink-0 bg-slate-800 flex items-center justify-center">
+                {storeLogo
+                  ? <img src={storeLogo} alt={storeBrand.name} className="w-full h-full object-cover" />
+                  : <span>🔔</span>}
+              </div>
+              <div className="min-w-0">
+                <div className="font-bold text-white">{n.title}</div>
+                <div className="text-sm text-slate-400 mt-1">{n.message}</div>
+              </div>
+            </div>
+            <span className="text-[10px] uppercase text-slate-500">{n.severity}</span>
+          </div>
+        </div>;
+      })}</div>}
     </div>
   </div>;
 }
