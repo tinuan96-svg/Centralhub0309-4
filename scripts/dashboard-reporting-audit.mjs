@@ -65,4 +65,17 @@ for (const values of [[], [0], [23], [-10, 0, 20]]) {
 assert.match(renderToStaticMarkup(React.createElement(DonutChart, { data: [], label: 'Orders' })), /No records/);
 assert.doesNotMatch(renderToStaticMarkup(React.createElement(RatioRing, { value: null, label: 'Margin', detail: 'No denominator' })), /0%/);
 assert.match(renderToStaticMarkup(React.createElement(MetricBars, { data: [{ label: 'Loss', value: -50 }, { label: 'Profit', value: 100 }] })), /Loss/);
+const { GradientRing, HealthRadar, StoreScatter, WeeklyColumns, ActivityCalendar } = load('components/dashboard/ReferenceCharts.tsx');
+const render = (Component, props) => renderToStaticMarkup(React.createElement(Component, props));
+assert.doesNotMatch(render(GradientRing, { value: null, label: 'Repeat', detail: 'No buyers', segmented: true }), /0\.0%/);
+assert.match(render(GradientRing, { value: 0, label: 'Repeat', detail: 'No repeat orders' }), /0\.0%/);
+assert.match(render(HealthRadar, { axes: [{ label: 'Paid', value: null }, { label: 'Costs', value: 90 }, { label: 'Stock', value: 50 }] }), /More data is needed/);
+assert.match(render(StoreScatter, { stores: [{ id: 'missing', name: 'Incomplete store', revenue: 100, margin: null }] }), /excluded/);
+assert.doesNotMatch(render(StoreScatter, { stores: [{ id: 'loss', name: 'Loss store', revenue: 100, margin: -25 }] }), /NaN|Infinity/);
+assert.doesNotMatch(render(WeeklyColumns, { series: [{ id: 'a', name: 'Store', values: [{ date: '2026-09-01', value: -20 }] }], dates: ['2026-09-01'] }), /NaN|Infinity/);
+const calendar = render(ActivityCalendar, { days: [{ date: '2026-09-02', count: 2, revenue: 100 }], start: '2026-09-02', end: '2026-09-05' });
+assert.match(calendar, /2026-09-01: outside reporting period/);
+assert.match(calendar, /2026-09-02: 2 paid orders/);
+assert.match(calendar, /2026-09-05: 0 paid orders/);
+assert.doesNotMatch(render(Chart, { compact: true, series: [{ id: 'one', name: 'One date', color: '#39e6ef', data: [{ date: '2026-09-01', value: 0 }] }], timeRange: 'custom' }), /NaN|Infinity/);
 console.log('Dashboard reporting audit: PASS (paid-order eligibility, costs, missing data, comparison maths, pagination, and chart edge cases).');

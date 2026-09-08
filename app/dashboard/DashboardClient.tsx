@@ -10,7 +10,7 @@ import StoreBadge from '@/components/StoreBadge';
 import { StoreService } from '@/lib/services/storeService';
 import { useOrderActions } from '@/lib/hooks/useOrderActions';
 import DashboardOverview from './components/DashboardOverview';
-import { LayoutDashboard, Package, ShoppingBag, PackageCheck, Truck } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingBag, PackageCheck, Truck, Sun, Moon, Orbit } from 'lucide-react';
 
 type ActiveTab = 'overview' | 'products' | 'orders' | 'shipping' | 'packing';
 interface DashboardStats { totalProducts:number; totalOrders:number; totalRevenue:number; totalInventoryValue:number; actualGrossProfit:number; totalOverhead:number; netProfit:number; lowStockCount:number; outOfStockCount:number; pendingOrders:number; }
@@ -23,6 +23,9 @@ const PackingTab=()=>{const [orders,setOrders]=useState<any[]>([]);const [loadin
 const ShippingTab=()=>{const [orders,setOrders]=useState<any[]>([]);const [loading,setLoading]=useState(true);useEffect(()=>{(async()=>{setLoading(true);const data=await FulfillmentService.getOrdersReadyForShipping();setOrders(data);setLoading(false)})()},[]);if(loading)return <div className="h-48 flex items-center justify-center animate-pulse"/>;return <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">{orders.map(o=><div key={o.id} className="p-4 bg-slate-800/40 border border-slate-700/40 rounded-2xl"><div className="flex justify-between items-start mb-2"><p className="font-mono text-xs text-white">#{o.order_number}</p><span className="text-[10px] px-2 py-0.5 rounded bg-cyan-900/40 text-cyan-300 border border-cyan-700/40">{o.fulfillment_status}</span></div><p className="font-bold text-slate-100 text-sm">{o.customer_name}</p><p className="text-xs text-slate-500 mt-1">{o.delivery_city}</p></div>)}</div>};
 
 export default function DashboardPage({params,searchParams}:{params:any;searchParams:any}) {
+  const [appearance, setAppearance] = useState<'dark' | 'light'>('dark');
+  useEffect(() => { try { if (localStorage.getItem('centralhub-dashboard-appearance') === 'light') setAppearance('light'); } catch {} }, []);
+  const toggleAppearance = () => { const next = appearance === 'dark' ? 'light' : 'dark'; setAppearance(next); try { localStorage.setItem('centralhub-dashboard-appearance', next); } catch {} };
   const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
   const [refreshKey, setRefreshKey] = useState(0);
   const [detailOrder, setDetailOrder] = useState<OrderWithItems | null>(null);
@@ -32,8 +35,8 @@ export default function DashboardPage({params,searchParams}:{params:any;searchPa
   const handlePrintPackingSlip = useCallback((order: OrderWithItems) => printPackingSlip(order, stores.find(s => s.id === order.store_id)), [stores, printPackingSlip]);
   const handlePrintInvoice = useCallback((order: OrderWithItems) => printInvoice(order, stores.find(s => s.id === order.store_id)), [stores, printInvoice]);
   const tabs = [{ id: 'overview' as ActiveTab, label: 'Overview', icon: LayoutDashboard }, { id: 'products' as ActiveTab, label: 'Products', icon: Package }, { id: 'orders' as ActiveTab, label: 'Orders', icon: ShoppingBag }, { id: 'packing' as ActiveTab, label: 'Packing', icon: PackageCheck }, { id: 'shipping' as ActiveTab, label: 'Shipping', icon: Truck }];
-  return <div className="ch-dashboard">
-    <nav className="ch-tabs" aria-label="Dashboard views">{tabs.map(tab => <button type="button" key={tab.id} className="ch-tab" aria-pressed={activeTab === tab.id} onClick={() => setActiveTab(tab.id)}><tab.icon size={17} aria-hidden="true" />{tab.label}</button>)}</nav>
+  return <div className="ch-dashboard ch-model-shell" data-appearance={activeTab === 'overview' ? appearance : 'dark'}>
+    <nav className="ch-model-navigation" aria-label="Dashboard views"><div className="ch-model-brand"><Orbit size={25} /><span>CentralHub</span></div><div className="ch-model-nav-items">{tabs.map(tab => <button type="button" key={tab.id} className="ch-tab" aria-pressed={activeTab === tab.id} onClick={() => setActiveTab(tab.id)}><tab.icon size={17} aria-hidden="true" />{tab.label}</button>)}</div>{activeTab === 'overview' && <button type="button" className="ch-model-theme-toggle" onClick={toggleAppearance} aria-label={appearance === 'dark' ? 'Switch dashboard to light mode' : 'Switch dashboard to dark mode'}>{appearance === 'dark' ? <Sun size={17} /> : <Moon size={17} />}<span>{appearance === 'dark' ? 'Light view' : 'Dark view'}</span></button>}</nav>
     {activeTab === 'overview' && <DashboardOverview refreshKey={refreshKey} />}
     {activeTab !== 'overview' && <section className="ch-panel mt-5"><h1 className="ch-panel-title mb-5">{tabs.find(t => t.id === activeTab)?.label}</h1>{activeTab === 'products' && <ProductsTab />}{activeTab === 'orders' && <OrdersTab onOpenDetail={setDetailOrder} />}{activeTab === 'packing' && <PackingTab />}{activeTab === 'shipping' && <ShippingTab />}</section>}
     {detailOrder && <OrderDetailSheet order={detailOrder} store={stores.find(s => s.id === detailOrder.store_id)} onClose={() => setDetailOrder(null)} onStatusChange={handleStatusChange} onConfirmPayment={handleConfirmPayment} onCancel={handleCancelOrder} onRefund={handleRefundOrder} onDelete={handleDeleteOrder} onPrintSlip={handlePrintPackingSlip} onPrintInvoice={handlePrintInvoice} onCreateShipment={async()=>{}} isActionLoading={isActionLoading} />}

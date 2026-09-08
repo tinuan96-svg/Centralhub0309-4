@@ -8,6 +8,7 @@ import { DashboardReport, isPaidOrder, loadDashboardReport, numeric, productReve
 import { formatCurrency } from '@/lib/utils/currency';
 import TimeSeriesChart, { ChartSeries } from '@/components/TimeSeriesChart';
 import { CHART_COLOURS, DonutChart, EmptyState, MetricBars, Panel, RatioRing } from '@/components/dashboard/Charts';
+import ReferenceDashboard from './ReferenceDashboard';
 import DashboardFilterBar from './DashboardFilterBar';
 import DashboardKpiGrid from './DashboardKpiGrid';
 import IntegrationHealth from './IntegrationHealth';
@@ -57,16 +58,18 @@ export default function DashboardOverview({ refreshKey }: { refreshKey: number }
     const csv = rows.map(row => row.map(cell => '"' + cell.replace(/"/g, '""') + '"').join(',')).join('\r\n');
     const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })); const a = document.createElement('a'); a.href = url; a.download = 'centralhub-dashboard-report.csv'; a.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-  return <div className="ch-dashboard-stack">
-    <div className="ch-dashboard-hero"><div><p className="ch-eyebrow mb-2">Business overview</p><h1 className="ch-dashboard-title">Your business, at a glance.</h1><p className="ch-muted mt-2">Sales, fulfilment and stock across your stores.</p></div><button type="button" onClick={exportReport} disabled={!report || loading} className="ch-button"><Download size={16} />Export figures</button></div>
+  return <div className="ch-dashboard-stack ch-model-overview">
+    <div className="ch-dashboard-hero"><div><h1 className="ch-dashboard-title">Business dashboard</h1></div><button type="button" onClick={exportReport} disabled={!report || loading} className="ch-button"><Download size={16} />Export figures</button></div>
     <DashboardFilterBar lastUpdated={report?.loadedAt || null} loading={loading} onRefresh={() => setRefresh(n => n + 1)} />
     {error && <div role="alert" className="ch-note ch-error flex items-center gap-3"><CircleAlert size={20} /><span>{error} Figures are unavailable until the report loads successfully.</span></div>}
     {loading && <div role="status" aria-label="Loading dashboard" className="ch-kpi-grid">{Array.from({ length: 6 }, (_, i) => <div key={i} className="ch-panel h-40 animate-pulse"><div className="h-3 w-20 bg-slate-700/50 rounded mb-5" /><div className="h-7 w-28 bg-slate-700/50 rounded" /></div>)}</div>}
     {report && <>
       <p className="ch-muted">{report.start.toLocaleDateString('en-GB')} – {report.end.toLocaleDateString('en-GB')} · {selectedStoreId === 'all' ? 'All stores' : stores[0]?.name || 'Selected store'}</p>
+      <ReferenceDashboard report={report} selectedStoreId={selectedStoreId} timeRange={timeRange} />
+      <ActionRequired key={selectedStoreId + refresh} />
+      <details className="ch-model-inspection"><summary>Detailed reports, targets & system messages</summary><div className="ch-dashboard-stack">
       <DashboardKpiGrid current={report.current} previous={report.previous} />
       <details className="ch-note"><summary className="cursor-pointer">How these figures are calculated{report.current.missingCosts > 0 ? ' · Missing costs need attention' : report.current.estimatedCosts > 0 ? ' · Cost estimates included' : ''}</summary><p className="mt-2">Product sales exclude delivery. Order gross profit follows Profit Analysis: order totals less product costs, including delivery charged and before shipping, packing, gateway fees and overhead. After paid expenses subtracts paid expense invoices; it is not accounting net profit. <Link className="ch-link" href="/finance">Open Finance for accounting profit <ArrowUpRight size={14} /></Link></p><p className="mt-1">{report.current.estimatedCosts} orders use estimated current product costs; {report.current.missingCosts} have incomplete cost coverage. Warehouse figures show the current shared stock position across all stores.</p></details>
-      <ActionRequired key={selectedStoreId + refresh} />
       <div className="ch-grid-main"><TimeSeriesChart series={series} timeRange={timeRange} title="Sales momentum" subtitle="Paid product sales by day (UTC), excluding cancelled, refunded and deleted orders." /><Panel title="Order mix" subtitle="All active orders created in the selected period."><DonutChart data={grouped('order_status')} label="orders" /></Panel></div>
       <section><div className="ch-panel-heading"><h2 className="ch-panel-title">Store performance</h2><Link href="/stores" className="ch-link">Manage stores <ArrowUpRight size={15} /></Link></div><div className="ch-store-grid">{stores.map((s, i) => { const orders = paid.filter(o => o.store_id === s.id); const revenue = orders.reduce((sum, o) => sum + productRevenue(o), 0); const delivered = orders.filter(o => ['delivered', 'completed'].includes(o.order_status)).length; return <Link href={'/stores/' + s.id} key={s.id} className="ch-panel group"><div className="flex items-center justify-between gap-2"><span className="ch-legend-name"><i className="ch-dot" style={{ background: CHART_COLOURS[i % CHART_COLOURS.length] }} />{s.name}</span><ArrowUpRight size={16} className="text-slate-400" /></div><p className="ch-kpi-value mt-4">{formatCurrency(revenue)}</p><p className="ch-muted mt-2">{orders.length} paid orders · {delivered} delivered</p><div className="ch-bar-track mt-4"><div className="ch-bar-fill" style={{ width: `${orders.length ? delivered / orders.length * 100 : 0}%`, background: CHART_COLOURS[i % CHART_COLOURS.length] }} /></div><p className="text-xs text-slate-400 mt-2">Delivered / paid orders {orders.length ? `${(delivered / orders.length * 100).toFixed(1)}%` : '—'}</p></Link>; })}</div></section>
       <div className="ch-grid-three">
@@ -82,6 +85,7 @@ export default function DashboardOverview({ refreshKey }: { refreshKey: number }
       <div className="ch-grid-two"><Panel title="Delivery locations" subtitle="Paid orders in the selected period"><MetricBars data={grouped('delivery_city', paid).slice(0, 6)} /></Panel><BusinessTargets currentStats={report.current} periodStart={report.start} periodEnd={report.end} /></div>
       <div className="ch-grid-two ch-overview-widgets"><CommunicationAnalytics key={selectedStoreId + refresh} /><IntegrationHealth key={refresh} /></div>
       <AIInsights key={selectedStoreId + refresh} /><AuditLogWidget key={refresh} />
+      </div></details>
     </>}
     {!report && !loading && !error && <EmptyState />}
   </div>;
