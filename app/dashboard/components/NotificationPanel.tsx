@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { NotificationService, SystemNotification } from '@/lib/services/system/notificationService';
 import Link from 'next/link';
+import { getStoreNotificationBrand } from '@/lib/notifications/storeNotificationBrand';
 
 export default function NotificationPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [notifications, setNotifications] = useState<SystemNotification[]>([]);
@@ -48,11 +49,21 @@ export default function NotificationPanel({ isOpen, onClose }: { isOpen: boolean
           <div className="p-12 text-center"><p className="text-slate-600 font-bold uppercase tracking-widest text-[10px]">All clear</p><p className="text-[10px] text-slate-700 mt-1 uppercase">No new alerts</p></div>
         ) : (
           <div className="divide-y divide-slate-800/50">
-            {notifications.map(n => (
+            {notifications.map(n => {
+              const storeSlug = typeof n.metadata?.store_slug === 'string' ? n.metadata.store_slug : null;
+              const storeName = typeof n.metadata?.store_name === 'string' ? n.metadata.store_name : null;
+              const storeBrand = getStoreNotificationBrand(storeSlug, storeName);
+              const storeLogo = typeof n.metadata?.store_logo_url === 'string'
+                ? n.metadata.store_logo_url
+                : storeSlug ? storeBrand.webIcon : null;
+
+              return (
               <div key={n.id} className={`p-4 flex gap-4 transition-colors relative ${n.is_read ? 'opacity-60' : 'bg-blue-500/5'}`} onClick={() => !n.is_read && handleMarkRead(n.id)}>
                 {!n.is_read && <div className="absolute top-4 right-4 w-1.5 h-1.5 rounded-full bg-cyan-500" />}
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border ${n.severity === 'critical' ? 'bg-rose-900/20 border-rose-500/30 text-rose-400' : n.severity === 'warning' ? 'bg-amber-900/20 border-amber-500/30 text-amber-400' : 'bg-blue-900/20 border-blue-500/30 text-blue-400'}`}>
-                  {n.category === 'inventory' ? '📦' : n.category === 'order' ? '🛒' : n.category === 'support' ? '🎫' : '⚙️'}
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border overflow-hidden ${n.severity === 'critical' ? 'bg-rose-900/20 border-rose-500/30 text-rose-400' : n.severity === 'warning' ? 'bg-amber-900/20 border-amber-500/30 text-amber-400' : 'bg-blue-900/20 border-blue-500/30 text-blue-400'}`}>
+                  {storeLogo
+                    ? <img src={storeLogo} alt={storeBrand.name} className="w-full h-full object-cover" />
+                    : n.category === 'inventory' ? '📦' : n.category === 'order' ? '🛒' : n.category === 'support' ? '🎫' : '⚙️'}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-bold text-slate-100 uppercase tracking-tight truncate">{n.title}</p>
@@ -63,7 +74,8 @@ export default function NotificationPanel({ isOpen, onClose }: { isOpen: boolean
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
