@@ -19,11 +19,15 @@ export interface CustomerSummary {
 export class CustomerService {
   static async getAllCustomers(storeId?: string | null): Promise<CustomerSummary[]> {
     try {
+      // Customer counts, value, profit and "recent order" must be based on money actually received.
+      // Pending/failed/cancelled checkout attempts stay in the order ledger but never inflate customer KPIs.
       let query = supabase
         .from('orders')
         .select(
           'id, customer_name, customer_email, customer_phone, delivery_address, delivery_city, delivery_postcode, total, gross_profit, order_status, store_id, created_at'
-        );
+        )
+        .eq('payment_status', 'paid')
+        .eq('is_deleted', false);
 
       if (storeId) {
         query = query.eq('store_id', storeId);
@@ -32,7 +36,7 @@ export class CustomerService {
       const { data: orders, error } = await query.order('created_at', { ascending: true });
 
       if (error || !orders) {
-        console.error('Error fetching customers:', error);
+        console.error('Error fetching paid customers:', error);
         return [];
       }
 
@@ -53,8 +57,9 @@ export class CustomerService {
 
       for (const order of orders as any[]) {
         const email = (order.customer_email || '').trim().toLowerCase();
+        const phone = String(order.customer_phone || '').replace(/[^0-9]/g, '');
         const name = (order.customer_name || '').trim();
-        const key = email || name || order.id;
+        const key = email || phone || name || order.id;
 
         const existing = customerMap.get(key);
         if (existing) {
@@ -69,11 +74,9 @@ export class CustomerService {
               ? storeMap.get(order.store_id) || ''
               : '';
             if (order.customer_phone) existing.phone = order.customer_phone;
-            if (order.delivery_address)
-              existing.address = order.delivery_address;
+            if (order.delivery_address) existing.address = order.delivery_address;
             if (order.delivery_city) existing.city = order.delivery_city;
-            if (order.delivery_postcode)
-              existing.postcode = order.delivery_postcode;
+            if (order.delivery_postcode) existing.postcode = order.delivery_postcode;
           }
         } else {
           customerMap.set(key, {
