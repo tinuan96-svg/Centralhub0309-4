@@ -63,7 +63,7 @@ export async function POST(req: Request) {
   const notificationDedupeKey = getNotificationDedupeKey(body);
   const incomingMetadata = body.metadata && typeof body.metadata === 'object' ? body.metadata : {};
   const storeId = body.storeId || body.store_id || incomingMetadata.store_id || null;
-  let requestedStore = null;
+  let requestedStore: { slug?: string | null; name?: string | null } | null = null;
   if (storeId) {
     const { data } = await supabase
       .from('stores')
@@ -165,7 +165,7 @@ export async function POST(req: Request) {
   }
 
   const notificationStoreId = notification.store_id || storeId || null;
-  let notificationStore = requestedStore;
+  let notificationStore: { slug?: string | null; name?: string | null } | null = requestedStore;
   if (!notificationStore || notificationStoreId !== storeId) {
     if (notificationStoreId) {
       const { data } = await supabase
