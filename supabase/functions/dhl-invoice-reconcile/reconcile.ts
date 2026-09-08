@@ -28,30 +28,30 @@ function score(c: ParsedCharge, s: any) {
 }
 async function orderByReference(db: any, reference: string | null) {
   if (!reference) return null;
-  let q = await db.from('orders').select('id,order_number,confirmed_order_number').eq('order_number', reference).limit(2);
+  let q = await db.from('orders').select('id,order_number,confirmed_order_number,delivery_postcode,shipping_postcode,payment_status').eq('order_number', reference).limit(2);
   if (q.data?.length === 1) return q.data[0];
-  q = await db.from('orders').select('id,order_number,confirmed_order_number').eq('confirmed_order_number', reference).limit(2);
+  q = await db.from('orders').select('id,order_number,confirmed_order_number,delivery_postcode,shipping_postcode,payment_status').eq('confirmed_order_number', reference).limit(2);
   return q.data?.length === 1 ? q.data[0] : null;
 }
 
 async function recoverShipmentForExactOrder(db: any, c: ParsedCharge, order: any) {
-  if (!order?.id || !c.consignment_number) return null;
+  if (!order?.id || !c.consignment_number || order.payment_status !== 'paid') return null;
 
-  // Race/idempotency guard: never create another row for an already-known consignment.
   const existing = await db.from('shipments').select('id,order_id').eq('carrier', 'dhl')
     .or(`tracking_number.eq.${c.consignment_number},carrier_reference.eq.${c.consignment_number}`).limit(2);
   if (existing.error) throw existing.error;
   if (existing.data?.length === 1) return existing.data[0];
   if ((existing.data || []).length > 1) return null;
 
-  const orderRow = await db.from('orders').select('id,order_number,customer_name,customer_email,customer_phone,company_name,delivery_address,delivery_city,delivery_postcode,shipping_address_line1,shipping_city,shipping_postcode,total_weight_kg').eq('id', order.id).maybeSingle();
-  if (orderRow.error || !orderRow.data) return null;
+  const orderRow = await db.from('orders').select('id,order_number,customer_name,customer_email,customer_phone,company_name,delivery_address,delivery_city,delivery_postcode,shipping_address_line1,shipping_city,shipping_postcode,total_weight_kg,payment_status').eq('id', order.id).maybeSingle();
+  if (orderRow.error || !orderRow.data || orderRow.data.payment_status !== 'paid') return null;
   const senderRow = await db.from('sender_profiles').select('company_name,name,contact_name,address_line1,city,postcode,phone').eq('is_default', true).limit(1).maybeSingle();
   if (senderRow.error || !senderRow.data) return null;
 
   const o = orderRow.data, sender = senderRow.data;
   const postcode = String(o.delivery_postcode || o.shipping_postcode || c.recipient_postcode || '').trim();
   if (!postcode) return null;
+  if (c.recipient_postcode && normalizePostcode(c.recipient_postcode) !== normalizePostcode(postcode)) return null;
   const bookedAt = c.job_date ? `${String(c.job_date).slice(0, 10)}T12:00:00.000Z` : new Date().toISOString();
   const weightGrams = Math.max(100, Math.round(Number(o.total_weight_kg || 0.5) * 1000));
   const now = new Date().toISOString();
@@ -67,15 +67,15 @@ async function recoverShipmentForExactOrder(db: any, c: ParsedCharge, order: any
     shipping_cost: Number(c.net_cost_pence || 0),
     estimated_shipping_cost: null,
     actual_shipping_cost_net: Number(c.net_cost_pence || 0),
-    actual_shipping_vat: Number(c.vat_pence || 0),
+    actual_shipping_cost_vat: Number(c.vat_pence || 0),
     actual_shipping_cost_gross: Number(c.gross_cost_pence || 0),
     shipping_cost_source: 'dhl_invoice',
     shipping_cost_reconciled_at: now,
     dhl_invoice_number: c.invoice_number || null,
     dhl_invoice_tax_point: c.tax_point || null,
     dhl_invoice_imported_at: now,
-    shipping_cost_match_method: 'order_reference+invoice_recovered',
-    shipping_cost_match_confidence: .95,
+    shipping_cost_match_method: 'order_reference+postcode+invoice_recovered',
+    shipping_cost_match_confidence: .98,
     weight_grams: weightGrams,
     sender_name: String(sender.company_name || sender.name || 'CentralHub'),
     sender_address: String(sender.address_line1 || ''),
@@ -102,55 +102,88 @@ async function recoverShipmentForExactOrder(db: any, c: ParsedCharge, order: any
 }
 
 async function matchCharge(db: any, c: ParsedCharge) {
+  if (!c.consignment_number) {
+    return { status: 'unmatched', shipment_id: null, order_id: null, method: null, confidence: 0, notes: 'DHL charge has no consignment number.' };
+  }
+
   const exact = await db.from('shipments')
-    .select('id,order_id,recipient_postcode,recipient_address,booked_at,created_at')
+    .select('id,order_id,recipient_postcode,recipient_address,booked_at,created_at,tracking_number,carrier_reference')
     .eq('carrier', 'dhl')
     .or(`tracking_number.eq.${c.consignment_number},carrier_reference.eq.${c.consignment_number}`).limit(3);
   if (exact.error) throw exact.error;
   const order = await orderByReference(db, c.order_reference);
   const shipments = exact.data || [];
-  if (shipments.length > 1) return { status: 'conflict', shipment_id: null, order_id: order?.id || null, method: 'duplicate_consignment', confidence: 0, notes: 'More than one shipment matched the consignment.' };
+
+  if (shipments.length > 1) return { status: 'conflict', shipment_id: null, order_id: order?.id || null, method: 'duplicate_consignment', confidence: 0, notes: 'More than one shipment matched the exact DHL consignment.' };
   if (shipments.length === 1) {
     const s = shipments[0];
-    if (order?.id && s.order_id && order.id !== s.order_id) return { status: 'conflict', shipment_id: s.id, order_id: order.id, method: 'consignment_reference_conflict', confidence: 0, notes: 'Consignment and DHL order reference point to different orders.' };
+    if (order?.id && s.order_id && order.id !== s.order_id) return { status: 'conflict', shipment_id: s.id, order_id: order.id, method: 'consignment_reference_conflict', confidence: 0, notes: 'Exact consignment and DHL order reference point to different orders.' };
+    if (c.recipient_postcode && s.recipient_postcode && normalizePostcode(c.recipient_postcode) !== normalizePostcode(s.recipient_postcode)) {
+      return { status: 'needs_review', shipment_id: null, order_id: s.order_id || order?.id || null, method: 'exact_consignment_postcode_mismatch', confidence: .75, notes: 'Consignment matched exactly but recipient postcode differs; cost was not auto-written.' };
+    }
     const both = !!order?.id && order.id === s.order_id;
-    return { status: 'matched', shipment_id: s.id, order_id: s.order_id || order?.id || null, method: both ? 'consignment+order_reference' : 'consignment', confidence: both ? 1 : .99, notes: 'Exact DHL consignment matched.' };
+    return { status: 'matched', shipment_id: s.id, order_id: s.order_id || order?.id || null, method: both ? 'consignment+order_reference+postcode' : 'consignment+postcode', confidence: 1, notes: 'Exact DHL consignment matched; postcode check passed.' };
   }
 
   if (order?.id) {
-    const q = await db.from('shipments').select('id,order_id,recipient_postcode,recipient_address,booked_at,created_at').eq('carrier', 'dhl').eq('order_id', order.id).limit(5);
-    if (q.error) throw q.error;
-    if (q.data?.length === 1) {
-      const samePostcode = !c.recipient_postcode || normalizePostcode(c.recipient_postcode) === normalizePostcode(q.data[0].recipient_postcode);
-      if (!samePostcode) return { status: 'needs_review', shipment_id: q.data[0].id, order_id: order.id, method: 'order_reference_postcode_mismatch', confidence: .7, notes: 'Order reference matched, but postcode differed. Cost was not auto-written.' };
-      return { status: 'matched', shipment_id: q.data[0].id, order_id: order.id, method: 'order_reference+postcode', confidence: .97, notes: 'Exact order reference and postcode matched.' };
+    if (order.payment_status !== 'paid') {
+      return { status: 'needs_review', shipment_id: null, order_id: order.id, method: 'order_reference_unpaid', confidence: .9, notes: 'Order reference exists but payment has not been received; no shipping cost was attached.' };
     }
+    const orderPostcode = String(order.delivery_postcode || order.shipping_postcode || '');
+    if (c.recipient_postcode && orderPostcode && normalizePostcode(c.recipient_postcode) !== normalizePostcode(orderPostcode)) {
+      return { status: 'needs_review', shipment_id: null, order_id: order.id, method: 'order_reference_postcode_mismatch', confidence: .7, notes: 'Order reference matched, but postcode differed. Cost was not auto-written.' };
+    }
+
+    const q = await db.from('shipments').select('id,order_id,tracking_number,carrier_reference,recipient_postcode,recipient_address,booked_at,created_at').eq('carrier', 'dhl').eq('order_id', order.id).limit(10);
+    if (q.error) throw q.error;
     if (!q.data?.length) {
       const recovered = await recoverShipmentForExactOrder(db, c, order);
-      if (recovered?.id) return { status: 'matched', shipment_id: recovered.id, order_id: order.id, method: 'order_reference+invoice_recovered', confidence: .95, notes: 'Exact DHL order reference matched an order with no shipment row; recovered an invoice-backed DHL shipment.' };
+      if (recovered?.id) return { status: 'matched', shipment_id: recovered.id, order_id: order.id, method: 'order_reference+postcode+invoice_recovered', confidence: .98, notes: 'Exact paid order reference and postcode matched an order with no shipment row; recovered an invoice-backed DHL shipment.' };
+    }
+
+    return { status: 'needs_review', shipment_id: null, order_id: order.id, method: 'different_consignment_for_order', confidence: .8, notes: 'Order reference matched but the existing shipment uses a different consignment. Kept separate to prevent unrelated DHL charges being collapsed onto one shipment.' };
+  }
+
+  // A DHL consignment is a unique financial identity. Postcode/address/date similarity may suggest a candidate,
+  // but is never sufficient to write money onto an existing different consignment.
+  if (c.job_date && c.recipient_postcode) {
+    const job = new Date(`${c.job_date}T12:00:00Z`), from = new Date(job), to = new Date(job);
+    from.setUTCDate(from.getUTCDate() - 7); to.setUTCDate(to.getUTCDate() + 7);
+    const q = await db.from('shipments').select('id,order_id,recipient_postcode,recipient_address,booked_at,created_at,tracking_number,carrier_reference').eq('carrier', 'dhl').gte('created_at', from.toISOString()).lte('created_at', to.toISOString()).limit(200);
+    if (q.error) throw q.error;
+    const ranked = (q.data || []).map((s: any) => ({ s, confidence: score(c, s) })).filter((x: any) => x.confidence >= .8).sort((a: any, b: any) => b.confidence - a.confidence);
+    if (ranked.length && (!ranked[1] || ranked[0].confidence - ranked[1].confidence >= .15)) {
+      return { status: 'needs_review', shipment_id: null, order_id: ranked[0].s.order_id || null, method: 'similar_address_candidate_only', confidence: ranked[0].confidence, notes: 'Postcode/date/address found a candidate, but consignment differs. Candidate retained for review only; no cost was auto-written.' };
     }
   }
 
-  if (!c.job_date || !c.recipient_postcode) return { status: order ? 'needs_review' : 'unmatched', shipment_id: null, order_id: order?.id || null, method: null, confidence: order ? .6 : 0, notes: 'No safe unique shipment match.' };
-  const job = new Date(`${c.job_date}T12:00:00Z`), from = new Date(job), to = new Date(job);
-  from.setUTCDate(from.getUTCDate() - 7); to.setUTCDate(to.getUTCDate() + 7);
-  const q = await db.from('shipments').select('id,order_id,recipient_postcode,recipient_address,booked_at,created_at').eq('carrier', 'dhl').gte('created_at', from.toISOString()).lte('created_at', to.toISOString()).limit(200);
-  if (q.error) throw q.error;
-  const ranked = (q.data || []).map((s: any) => ({ s, confidence: score(c, s) })).filter((x: any) => x.confidence >= .8).sort((a: any, b: any) => b.confidence - a.confidence);
-  if (ranked.length && (!ranked[1] || ranked[0].confidence - ranked[1].confidence >= .15)) return { status: 'matched', shipment_id: ranked[0].s.id, order_id: ranked[0].s.order_id || order?.id || null, method: 'postcode+date+address', confidence: ranked[0].confidence, notes: 'Unique fallback match using postcode, date and address.' };
-  return { status: order ? 'needs_review' : 'unmatched', shipment_id: null, order_id: order?.id || null, method: order ? 'order_reference_without_unique_shipment' : null, confidence: order ? .6 : 0, notes: 'No unique high-confidence shipment match.' };
+  return { status: 'unmatched', shipment_id: null, order_id: null, method: null, confidence: 0, notes: 'No exact consignment or exact paid order-reference recovery match.' };
 }
 
 async function reconcileShipment(db: any, shipmentId: string, c: ParsedCharge, match: any, importId: string) {
-  const rows = await db.from('dhl_invoice_charges').select('net_cost_pence,vat_pence,gross_cost_pence').eq('matched_shipment_id', shipmentId).eq('match_status', 'matched');
+  const shipment = await db.from('shipments').select('tracking_number,carrier_reference,shipping_cost,estimated_shipping_cost,metadata').eq('id', shipmentId).single();
+  if (shipment.error) throw shipment.error;
+  const tracking = String(shipment.data?.tracking_number || '');
+  const carrierRef = String(shipment.data?.carrier_reference || '');
+  if (!tracking && !carrierRef) throw new Error('Cannot reconcile a DHL cost onto a shipment without a consignment/tracking identity');
+
+  const rows = await db.from('dhl_invoice_charges')
+    .select('consignment_number,net_cost_pence,vat_pence,gross_cost_pence')
+    .eq('matched_shipment_id', shipmentId)
+    .eq('match_status', 'matched');
   if (rows.error) throw rows.error;
-  const totals = (rows.data || []).reduce((a: any, x: any) => ({ net: a.net + Number(x.net_cost_pence || 0), vat: a.vat + Number(x.vat_pence || 0), gross: a.gross + Number(x.gross_cost_pence || 0) }), { net: 0, vat: 0, gross: 0 });
-  const current = await db.from('shipments').select('shipping_cost,estimated_shipping_cost,metadata').eq('id', shipmentId).single();
-  if (current.error) throw current.error;
+
+  const exactRows = (rows.data || []).filter((x: any) => {
+    const consignment = String(x.consignment_number || '');
+    return !!consignment && (consignment === tracking || consignment === carrierRef);
+  });
+  if (!exactRows.length) throw new Error('No exact-consignment DHL charge exists for the shipment; refusing to write shipping cost');
+
+  const totals = exactRows.reduce((a: any, x: any) => ({ net: a.net + Number(x.net_cost_pence || 0), vat: a.vat + Number(x.vat_pence || 0), gross: a.gross + Number(x.gross_cost_pence || 0) }), { net: 0, vat: 0, gross: 0 });
   const now = new Date().toISOString();
-  const metadata = { ...(current.data?.metadata || {}), dhl_invoice_reconciliation: { latest_invoice_number: c.invoice_number, latest_import_id: importId, cumulative_net_pence: totals.net, cumulative_vat_pence: totals.vat, cumulative_gross_pence: totals.gross, match_method: match.method, match_confidence: match.confidence, reconciled_at: now } };
+  const metadata = { ...(shipment.data?.metadata || {}), dhl_invoice_reconciliation: { latest_invoice_number: c.invoice_number, latest_import_id: importId, exact_consignment: tracking || carrierRef, exact_charge_rows: exactRows.length, cumulative_net_pence: totals.net, cumulative_vat_pence: totals.vat, cumulative_gross_pence: totals.gross, match_method: match.method, match_confidence: match.confidence, reconciled_at: now } };
   const update = await db.from('shipments').update({
-    estimated_shipping_cost: current.data?.estimated_shipping_cost ?? current.data?.shipping_cost ?? 0,
+    estimated_shipping_cost: shipment.data?.estimated_shipping_cost ?? shipment.data?.shipping_cost ?? 0,
     shipping_cost: totals.net,
     actual_shipping_cost_net: totals.net,
     actual_shipping_vat: totals.vat,
