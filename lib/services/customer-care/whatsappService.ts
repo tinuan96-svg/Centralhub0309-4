@@ -44,6 +44,31 @@ async function invokeWhatsAppSend(body: Record<string, any>) {
   return payload;
 }
 
+async function invokeWhatsAppMedia(messageId: string) {
+  const session = await getFreshSession();
+  if (!session?.access_token) throw new Error('WhatsApp authentication unavailable. Please sign in again.');
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl) throw new Error('NEXT_PUBLIC_SUPABASE_URL is not configured.');
+  if (!supabaseAnonKey) throw new Error('NEXT_PUBLIC_SUPABASE_ANON_KEY is not configured.');
+
+  const response = await fetch(`${supabaseUrl}/functions/v1/whatsapp-media?message_id=${encodeURIComponent(messageId)}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${session.access_token}`,
+    },
+  });
+
+  const raw = await response.text();
+  let payload: any = {};
+  try { payload = raw ? JSON.parse(raw) : {}; } catch { payload = { error: raw }; }
+  if (!response.ok) throw new Error(payload?.error || `WhatsApp media request failed (${response.status})`);
+  return payload;
+}
+
 export const whatsappService = {
   async getConversations(storeId?: string) {
     let query = supabase.from('whatsapp_conversations').select('*, contact:whatsapp_contacts(*)').order('last_message_at', { ascending: false });
@@ -57,6 +82,10 @@ export const whatsappService = {
     const { data, error } = await supabase.from('whatsapp_messages').select('*').eq('conversation_id', conversationId).order('created_at', { ascending: true });
     if (error) throw error;
     return data as WhatsAppMessage[];
+  },
+
+  async getMediaUrl(messageId: string) {
+    return invokeWhatsAppMedia(messageId);
   },
 
   async updateHandlingMode(conversationId: string, mode: HandlingMode, agentId?: string) {

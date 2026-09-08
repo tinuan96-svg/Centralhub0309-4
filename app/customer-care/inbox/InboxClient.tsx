@@ -272,7 +272,7 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
               ) : messages.map((msg) => (
                 <div key={msg.id} className={`flex ${msg.direction === 'inbound' ? 'justify-start' : 'justify-end'}`}>
                   <div className={`max-w-[88%] sm:max-w-[72%] rounded-2xl px-3.5 py-2.5 shadow-sm ${msg.direction === 'inbound' ? 'bg-slate-800 text-slate-100 rounded-tl-md' : msg.ai_generated ? 'bg-blue-600/20 border border-blue-500/30 text-blue-100 rounded-tr-md' : 'bg-emerald-600 text-white rounded-tr-md'}`}>
-                    <div className="text-sm leading-5 whitespace-pre-wrap break-words">{msg.message_text}</div>
+                    <WhatsAppMessageContent message={msg} />
                     <div className="flex items-center justify-end gap-1.5 mt-1">
                       <span className="text-[10px] opacity-70">{formatDate(msg.created_at)}</span>
                       {msg.direction === 'outbound' && <span className="text-[9px] uppercase font-bold tracking-tight opacity-75">{msg.status}</span>}

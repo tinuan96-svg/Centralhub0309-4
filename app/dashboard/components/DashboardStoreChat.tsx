@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { StoreService } from '@/lib/services/storeService';
 import { whatsappService } from '@/lib/services/customer-care/whatsappService';
 import type { WhatsAppConversation, WhatsAppMessage } from '@/lib/types';
+import WhatsAppMessageContent from '@/components/customer-care/WhatsAppMessageContent';
 
 type ConversationWithStore = WhatsAppConversation & { storeName: string; unread: number };
 
@@ -281,7 +282,7 @@ export default function DashboardStoreChat() {
                         messages.map(msg => (
                           <div key={msg.id} className={`flex ${msg.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
                             <div className={`max-w-[86%] sm:max-w-[72%] rounded-2xl px-3 py-2 ${msg.direction === 'outbound' ? 'bg-emerald-700 text-white rounded-br-md' : 'bg-slate-800 text-slate-100 rounded-bl-md'}`}>
-                              <p className="text-sm whitespace-pre-wrap break-words">{msg.message_text || `[${msg.message_type}]`}</p>
+                              <WhatsAppMessageContent message={msg} />
                               <div className="mt-1 flex items-center justify-end gap-1 text-[9px] opacity-60">
                                 <span>{timeLabel(msg.created_at)}</span>
                                 {msg.direction === 'outbound' && <span>{msg.status === 'failed' ? '!' : msg.status === 'read' ? '✓✓' : '✓'}</span>}

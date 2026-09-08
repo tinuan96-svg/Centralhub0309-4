@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { downloadAndStoreWhatsAppMedia } from "../_shared/whatsapp-media.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -158,12 +159,12 @@ serve(async (req) => {
     let channel: any = null
 
     if (phoneNumberId) {
-      const { data, error } = await db.from('whatsapp_channels').select('store_id, app_secret, phone_number_id, display_phone_number, business_name').eq('phone_number_id', phoneNumberId).maybeSingle()
+      const { data, error } = await db.from('whatsapp_channels').select('store_id, app_secret, phone_number_id, display_phone_number, business_name, access_token').eq('phone_number_id', phoneNumberId).maybeSingle()
       if (error) console.error('[WhatsApp Webhook] Channel lookup:', error.message)
       channel = data
     }
     if (!channel && displayPhoneNumber) {
-      const { data, error } = await db.from('whatsapp_channels').select('store_id, app_secret, phone_number_id, display_phone_number, business_name').eq('display_phone_number', displayPhoneNumber).eq('status', 'active').maybeSingle()
+      const { data, error } = await db.from('whatsapp_channels').select('store_id, app_secret, phone_number_id, display_phone_number, business_name, access_token').eq('display_phone_number', displayPhoneNumber).eq('status', 'active').maybeSingle()
       if (error) console.error('[WhatsApp Webhook] Display-number fallback lookup:', error.message)
       channel = data
       if (channel) console.warn(`[WhatsApp Webhook] Phone ID ${phoneNumberId} not mapped; matched active channel by display number ${displayPhoneNumber}`)
@@ -199,8 +200,47 @@ serve(async (req) => {
       const defaultMode = settings?.default_handling_mode || 'AI'
       const { data: conv, error: convError } = await db.from('whatsapp_conversations').upsert({ store_id: storeId, contact_id: contact.id, status: 'open', handling_mode: defaultMode, last_message_at: new Date().toISOString() }, { onConflict: 'contact_id' }).select('id, handling_mode').single()
       if (convError) throw convError
-      const { error: messageError } = await db.from('whatsapp_messages').insert({ conversation_id: conv.id, wa_message_id: msg.id, direction: 'inbound', message_type: msg.type, message_text: msg.text?.body || (msg.type !== 'text' ? `[${msg.type.toUpperCase()}]` : null), media_url: msg.image?.id || msg.document?.id || msg.audio?.id || msg.voice?.id || null, sender_phone: from, status: 'received' })
+      const mediaPayload = msg[msg.type] || (msg.type === 'voice' ? msg.voice || msg.audio : null) || null
+      const messageType = msg.type === 'voice' ? 'audio' : msg.type
+      const mediaId = mediaPayload?.id || null
+      const mediaCaption = mediaPayload?.caption || null
+      const mediaFilename = mediaPayload?.filename || null
+      const mediaTypes = new Set(['image', 'document', 'audio', 'video', 'sticker'])
+      const { data: storedMessage, error: messageError } = await db.from('whatsapp_messages').insert({
+        conversation_id: conv.id,
+        wa_message_id: msg.id,
+        direction: 'inbound',
+        message_type: messageType,
+        message_text: msg.text?.body || mediaCaption || (msg.type !== 'text' ? `[${messageType.toUpperCase()}]` : null),
+        media_url: mediaId,
+        media_id: mediaId,
+        media_mime_type: mediaPayload?.mime_type || null,
+        media_filename: mediaFilename,
+        media_caption: mediaCaption,
+        media_download_status: mediaId && mediaTypes.has(messageType) ? 'pending' : 'not_required',
+        sender_phone: from,
+        status: 'received'
+      }).select('id').single()
       if (messageError) throw messageError
+
+      if (storedMessage?.id && mediaId && mediaTypes.has(messageType)) {
+        const mediaTask = downloadAndStoreWhatsAppMedia(db, {
+          messageId: storedMessage.id,
+          storeId,
+          conversationId: conv.id,
+          messageType,
+          mediaId,
+          filename: mediaFilename,
+          accessToken: channel?.access_token || ''
+        }).catch((error: any) => {
+          console.error('[WhatsApp Webhook] Media download failed:', error?.message || error)
+        })
+        if (typeof EdgeRuntime !== 'undefined' && typeof EdgeRuntime.waitUntil === 'function') {
+          EdgeRuntime.waitUntil(mediaTask)
+        } else {
+          await mediaTask
+        }
+      }
 
       await notifyCentralHubPhonePush({
         title: 'You have a message from customer',

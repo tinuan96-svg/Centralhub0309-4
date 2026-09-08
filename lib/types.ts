@@ -26,10 +26,35 @@ export interface CreateShipmentRequest { order_id: string; carrier?: Carrier; se
 export interface ShippingRate { carrier: Carrier; service_type: ServiceType; cost: number; estimated_days: number; currency: string; }
 export interface ShipmentWithOrder extends Shipment { order?: Order; }
 export interface ShippingDashboardStats { total_shipments: number; not_shipped: number; in_transit: number; delivered: number; failed: number; total_cost: number; average_cost: number; }
-export type HandlingMode = 'AI' | 'AI_DRAFT' | 'HUMAN'; export type ConversationStatus = 'open' | 'waiting' | 'human' | 'closed'; export type MessageDirection = 'inbound' | 'outbound'; export type MessageType = 'text' | 'image' | 'document' | 'audio' | 'interactive' | 'template'; export type MessageStatus = 'received' | 'sent' | 'delivered' | 'read' | 'failed';
+export type HandlingMode = 'AI' | 'AI_DRAFT' | 'HUMAN'; export type ConversationStatus = 'open' | 'waiting' | 'human' | 'closed'; export type MessageDirection = 'inbound' | 'outbound'; export type MessageType = 'text' | 'image' | 'document' | 'audio' | 'video' | 'sticker' | 'interactive' | 'template'; export type MessageStatus = 'received' | 'sent' | 'delivered' | 'read' | 'failed';
 export interface WhatsAppContact { id: string; store_id: string | null; customer_id: string | null; phone_number: string; whatsapp_user_id: string | null; display_name: string | null; language: string | null; opted_in: boolean; last_message_at: string | null; created_at: string; updated_at: string; }
 export interface WhatsAppConversation { id: string; store_id: string | null; contact_id: string; status: ConversationStatus; handling_mode: HandlingMode; ai_enabled: boolean; assigned_to: string | null; assigned_agent_id: string | null; last_message_at: string | null; closed_at: string | null; created_at: string; updated_at: string; contact?: WhatsAppContact; }
-export interface WhatsAppMessage { id: string; conversation_id: string; wa_message_id: string | null; direction: MessageDirection; message_type: MessageType; message_text: string | null; media_url: string | null; sender_phone: string | null; status: MessageStatus; ai_generated: boolean; ai_model: string | null; created_at: string; updated_at: string; }
+export interface WhatsAppMessage {
+  id: string;
+  conversation_id: string;
+  wa_message_id: string | null;
+  direction: MessageDirection;
+  message_type: MessageType;
+  message_text: string | null;
+  media_url: string | null;
+  media_id: string | null;
+  media_storage_path: string | null;
+  media_mime_type: string | null;
+  media_filename: string | null;
+  media_caption: string | null;
+  media_size: number | null;
+  media_sha256: string | null;
+  media_download_status: string;
+  media_download_error: string | null;
+  media_download_attempts: number;
+  media_downloaded_at: string | null;
+  sender_phone: string | null;
+  status: MessageStatus;
+  ai_generated: boolean;
+  ai_model: string | null;
+  created_at: string;
+  updated_at: string;
+}
 export type TicketCategory = 'refund' | 'missing_order' | 'wrong_item' | 'damaged_item' | 'delivery_issue' | 'payment_issue' | 'complaint' | 'account_issue' | 'other'; export type TicketPriority = 'low' | 'medium' | 'high' | 'urgent'; export type TicketStatus = 'open' | 'assigned' | 'in_progress' | 'waiting_customer' | 'waiting_internal' | 'resolved' | 'closed';
 export interface SupportTicket { id: string; store_id: string; customer_id?: string | null; conversation_id?: string | null; category: TicketCategory; priority: TicketPriority; status: TicketStatus; ai_summary?: string | null; description?: string | null; subject?: string | null; contact_id?: string | null; resolution?: string | null; created_at: string; updated_at: string; resolved_at?: string | null; }
 export interface ProductSupplierMapping { id: string; product_id: string; supplier_id: string; supplier_sku?: string | null; supplier_product_name?: string | null; supplier_barcode?: string | null; cost_price?: number; lead_time_days?: number; minimum_order_qty?: number; is_preferred?: boolean; is_active?: boolean; created_at?: string; updated_at?: string; }

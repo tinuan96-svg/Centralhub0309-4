@@ -15,3 +15,6 @@ verify_jwt = false
 
 [functions.competitor-price-scanner]
 verify_jwt = false
+
+[functions.whatsapp-media]
+verify_jwt = false
