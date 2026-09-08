@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { sendWebPush, getWebPushConfigStatus, StoredPushSubscription } from '@/lib/server/webPush';
+import { getFirebaseMessagingConfigStatus, sendFirebasePush } from '@/lib/server/firebaseMessaging';
 import { getServiceClient, jsonError } from '../_utils';
 
 export const dynamic = 'force-dynamic';
@@ -32,6 +33,10 @@ function getNotificationDedupeKey(body: any) {
   return null;
 }
 
+function isInvalidFirebaseToken(result: { status?: number; error?: string }) {
+  return result.status === 404 || /UNREGISTERED|registration-token-not-registered|not a valid FCM registration token/i.test(result.error || '');
+}
+
 export async function POST(req: Request) {
   if (process.env.NEXT_OUTPUT?.trim() === 'export') {
     return new Response('Not available in static export', { status: 404 });
@@ -54,7 +59,7 @@ export async function POST(req: Request) {
   }
 
   const supabase = getServiceClient();
-  const notificationDedupeKey = getAutomaticOrderDedupeKey(body);
+  const notificationDedupeKey = getNotificationDedupeKey(body);
   const incomingMetadata = body.metadata && typeof body.metadata === 'object' ? body.metadata : {};
   const storeId = body.storeId || body.store_id || incomingMetadata.store_id || null;
   const notificationMetadata = notificationDedupeKey
@@ -81,7 +86,7 @@ export async function POST(req: Request) {
         notification_id: existing.id,
         sent: 0,
         attempted: 0,
-        message: 'Duplicate automatic order notification ignored.',
+        message: 'Duplicate automatic notification ignored.',
       });
     }
   }
@@ -89,7 +94,7 @@ export async function POST(req: Request) {
   if (body.notificationId) {
     const { data, error } = await supabase
       .from('system_notifications')
-      .select('id, user_id, store_id, title, message, action_url, severity, category')
+      .select('id, user_id, store_id, title, message, action_url, severity, category, metadata')
       .eq('id', body.notificationId)
       .single();
 
@@ -116,7 +121,7 @@ export async function POST(req: Request) {
         is_read: false,
         metadata: notificationMetadata,
       })
-      .select('id, user_id, store_id, title, message, action_url, severity, category')
+      .select('id, user_id, store_id, title, message, action_url, severity, category, metadata')
       .single();
 
     if (error || !data) {
@@ -134,7 +139,7 @@ export async function POST(req: Request) {
             notification_id: existing.id,
             sent: 0,
             attempted: 0,
-            message: 'Duplicate automatic order notification ignored.',
+            message: 'Duplicate automatic notification ignored.',
           });
         }
       }
@@ -156,33 +161,38 @@ export async function POST(req: Request) {
   const { data: subscriptions, error: subscriptionError } = await subscriptionQuery;
   if (subscriptionError) return jsonError(subscriptionError.message, 500);
 
-  if (!subscriptions?.length) {
-    return NextResponse.json({
-      success: true,
-      notification_id: notification.id,
-      sent: 0,
-      attempted: 0,
-      message: 'Notification saved, but no enabled phone subscriptions matched it.',
-    });
+  let nativeQuery = supabase
+    .from('native_push_devices')
+    .select('id, user_id, token')
+    .eq('is_enabled', true);
+
+  if (notification.user_id) {
+    nativeQuery = nativeQuery.eq('user_id', notification.user_id);
   }
 
-  const results = [];
-  for (const subscription of subscriptions as StoredPushSubscription[]) {
+  const { data: nativeDevices, error: nativeError } = await nativeQuery;
+  if (nativeError) return jsonError(nativeError.message, 500);
+
+  const webResults: any[] = [];
+  for (const subscription of (subscriptions || []) as StoredPushSubscription[]) {
     const result = await sendWebPush(subscription, {
       title: notification.title,
       body: notification.message,
       url: notification.action_url || '/dashboard',
       notificationId: notification.id,
-      tag: `centralhub-${notification.id}`,
+      tag: 'centralhub-' + notification.id,
       severity: notification.severity,
       category: notification.category,
       silent: false,
       vibrate: notification.category === 'customer_message' ? [350, 100, 350, 100, 350] : [200, 100, 200],
       requireInteraction: notification.category === 'customer_message',
       renotify: true,
-    }, { ttl: Number(body.ttl || 60 * 60), urgency: body.urgency || (notification.category === 'customer_message' ? 'high' : 'normal') });
+    }, {
+      ttl: Number(body.ttl || 60 * 60),
+      urgency: body.urgency || (notification.category === 'customer_message' ? 'high' : 'normal'),
+    });
 
-    results.push({ id: subscription.id, ...result });
+    webResults.push({ id: subscription.id, ...result });
 
     if (result.status === 404 || result.status === 410) {
       await supabase
@@ -192,13 +202,56 @@ export async function POST(req: Request) {
     }
   }
 
-  const sent = results.filter((result) => result.ok).length;
+  const nativeResults: any[] = [];
+  const firebaseConfigured = getFirebaseMessagingConfigStatus().configured;
+  if (firebaseConfigured) {
+    for (const device of nativeDevices || []) {
+      const result = await sendFirebasePush(device.token, {
+        title: notification.title,
+        body: notification.message,
+        url: notification.action_url,
+        notificationId: notification.id,
+        category: notification.category,
+        severity: notification.severity,
+        dedupeKey: notification.metadata?.dedupe_key || null,
+        storeId: notification.store_id,
+      });
+
+      nativeResults.push({ id: device.id, ...result });
+
+      if (isInvalidFirebaseToken(result)) {
+        await supabase
+          .from('native_push_devices')
+          .update({ is_enabled: false, updated_at: new Date().toISOString() })
+          .eq('id', device.id);
+      }
+    }
+  }
+
+  const sent = webResults.filter((result) => result.ok).length
+    + nativeResults.filter((result) => result.ok).length;
+  const attempted = webResults.length + nativeResults.length;
+
+  if (!attempted) {
+    return NextResponse.json({
+      success: true,
+      notification_id: notification.id,
+      sent: 0,
+      attempted: 0,
+      native_configured: firebaseConfigured,
+      message: 'Notification saved, but no enabled phone subscriptions matched it.',
+    });
+  }
 
   return NextResponse.json({
     success: sent > 0,
     notification_id: notification.id,
     sent,
-    attempted: results.length,
-    results,
+    attempted,
+    web_sent: webResults.filter((result) => result.ok).length,
+    native_sent: nativeResults.filter((result) => result.ok).length,
+    native_configured: firebaseConfigured,
+    web_results: webResults,
+    native_results: nativeResults,
   }, { status: sent > 0 ? 200 : 502 });
 }
