@@ -19,6 +19,23 @@ const formatFullDate = (date: string | null) => {
   return new Date(date).toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
+const canApplyMessageStatus = (current: WhatsAppMessage['status'], incoming: WhatsAppMessage['status']) => {
+  if (!incoming || current === incoming) return true;
+  if (current === 'read') return false;
+  if (current === 'delivered') return incoming === 'read';
+  if (current === 'failed') return incoming === 'delivered' || incoming === 'read';
+  if (current === 'sent') return incoming === 'delivered' || incoming === 'read' || incoming === 'failed';
+  return true;
+};
+
+const messageStatusLabel = (status: WhatsAppMessage['status']) => {
+  if (status === 'read') return 'Read';
+  if (status === 'delivered') return 'Delivered';
+  if (status === 'failed') return 'Failed';
+  if (status === 'sent') return 'Sent';
+  return 'Received';
+};
+
 export default function InboxClient({ params, searchParams }: { params: any; searchParams: any }) {
   const [conversations, setConversations] = useState<WhatsAppConversation[]>([]);
   const [selectedConv, setSelectedConv] = useState<WhatsAppConversation | null>(null);
@@ -80,7 +97,15 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
         filter: `conversation_id=eq.${selectedConv.id}`
       }, (payload) => {
         const updatedMsg = payload.new as WhatsAppMessage;
-        setMessages(prev => prev.map(m => m.id === updatedMsg.id ? updatedMsg : m));
+        setMessages(prev => prev.map(m => {
+          if (m.id !== updatedMsg.id) return m;
+          if (!updatedMsg.status || canApplyMessageStatus(m.status, updatedMsg.status)) {
+            return { ...m, ...updatedMsg };
+          }
+          // Realtime events can arrive out of order on mobile networks. Keep
+          // the strongest known delivery state while accepting other fields.
+          return { ...m, ...updatedMsg, status: m.status };
+        }));
       })
       .subscribe();
 
@@ -276,7 +301,7 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
                     <WhatsAppMessageContent message={msg} />
                     <div className="flex items-center justify-end gap-1.5 mt-1">
                       <span className="text-[10px] opacity-70">{formatDate(msg.created_at)}</span>
-                      {msg.direction === 'outbound' && <span className="text-[9px] uppercase font-bold tracking-tight opacity-75">{msg.status}</span>}
+                      {msg.direction === 'outbound' && <span className="text-[9px] uppercase font-bold tracking-tight opacity-75">{messageStatusLabel(msg.status)}</span>}
                     </div>
                   </div>
                 </div>
