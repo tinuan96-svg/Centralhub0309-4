@@ -22,7 +22,7 @@ async function requireAdmin(req: Request, db: any) {
   if (!publishableKey || !supabaseUrl) throw new Error('Supabase auth is not configured')
 
   const userClient = createClient(supabaseUrl, publishableKey, {
-    global: { headers: { Authorization: \`Bearer \${bearer}\` } },
+    global: { headers: { Authorization: `Bearer ${bearer}` } },
   })
   const { data: { user }, error } = await userClient.auth.getUser(bearer)
   if (error || !user) throw new Error('Unauthorized: Supabase session is invalid or expired')
@@ -75,7 +75,7 @@ serve(async (req) => {
       .select('id,conversation_id,message_type,media_id,media_url,media_storage_path,media_mime_type,media_filename,media_caption')
       .eq('id', messageId)
       .maybeSingle()
-    if (messageError) return json({ error: \`Message lookup failed: \${messageError.message}\` }, 500)
+    if (messageError) return json({ error: `Message lookup failed: ${messageError.message}` }, 500)
     if (!message) return json({ error: 'Message not found' }, 404)
     if (!SUPPORTED_MEDIA_TYPES.has(message.message_type)) {
       return json({ error: 'This message does not contain downloadable WhatsApp media' }, 400)
@@ -86,7 +86,7 @@ serve(async (req) => {
       .select('store_id')
       .eq('id', message.conversation_id)
       .maybeSingle()
-    if (conversationError) return json({ error: \`Conversation lookup failed: \${conversationError.message}\` }, 500)
+    if (conversationError) return json({ error: `Conversation lookup failed: ${conversationError.message}` }, 500)
     const storeId = conversation?.store_id
     if (!storeId) return json({ error: 'Conversation is not linked to a store' }, 400)
 
@@ -97,7 +97,7 @@ serve(async (req) => {
         .select('access_token')
         .eq('store_id', storeId)
         .maybeSingle()
-      if (channelError) return json({ error: \`WhatsApp channel lookup failed: \${channelError.message}\` }, 500)
+      if (channelError) return json({ error: `WhatsApp channel lookup failed: ${channelError.message}` }, 500)
       if (!channel?.access_token) return json({ error: 'WhatsApp access token is not configured for this store' }, 424)
 
       const mediaId = message.media_id || message.media_url

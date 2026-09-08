@@ -6,7 +6,7 @@ export const SUPPORTED_MEDIA_TYPES = new Set(['image', 'document', 'audio', 'vid
 function normalizeGraphApiVersion(value: string | undefined) {
   const raw = String(value || '').trim()
   const match = raw.match(/^v?(\d+\.\d+)$/i)
-  return match ? \`v\${match[1]}\` : 'v23.0'
+  return match ? `v${match[1]}` : 'v23.0'
 }
 
 function safeExtension(mimeType: string, messageType: string) {
@@ -54,7 +54,7 @@ export async function downloadAndStoreWhatsAppMedia(
 ) {
   const mediaId = cleanMediaId(params.mediaId)
   if (!mediaId) throw new Error('WhatsApp media ID is missing')
-  if (!SUPPORTED_MEDIA_TYPES.has(params.messageType)) throw new Error(\`Unsupported WhatsApp media type: \${params.messageType}\`)
+  if (!SUPPORTED_MEDIA_TYPES.has(params.messageType)) throw new Error(`Unsupported WhatsApp media type: ${params.messageType}`)
   const token = cleanToken(params.accessToken)
   if (!token) throw new Error('WhatsApp channel access token is missing')
 
@@ -75,45 +75,45 @@ export async function downloadAndStoreWhatsAppMedia(
 
   try {
     const graphVersion = normalizeGraphApiVersion(Deno.env.get('WHATSAPP_GRAPH_API_VERSION'))
-    const metaUrl = \`https://graph.facebook.com/\${graphVersion}/\${encodeURIComponent(mediaId)}\`
-    const metaResponse = await fetch(metaUrl, { headers: { Authorization: \`Bearer \${token}\` } })
+    const metaUrl = `https://graph.facebook.com/${graphVersion}/${encodeURIComponent(mediaId)}`
+    const metaResponse = await fetch(metaUrl, { headers: { Authorization: `Bearer ${token}` } })
     const metaRaw = await metaResponse.text()
     let meta: any = {}
     try { meta = metaRaw ? JSON.parse(metaRaw) : {} } catch { meta = { raw: metaRaw } }
     if (!metaResponse.ok || !meta?.url) {
-      throw new Error(meta?.error?.message || \`Meta media lookup failed (\${metaResponse.status})\`)
+      throw new Error(meta?.error?.message || `Meta media lookup failed (${metaResponse.status})`)
     }
 
     const mimeType = String(meta.mime_type || 'application/octet-stream')
-    const downloadResponse = await fetch(meta.url, { headers: { Authorization: \`Bearer \${token}\` } })
+    const downloadResponse = await fetch(meta.url, { headers: { Authorization: `Bearer ${token}` } })
     if (!downloadResponse.ok) {
       const body = await downloadResponse.text().catch(() => '')
-      throw new Error(\`Meta media download failed (\${downloadResponse.status})\${body ? \`: \${body.slice(0, 200)}\` : ''}\`)
+      throw new Error(`Meta media download failed (${downloadResponse.status})${body ? `: ${body.slice(0, 200)}` : ''}`)
     }
     const bytes = new Uint8Array(await downloadResponse.arrayBuffer())
-    if (bytes.byteLength > MAX_MEDIA_BYTES) throw new Error(\`Media exceeds \${MAX_MEDIA_BYTES} byte limit\`)
+    if (bytes.byteLength > MAX_MEDIA_BYTES) throw new Error(`Media exceeds ${MAX_MEDIA_BYTES} byte limit`)
 
     const extension = safeExtension(mimeType, params.messageType)
-    const path = \`\${params.storeId}/\${params.conversationId}/\${params.messageId}.\${extension}\`
+    const path = `${params.storeId}/${params.conversationId}/${params.messageId}.${extension}`
     const { error: uploadError } = await db.storage.from(MEDIA_BUCKET).upload(path, bytes, {
       contentType: mimeType,
       cacheControl: '31536000',
       upsert: true,
     })
-    if (uploadError) throw new Error(\`Supabase media upload failed: \${uploadError.message}\`)
+    if (uploadError) throw new Error(`Supabase media upload failed: ${uploadError.message}`)
 
     const { error: updateError } = await db.from('whatsapp_messages').update({
       media_id: mediaId,
       media_storage_path: path,
       media_mime_type: mimeType,
-      media_filename: params.filename || \`whatsapp-\${mediaId}.\${extension}\`,
+      media_filename: params.filename || `whatsapp-${mediaId}.${extension}`,
       media_size: Number(meta.file_size || bytes.byteLength),
       media_sha256: meta.sha256 || null,
       media_download_status: 'downloaded',
       media_download_error: null,
       media_downloaded_at: new Date().toISOString(),
     }).eq('id', params.messageId)
-    if (updateError) throw new Error(\`WhatsApp message media update failed: \${updateError.message}\`)
+    if (updateError) throw new Error(`WhatsApp message media update failed: ${updateError.message}`)
     return { path, mimeType, size: bytes.byteLength, alreadyStored: false }
   } catch (error: any) {
     await db.from('whatsapp_messages').update({
@@ -128,6 +128,6 @@ export async function createSignedWhatsAppMediaUrl(db: any, path: string, expire
   const cleanPath = String(path || '').trim()
   if (!cleanPath) throw new Error('WhatsApp media storage path is missing')
   const { data, error } = await db.storage.from(MEDIA_BUCKET).createSignedUrl(cleanPath, expiresIn)
-  if (error || !data?.signedUrl) throw new Error(\`Could not create WhatsApp media URL: \${error?.message || 'signed URL missing'}\`)
+  if (error || !data?.signedUrl) throw new Error(`Could not create WhatsApp media URL: ${error?.message || 'signed URL missing'}`)
   return data.signedUrl
 }

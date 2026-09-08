@@ -7,7 +7,7 @@ import { whatsappService } from '@/lib/services/customer-care/whatsappService';
 const MEDIA_TYPES = new Set(['image', 'document', 'audio', 'video', 'sticker']);
 
 function fallbackText(message: WhatsAppMessage) {
-  return message.message_text || \`[\${String(message.message_type).toUpperCase()}]\`;
+  return message.message_text || `[${String(message.message_type).toUpperCase()}]`;
 }
 
 export default function WhatsAppMessageContent({ message }: { message: WhatsAppMessage }) {
