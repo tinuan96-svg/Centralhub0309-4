@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { sendWebPush, getWebPushConfigStatus, StoredPushSubscription } from '@/lib/server/webPush';
 import { getFirebaseMessagingConfigStatus, sendFirebasePush } from '@/lib/server/firebaseMessaging';
 import { getServiceClient, jsonError } from '../_utils';
+import { getStoreNotificationBrand } from '@/lib/notifications/storeNotificationBrand';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -62,11 +63,25 @@ export async function POST(req: Request) {
   const notificationDedupeKey = getNotificationDedupeKey(body);
   const incomingMetadata = body.metadata && typeof body.metadata === 'object' ? body.metadata : {};
   const storeId = body.storeId || body.store_id || incomingMetadata.store_id || null;
+  let requestedStore = null;
+  if (storeId) {
+    const { data } = await supabase
+      .from('stores')
+      .select('slug, name')
+      .eq('id', storeId)
+      .maybeSingle();
+    requestedStore = data;
+  }
+
+  const requestedStoreBrand = getStoreNotificationBrand(requestedStore?.slug, requestedStore?.name);
   const notificationMetadata = notificationDedupeKey
     ? {
         ...incomingMetadata,
         source: 'centralhub-automatic-order-push',
         dedupe_key: notificationDedupeKey,
+        store_slug: requestedStoreBrand.slug,
+        store_name: requestedStoreBrand.name,
+        store_logo_url: requestedStoreBrand.webIcon,
       }
     : incomingMetadata;
   let notification = null;
@@ -149,6 +164,20 @@ export async function POST(req: Request) {
     notification = data;
   }
 
+  const notificationStoreId = notification.store_id || storeId || null;
+  let notificationStore = requestedStore;
+  if (!notificationStore || notificationStoreId !== storeId) {
+    if (notificationStoreId) {
+      const { data } = await supabase
+        .from('stores')
+        .select('slug, name')
+        .eq('id', notificationStoreId)
+        .maybeSingle();
+      notificationStore = data;
+    }
+  }
+  const storeBrand = getStoreNotificationBrand(notificationStore?.slug, notificationStore?.name);
+
   let subscriptionQuery = supabase
     .from('push_subscriptions')
     .select('id, user_id, endpoint, p256dh, auth')
@@ -183,6 +212,11 @@ export async function POST(req: Request) {
       tag: 'centralhub-' + notification.id,
       severity: notification.severity,
       category: notification.category,
+      icon: storeBrand.webIcon,
+      badge: storeBrand.webIcon,
+      storeId: notificationStoreId,
+      storeName: storeBrand.name,
+      storeSlug: storeBrand.slug,
       silent: false,
       vibrate: notification.category === 'customer_message' ? [350, 100, 350, 100, 350] : [200, 100, 200],
       requireInteraction: notification.category === 'customer_message',
@@ -214,7 +248,8 @@ export async function POST(req: Request) {
         category: notification.category,
         severity: notification.severity,
         dedupeKey: notification.metadata?.dedupe_key || null,
-        storeId: notification.store_id,
+        storeId: notificationStoreId,
+        storeSlug: storeBrand.slug,
       });
 
       nativeResults.push({ id: device.id, ...result });
