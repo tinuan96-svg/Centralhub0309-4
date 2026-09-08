@@ -116,7 +116,7 @@ public class MainActivity extends BridgeActivity {
                 "(window.history && window.history.length > 1) ? 'true' : 'false'",
                 value -> {
                     boolean hasPageHistory =
-                            "true".equalsIgnoreCase(value) || "\\"true\\"".equals(value);
+                            "true".equalsIgnoreCase(value) || "\"true\"".equals(value);
                     if (hasPageHistory) {
                         webView.evaluateJavascript("window.history.back()", null);
                     } else {

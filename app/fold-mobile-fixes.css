@@ -5,8 +5,3 @@
  * breakpoint (700px) and uses the desktop shell, so no mobile overlay rule
  * should leak into the unfolded layout.
  */
-@media (max-width: 699px) {
-  .fold-inner\\:hidden.fixed.inset-0 {
-    display: flex !important;
-  }
-}
