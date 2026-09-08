@@ -34,6 +34,73 @@ async function orderByReference(db: any, reference: string | null) {
   return q.data?.length === 1 ? q.data[0] : null;
 }
 
+async function recoverShipmentForExactOrder(db: any, c: ParsedCharge, order: any) {
+  if (!order?.id || !c.consignment_number) return null;
+
+  // Race/idempotency guard: never create another row for an already-known consignment.
+  const existing = await db.from('shipments').select('id,order_id').eq('carrier', 'dhl')
+    .or(`tracking_number.eq.${c.consignment_number},carrier_reference.eq.${c.consignment_number}`).limit(2);
+  if (existing.error) throw existing.error;
+  if (existing.data?.length === 1) return existing.data[0];
+  if ((existing.data || []).length > 1) return null;
+
+  const orderRow = await db.from('orders').select('id,order_number,customer_name,customer_email,customer_phone,company_name,delivery_address,delivery_city,delivery_postcode,shipping_address_line1,shipping_city,shipping_postcode,total_weight_kg').eq('id', order.id).maybeSingle();
+  if (orderRow.error || !orderRow.data) return null;
+  const senderRow = await db.from('sender_profiles').select('company_name,name,contact_name,address_line1,city,postcode,phone').eq('is_default', true).limit(1).maybeSingle();
+  if (senderRow.error || !senderRow.data) return null;
+
+  const o = orderRow.data, sender = senderRow.data;
+  const postcode = String(o.delivery_postcode || o.shipping_postcode || c.recipient_postcode || '').trim();
+  if (!postcode) return null;
+  const bookedAt = c.job_date ? `${String(c.job_date).slice(0, 10)}T12:00:00.000Z` : new Date().toISOString();
+  const weightGrams = Math.max(100, Math.round(Number(o.total_weight_kg || 0.5) * 1000));
+  const now = new Date().toISOString();
+
+  const inserted = await db.from('shipments').insert({
+    order_id: o.id,
+    carrier: 'dhl',
+    service_type: 'standard',
+    tracking_number: c.consignment_number,
+    carrier_reference: c.consignment_number,
+    shipment_number: `DHL-INV-${c.invoice_number || 'RECOVERED'}-${String(c.consignment_number).slice(-8)}`,
+    status: 'label_created',
+    shipping_cost: Number(c.net_cost_pence || 0),
+    estimated_shipping_cost: null,
+    actual_shipping_cost_net: Number(c.net_cost_pence || 0),
+    actual_shipping_vat: Number(c.vat_pence || 0),
+    actual_shipping_cost_gross: Number(c.gross_cost_pence || 0),
+    shipping_cost_source: 'dhl_invoice',
+    shipping_cost_reconciled_at: now,
+    dhl_invoice_number: c.invoice_number || null,
+    dhl_invoice_tax_point: c.tax_point || null,
+    dhl_invoice_imported_at: now,
+    shipping_cost_match_method: 'order_reference+invoice_recovered',
+    shipping_cost_match_confidence: .95,
+    weight_grams: weightGrams,
+    sender_name: String(sender.company_name || sender.name || 'CentralHub'),
+    sender_address: String(sender.address_line1 || ''),
+    sender_city: String(sender.city || ''),
+    sender_postcode: String(sender.postcode || ''),
+    sender_phone: String(sender.phone || ''),
+    recipient_name: String(o.customer_name || 'Customer'),
+    recipient_company_name: o.company_name || null,
+    recipient_address: String(o.delivery_address || o.shipping_address_line1 || c.recipient_address || ''),
+    recipient_city: String(o.delivery_city || o.shipping_city || ''),
+    recipient_postcode: postcode,
+    recipient_phone: String(o.customer_phone || ''),
+    recipient_email: o.customer_email || null,
+    booked_at: bookedAt,
+    metadata: { source: 'dhl_invoice_recovered', recovered_from_invoice: true, invoice_number: c.invoice_number || null, order_reference: c.order_reference || o.order_number, consignment_number: c.consignment_number, recovered_at: now },
+    created_at: bookedAt,
+    updated_at: now,
+  }).select('id,order_id').single();
+  if (inserted.error) {
+    console.warn('[dhl-invoice-reconcile] Could not recover shipment for exact order reference', o.order_number, inserted.error.message);
+    return null;
+  }
+  return inserted.data;
+}
+
 async function matchCharge(db: any, c: ParsedCharge) {
   const exact = await db.from('shipments')
     .select('id,order_id,recipient_postcode,recipient_address,booked_at,created_at')
@@ -57,6 +124,10 @@ async function matchCharge(db: any, c: ParsedCharge) {
       const samePostcode = !c.recipient_postcode || normalizePostcode(c.recipient_postcode) === normalizePostcode(q.data[0].recipient_postcode);
       if (!samePostcode) return { status: 'needs_review', shipment_id: q.data[0].id, order_id: order.id, method: 'order_reference_postcode_mismatch', confidence: .7, notes: 'Order reference matched, but postcode differed. Cost was not auto-written.' };
       return { status: 'matched', shipment_id: q.data[0].id, order_id: order.id, method: 'order_reference+postcode', confidence: .97, notes: 'Exact order reference and postcode matched.' };
+    }
+    if (!q.data?.length) {
+      const recovered = await recoverShipmentForExactOrder(db, c, order);
+      if (recovered?.id) return { status: 'matched', shipment_id: recovered.id, order_id: order.id, method: 'order_reference+invoice_recovered', confidence: .95, notes: 'Exact DHL order reference matched an order with no shipment row; recovered an invoice-backed DHL shipment.' };
     }
   }
 
@@ -95,6 +166,40 @@ async function reconcileShipment(db: any, shipmentId: string, c: ParsedCharge, m
     updated_at: now,
   }).eq('id', shipmentId);
   if (update.error) throw update.error;
+}
+
+async function refreshImportStatus(db: any, importId: string) {
+  const rows = await db.from('dhl_invoice_charges').select('match_status').eq('import_id', importId);
+  if (rows.error) throw rows.error;
+  const values = rows.data || [];
+  const matched = values.filter((r: any) => r.match_status === 'matched').length;
+  const unmatched = values.length - matched;
+  const status = unmatched === 0 ? 'completed' : matched ? 'partial' : 'failed';
+  const update = await db.from('dhl_invoice_imports').update({ shipments_matched: matched, shipments_unmatched: unmatched, status, processed_at: new Date().toISOString(), updated_at: new Date().toISOString(), error_message: status === 'failed' ? 'No charges could be safely matched.' : null }).eq('id', importId);
+  if (update.error) throw update.error;
+}
+
+export async function retryUnmatched(limit = 250) {
+  const db = adminDb();
+  const capped = Math.max(1, Math.min(Number(limit || 250), 1000));
+  const rows = await db.from('dhl_invoice_charges').select('*').in('match_status', ['unmatched', 'needs_review']).order('created_at', { ascending: true }).limit(capped);
+  if (rows.error) throw rows.error;
+
+  let matched = 0; let stillUnmatched = 0; const touchedImports = new Set<string>(); const results: any[] = [];
+  for (const row of rows.data || []) {
+    const c = row as ParsedCharge;
+    const match = await matchCharge(db, c);
+    touchedImports.add(String(row.import_id));
+    const update = await db.from('dhl_invoice_charges').update({ matched_shipment_id: match.shipment_id, matched_order_id: match.order_id, match_status: match.status, match_method: match.method, match_confidence: match.confidence, match_notes: match.notes, updated_at: new Date().toISOString() }).eq('id', row.id);
+    if (update.error) throw update.error;
+    if (match.status === 'matched' && match.shipment_id) {
+      matched++;
+      await reconcileShipment(db, match.shipment_id, c, match, row.import_id);
+    } else stillUnmatched++;
+    results.push({ chargeId: row.id, consignment: c.consignment_number, orderReference: c.order_reference, status: match.status, method: match.method, confidence: match.confidence });
+  }
+  for (const importId of touchedImports) await refreshImportStatus(db, importId);
+  return { examined: (rows.data || []).length, matched, stillUnmatched, results };
 }
 
 export async function ingestCsv(p: any) {

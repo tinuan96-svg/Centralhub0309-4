@@ -1,5 +1,5 @@
 import { adminDb, configStatus, cors, env, fromBase64Url, reply, requireAdmin, secureEqual } from './common.ts';
-import { ingestCsv } from './reconcile.ts';
+import { ingestCsv, retryUnmatched } from './reconcile.ts';
 import { scanRecent, setupWatch } from './gmail.ts';
 
 Deno.serve(async (req: Request) => {
@@ -14,7 +14,7 @@ Deno.serve(async (req: Request) => {
       try { notification = body?.message?.data ? JSON.parse(fromBase64Url(String(body.message.data))) : {}; } catch { notification = {}; }
       const mailbox = String(notification?.emailAddress || env('DHL_GMAIL_MAILBOX') || 'me'), db = adminDb();
       await db.from('dhl_gmail_watch_state').upsert({ mailbox, history_id: notification?.historyId ? String(notification.historyId) : null, last_notification_at: new Date().toISOString(), updated_at: new Date().toISOString() }, { onConflict: 'mailbox' });
-      try { return reply({ success: true, notification, scan: await scanRecent(30) }); }
+      try { return reply({ success: true, notification, scan: await scanRecent(30), retry: await retryUnmatched(250) }); }
       catch (error: any) {
         await db.from('dhl_gmail_watch_state').upsert({ mailbox, last_error: String(error?.message || error).slice(0, 2000), updated_at: new Date().toISOString() }, { onConflict: 'mailbox' });
         throw error;
@@ -30,11 +30,12 @@ Deno.serve(async (req: Request) => {
     const body = await req.json().catch(() => ({})), action = String(body?.action || 'scan_recent');
     if (action === 'ingest_csv') return reply(await ingestCsv(body));
     if (action === 'scan_recent') return reply({ success: true, ...(await scanRecent(Number(body.days || 30))) });
+    if (action === 'retry_unmatched') return reply({ success: true, ...(await retryUnmatched(Number(body.limit || 250))) });
     if (action === 'setup_watch' || action === 'renew_watch') {
       const watch = await setupWatch();
-      return reply({ success: true, watch, scan: action === 'setup_watch' ? await scanRecent(Number(body.days || 30)) : null });
+      return reply({ success: true, watch, scan: action === 'setup_watch' ? await scanRecent(Number(body.days || 30)) : null, retry: await retryUnmatched(Number(body.limit || 250)) });
     }
-    return reply({ error: `Unknown action: ${action}`, available: ['ingest_csv', 'scan_recent', 'setup_watch', 'renew_watch'], config: configStatus() }, 400);
+    return reply({ error: `Unknown action: ${action}`, available: ['ingest_csv', 'scan_recent', 'retry_unmatched', 'setup_watch', 'renew_watch'], config: configStatus() }, 400);
   } catch (error: any) {
     const message = String(error?.message || error || 'Unknown error');
     console.error('[dhl-invoice-reconcile]', message);
