@@ -67,7 +67,7 @@ async function recoverShipmentForExactOrder(db: any, c: ParsedCharge, order: any
     shipping_cost: Number(c.net_cost_pence || 0),
     estimated_shipping_cost: null,
     actual_shipping_cost_net: Number(c.net_cost_pence || 0),
-    actual_shipping_cost_vat: Number(c.vat_pence || 0),
+    actual_shipping_vat: Number(c.vat_pence || 0),
     actual_shipping_cost_gross: Number(c.gross_cost_pence || 0),
     shipping_cost_source: 'dhl_invoice',
     shipping_cost_reconciled_at: now,
