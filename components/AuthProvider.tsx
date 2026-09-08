@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { AuthService } from '@/lib/services/authService';
+import { PushNotificationService } from '@/lib/services/pushNotificationService';
 import { supabase } from '@/lib/supabase';
 import type { User, Session } from '@supabase/supabase-js';
 
@@ -20,8 +21,6 @@ export default function AuthProvider({children}:{children:React.ReactNode}){
     const initAuth=async()=>{
       try{
         let current=(await supabase.auth.getSession()).data.session;
-        // A stored session can be stale/revoked in preview environments. Refresh
-        // immediately so downstream Edge Function calls receive a current JWT.
         if(current?.refresh_token){
           try{const refreshed=await supabase.auth.refreshSession(); if(refreshed.data.session) current=refreshed.data.session;}
           catch(refreshErr){console.warn('AuthProvider: session refresh failed:',refreshErr)}
@@ -36,10 +35,8 @@ export default function AuthProvider({children}:{children:React.ReactNode}){
     initAuth();
     const {data:authListener}=AuthService.onAuthStateChange(async(event,nextSession)=>{
       if(!mounted)return;
-      console.log('AuthProvider: Auth state change:',event);
       if(event==='SIGNED_IN'||event==='INITIAL_SESSION'||event==='TOKEN_REFRESHED'){
         let s=nextSession;
-        // TOKEN_REFRESHED is authoritative; never keep an older token in context.
         if(!s){try{s=(await supabase.auth.getSession()).data.session}catch{}}
         applySession(s);
       }else applySession(nextSession);
@@ -48,6 +45,13 @@ export default function AuthProvider({children}:{children:React.ReactNode}){
     });
     return()=>{mounted=false;authListener?.subscription?.unsubscribe()};
   },[pathname,router,isMounted]);
+
+  useEffect(() => {
+    if (!session?.user) return;
+    PushNotificationService.registerNativeDevice().catch((error) => {
+      console.warn('CentralHub native push registration deferred:', error?.message || error);
+    });
+  }, [session?.user?.id]);
 
   const handleSignOut=async()=>{await AuthService.signOut();router.replace('/login')};
   const isAdmin=(user?.app_metadata as any)?.role==='admin'; const isAtLogin=pathname==='/login'||pathname==='/login/';
