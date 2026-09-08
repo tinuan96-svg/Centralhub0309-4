@@ -10,6 +10,27 @@
 
 ---
 
+## 2026-09-08 Permanent Sync-Flow Fix
+
+The live red `Sync Error` banner was caused by the browser calling the protected `sync-orders` Edge Function directly. The Edge Function correctly requires the private sync secret, but browser calls only carried the normal Supabase client token and therefore returned `401 Unauthorized sync request`.
+
+The permanent boundary is now:
+
+`browser UI → lib/services/orderSyncClient.ts → POST /api/sync-orders → private sync-orders Edge Function`
+
+The following rules are now enforced:
+
+- Browser code must not call `supabase.functions.invoke('sync-orders')` directly.
+- The private sync secret remains server-side in `app/api/sync-orders/route.ts`.
+- Concurrent browser sync requests share one in-flight request to prevent duplicate full-sync work and duplicate notifications.
+- The existing `orders`, `order_items`, store-slug, status-mapping, inventory-trigger, and notification structures remain unchanged.
+- Source refreshes continue to write unpaid orders as `inventory_sync_status = 'pending'` and `stock_deducted = false`; only the existing paid-order inventory flow can mark stock as deducted.
+- The sync-status diagnostics now use the dedicated `sync-orders-health` function and do not execute a full order sync.
+
+Run `npm run audit:order-sync` before changing this flow.
+
+---
+
 ## 1. Per-Store Status
 
 | Store | Store ID | Orders in CentralHub | Paid | Pending Payment | Cancelled | Oldest Order | Latest Order | Item Rows |
