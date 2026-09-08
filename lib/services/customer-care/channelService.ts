@@ -1,65 +1,15 @@
 import { supabase } from '@/lib/supabase';
 
-export interface WhatsAppChannel {
-  id: string;
-  store_id: string | null;
-  waba_id: string | null;
-  phone_number_id: string | null;
-  display_phone_number: string | null;
-  business_name: string | null;
-  status: string;
-  created_at: string;
-  updated_at: string;
-  store?: { name: string; slug: string };
-}
+export interface WhatsAppChannel { id:string; store_id:string|null; waba_id:string|null; phone_number_id:string|null; display_phone_number:string|null; business_name:string|null; status:string; created_at:string; updated_at:string; store?:{name:string;slug:string}; }
+export interface CustomerCareChannel { id:string; store_id:string; channel_type:'whatsapp'|'instagram'|'facebook'; provider:'meta'|'interakt'; external_account_id:string; page_id:string|null; instagram_business_account_id:string|null; display_name:string|null; status:'disconnected'|'configured'|'active'|'error'; last_webhook_at:string|null; last_error:string|null; metadata:Record<string,unknown>; store?:{name:string;slug:string}; }
 
 export const channelService = {
-  async getChannels() {
-    const { data, error } = await supabase
-      .from('whatsapp_channels')
-      .select('id, store_id, waba_id, phone_number_id, display_phone_number, business_name, status, created_at, updated_at, store:stores(name, slug)')
-      .order('business_name', { ascending: true });
-
-    if (error) throw error;
-    return (data as any[])?.map(d => ({ ...d, store: Array.isArray(d.store) ? d.store[0] : d.store })) as WhatsAppChannel[];
-  },
-
-  async updateChannel(id: string, updates: Partial<WhatsAppChannel>) {
-    const { data, error } = await supabase
-      .from('whatsapp_channels')
-      .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq('id', id)
-      .select('id, store_id, waba_id, phone_number_id, display_phone_number, business_name, status, created_at, updated_at')
-      .single();
-
-    if (error) throw error;
-    return data as WhatsAppChannel;
-  },
-
-  async updateVerifyToken(id: string, verifyToken: string) {
-    const { error } = await supabase
-      .from('whatsapp_channels')
-      .update({ verify_token: verifyToken, updated_at: new Date().toISOString() })
-      .eq('id', id);
-
-    if (error) throw error;
-    return { success: true };
-  },
-
-  async updateAppSecret(id: string, appSecret: string) {
-    const { error } = await supabase
-      .from('whatsapp_channels')
-      .update({ app_secret: appSecret, updated_at: new Date().toISOString() })
-      .eq('id', id);
-
-    if (error) throw error;
-    return { success: true };
-  },
-
-  async testWebhook(webhookUrl: string, verifyToken: string) {
-    const testUrl = `${webhookUrl}?hub.mode=subscribe&hub.verify_token=${encodeURIComponent(verifyToken)}&hub.challenge=test123`;
-    const res = await fetch(testUrl, { method: 'GET' });
-    const body = await res.text();
-    return { ok: res.ok, status: res.status, body, verified: res.ok && body === 'test123' };
-  }
+  async getChannels(){ const {data,error}=await supabase.from('whatsapp_channels').select('id, store_id, waba_id, phone_number_id, display_phone_number, business_name, status, created_at, updated_at, store:stores(name, slug)').order('business_name'); if(error)throw error; return (data as any[])?.map(d=>({...d,store:Array.isArray(d.store)?d.store[0]:d.store})) as WhatsAppChannel[]; },
+  async getUnifiedChannels(){ const {data,error}=await supabase.from('customer_care_channels').select('id, store_id, channel_type, provider, external_account_id, page_id, instagram_business_account_id, display_name, status, last_webhook_at, last_error, metadata, store:stores(name, slug)').order('channel_type').order('display_name'); if(error)throw error; return (data as any[])?.map(d=>({...d,store:Array.isArray(d.store)?d.store[0]:d.store})) as CustomerCareChannel[]; },
+  async getStores(){ const {data,error}=await supabase.from('stores').select('id,name,slug').eq('is_active',true).order('name'); if(error)throw error; return data||[]; },
+  async syncMetaSocialChannels(storeId:string){ const {data,error}=await supabase.functions.invoke('meta-social-channel-sync',{body:{storeId}}); if(error)throw error; if(!data?.success)throw new Error(data?.error||'Meta social sync failed'); return data as {success:boolean;channels_synced:number}; },
+  async updateChannel(id:string,updates:Partial<WhatsAppChannel>){ const {data,error}=await supabase.from('whatsapp_channels').update({...updates,updated_at:new Date().toISOString()}).eq('id',id).select('id, store_id, waba_id, phone_number_id, display_phone_number, business_name, status, created_at, updated_at').single(); if(error)throw error; return data as WhatsAppChannel; },
+  async updateVerifyToken(id:string,verifyToken:string){ const {error}=await supabase.from('whatsapp_channels').update({verify_token:verifyToken,updated_at:new Date().toISOString()}).eq('id',id); if(error)throw error; return {success:true}; },
+  async updateAppSecret(id:string,appSecret:string){ const {error}=await supabase.from('whatsapp_channels').update({app_secret:appSecret,updated_at:new Date().toISOString()}).eq('id',id); if(error)throw error; return {success:true}; },
+  async testWebhook(webhookUrl:string,verifyToken:string){ const testUrl=`${webhookUrl}?hub.mode=subscribe&hub.verify_token=${encodeURIComponent(verifyToken)}&hub.challenge=test123`; const res=await fetch(testUrl); const body=await res.text(); return {ok:res.ok,status:res.status,body,verified:res.ok&&body==='test123'}; }
 };
