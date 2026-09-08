@@ -19,7 +19,7 @@ async function verifyMetaSignature(req: Request, payload: string, appSecret: str
   return expectedHash === signatureHash
 }
 
-async function notifyCentralHubPhonePush(params: { title: string; message: string; url: string; category: string; metadata?: Record<string, unknown> }) {
+async function notifyCentralHubPhonePush(params: { title: string; message: string; url: string; category: string; storeId?: string; dedupeKey?: string; metadata?: Record<string, unknown> }) {
   const siteUrl = (Deno.env.get('CENTRALHUB_SITE_URL') || 'https://centralhub.network').replace(/\/$/, '')
   const pushSecret = Deno.env.get('CENTRALHUB_PUSH_API_SECRET') || ''
   if (!pushSecret) return
@@ -33,8 +33,15 @@ async function notifyCentralHubPhonePush(params: { title: string; message: strin
         message: params.message,
         url: params.url,
         category: params.category,
+        storeId: params.storeId || undefined,
+        urgency: params.category === 'customer_message' ? 'high' : 'normal',
+        ttl: params.category === 'customer_message' ? 300 : undefined,
         severity: 'info',
-        metadata: { source: 'whatsapp-webhook', ...(params.metadata || {}) },
+        metadata: {
+          source: 'whatsapp-webhook',
+          ...(params.metadata || {}),
+          ...(params.dedupeKey ? { dedupe_key: params.dedupeKey } : {}),
+        },
       }),
     })
     if (!response.ok) console.error('[WhatsApp Webhook] Phone push failed:', response.status, await response.text().catch(() => ''))
@@ -151,18 +158,19 @@ serve(async (req) => {
     let channel: any = null
 
     if (phoneNumberId) {
-      const { data, error } = await db.from('whatsapp_channels').select('store_id, app_secret, phone_number_id, display_phone_number').eq('phone_number_id', phoneNumberId).maybeSingle()
+      const { data, error } = await db.from('whatsapp_channels').select('store_id, app_secret, phone_number_id, display_phone_number, business_name').eq('phone_number_id', phoneNumberId).maybeSingle()
       if (error) console.error('[WhatsApp Webhook] Channel lookup:', error.message)
       channel = data
     }
     if (!channel && displayPhoneNumber) {
-      const { data, error } = await db.from('whatsapp_channels').select('store_id, app_secret, phone_number_id, display_phone_number').eq('display_phone_number', displayPhoneNumber).eq('status', 'active').maybeSingle()
+      const { data, error } = await db.from('whatsapp_channels').select('store_id, app_secret, phone_number_id, display_phone_number, business_name').eq('display_phone_number', displayPhoneNumber).eq('status', 'active').maybeSingle()
       if (error) console.error('[WhatsApp Webhook] Display-number fallback lookup:', error.message)
       channel = data
       if (channel) console.warn(`[WhatsApp Webhook] Phone ID ${phoneNumberId} not mapped; matched active channel by display number ${displayPhoneNumber}`)
     }
 
     storeId = channel?.store_id || null
+    const storeName = channel?.business_name || 'CentralHub'
     // If a channel is known, Meta signatures are mandatory. Do not silently accept
     // an unsigned request for a mapped number.
     if (channel) {
@@ -196,10 +204,12 @@ serve(async (req) => {
 
       await notifyCentralHubPhonePush({
         title: 'You have a message from customer',
-        message: `${profileName} sent a new WhatsApp message.`,
+        message: `${storeName}: ${profileName} sent a new ${msg.type === 'audio' || msg.type === 'voice' ? 'voice' : 'WhatsApp'} message.`,
         url: `/customer-care/inbox?conversation=${encodeURIComponent(conv.id)}`,
         category: 'customer_message',
-        metadata: { store_id: storeId, conversation_id: conv.id, contact_id: contact.id, message_id: msg.id },
+        storeId,
+        dedupeKey: `CUSTOMER_MESSAGE:${String(msg.id || eventId)}`,
+        metadata: { store_id: storeId, store_name: storeName, conversation_id: conv.id, contact_id: contact.id, message_id: msg.id },
       })
 
       if (msg.type === 'text') {
