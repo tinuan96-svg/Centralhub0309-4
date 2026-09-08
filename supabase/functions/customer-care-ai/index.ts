@@ -4,7 +4,22 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' }
 const SUPPORT_CATEGORIES = ['refund','missing_order','wrong_item','damaged_item','delivery_issue','payment_issue','complaint','account_issue','other'] as const
 
-async function notifyAdmin(db: any, p: { storeId:string; title:string; message:string; actionUrl:string; metadata?:any }) { const { error } = await db.from('system_notifications').insert({ user_id:null, store_id:p.storeId, title:p.title, message:p.message, severity:'warning', category:'support', action_url:p.actionUrl, metadata:p.metadata||{} }); if (error) console.error('[AI Escalation] Notification error:', error.message) }
+async function sendExistingCentralHubNotification(notificationId: string) {
+ const siteUrl=(Deno.env.get('CENTRALHUB_SITE_URL')||'https://centralhub.network').replace(/\\/$/,'')
+ const pushSecret=Deno.env.get('CENTRALHUB_PUSH_API_SECRET')||''
+ if(!pushSecret) return
+ try {
+  const response=await fetch(`${siteUrl}/api/push/send`,{method:'POST',headers:{Authorization:`Bearer ${pushSecret}`,'Content-Type':'application/json'},body:JSON.stringify({notificationId})})
+  if(!response.ok) console.error('[AI Escalation] Phone push failed:',response.status,await response.text().catch(()=>'')) 
+ } catch(error:any) { console.error('[AI Escalation] Phone push request failed:',error?.message||error) }
+}
+async function notifyAdmin(db: any, p: { storeId:string; title:string; message:string; actionUrl:string; metadata?:any }) {
+ const metadata={...(p.metadata||{})}
+ if(!metadata.dedupe_key&&metadata.ticket_id) metadata.dedupe_key=`AI_ESCALATION:${metadata.ticket_id}`
+ const {data:notification,error}=await db.from('system_notifications').insert({user_id:null,store_id:p.storeId,title:p.title,message:p.message,severity:'warning',category:'support',action_url:p.actionUrl,metadata}).select('id').single()
+ if(error) console.error('[AI Escalation] Notification error:',error.message)
+ else if(notification?.id) await sendExistingCentralHubNotification(notification.id)
+}
 async function ensureSupportTicket(db:any, p:{storeId:string; conversationId:string; contactId:string; category:string; reason:string}) { const { data: existing } = await db.from('support_tickets').select('id,status').eq('store_id',p.storeId).eq('conversation_id',p.conversationId).in('status',['open','assigned','in_progress','waiting_customer','waiting_internal']).order('created_at',{ascending:false}).limit(1).maybeSingle(); if (existing) return { ticket:existing, created:false }; const { data: contact } = await db.from('whatsapp_contacts').select('customer_id,display_name,phone_number').eq('id',p.contactId).maybeSingle(); const { data: ticket, error } = await db.from('support_tickets').insert({ store_id:p.storeId, customer_id:contact?.customer_id||null, contact_id:p.contactId, conversation_id:p.conversationId, category:SUPPORT_CATEGORIES.includes(p.category as any)?p.category:'other', priority:'high', status:'open', subject:`AI escalation: ${p.category}`, description:p.reason, ai_summary:p.reason }).select('id,status').single(); if (error) throw error; await db.from('whatsapp_conversations').update({status:'waiting',handling_mode:'AI_DRAFT',updated_at:new Date().toISOString()}).eq('id',p.conversationId); await notifyAdmin(db,{storeId:p.storeId,title:'Customer enquiry needs attention',message:`${contact?.display_name||contact?.phone_number||'Customer'} needs human assistance. ${p.reason}`,actionUrl:`/customer-care/tickets?ticket=${ticket.id}`,metadata:{type:'customer_support_escalation',ticket_id:ticket.id,conversation_id:p.conversationId,contact_id:p.contactId,category:p.category}}); return { ticket, created:true } }
 const BASE_PROMPT = `You are the AI Sales & Customer Support Assistant for CentralHub stores.
 You are speaking directly with a real customer on WhatsApp. Be professional, friendly, calm, helpful and concise. Never sound robotic, defensive or overly formal.
