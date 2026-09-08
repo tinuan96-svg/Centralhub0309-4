@@ -15,6 +15,7 @@ type FirebaseSendPayload = {
   severity?: string | null;
   dedupeKey?: string | null;
   storeId?: string | null;
+  storeSlug?: string | null;
 };
 
 let cachedAccessToken: { token: string; expiresAt: number } | null = null;
@@ -116,6 +117,7 @@ export async function sendFirebasePush(token: string, payload: FirebaseSendPaylo
         severity: payload.severity || 'info',
         dedupe_key: payload.dedupeKey,
         store_id: payload.storeId,
+        store_slug: payload.storeSlug,
       })
         .map(([key, value]) => [key, dataValue(value)])
         .filter(([, value]) => value !== undefined),
