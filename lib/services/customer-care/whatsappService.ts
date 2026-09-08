@@ -168,18 +168,43 @@ export const whatsappService = {
       });
       const sendSuccess = payload?.success === true || payload?.message_id != null;
       if (params.conversationId) {
-        const insertData: any = { conversation_id: params.conversationId, direction: 'outbound', message_type: params.type || 'text', message_text: params.text || null, status: sendSuccess ? 'sent' : 'failed', ai_generated: false };
+        const insertData: any = {
+          conversation_id: params.conversationId,
+          direction: 'outbound',
+          message_type: params.type || 'text',
+          message_text: params.text || null,
+          status: sendSuccess ? 'sent' : 'failed',
+          ai_generated: false,
+          delivery_error_code: sendSuccess ? null : (payload?.meta_code || payload?.code || null),
+          delivery_error_message: sendSuccess ? null : (payload?.error || null),
+          failed_at: sendSuccess ? null : new Date().toISOString(),
+        };
         if (payload?.message_id) insertData.wa_message_id = payload.message_id;
         const { error: dbError } = await supabase.from('whatsapp_messages').insert(insertData);
         if (dbError) console.error('[WhatsAppService] Failed to log outbound message:', dbError.message);
       }
-      if (!sendSuccess) return { success: false, error: payload?.error || 'Meta API rejected the message' };
+      if (!sendSuccess) return {
+        success: false,
+        error: payload?.error || 'Meta API rejected the message',
+        code: payload?.code || payload?.meta_code || null,
+        windowExpired: payload?.window_expired === true,
+      };
       return { success: true, data: payload };
     } catch (error: any) {
       const detail = error?.payload?.error || error?.message || 'Failed to communicate with WhatsApp service.';
       console.error('[WhatsAppService] Edge Function Error:', detail, error);
       if (params.conversationId) {
-        await supabase.from('whatsapp_messages').insert({ conversation_id: params.conversationId, direction: 'outbound', message_type: params.type || 'text', message_text: params.text || null, status: 'failed', ai_generated: false });
+        await supabase.from('whatsapp_messages').insert({
+          conversation_id: params.conversationId,
+          direction: 'outbound',
+          message_type: params.type || 'text',
+          message_text: params.text || null,
+          status: 'failed',
+          ai_generated: false,
+          delivery_error_code: error?.payload?.code || error?.payload?.meta_code || null,
+          delivery_error_message: detail,
+          failed_at: new Date().toISOString(),
+        });
       }
       return { success: false, error: detail };
     }
