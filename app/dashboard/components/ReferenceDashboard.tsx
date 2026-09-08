@@ -6,6 +6,9 @@ import { formatCurrency } from '@/lib/utils/currency';
 import TimeSeriesChart from '@/components/TimeSeriesChart';
 import { Panel } from '@/components/dashboard/Charts';
 import { ActivityCalendar, GradientRing, HealthRadar, MODEL_COLORS, StoreScatter, WeeklyColumns } from '@/components/dashboard/ReferenceCharts';
+import { Boxes, CircleCheck, ClipboardList, PackageSearch, Receipt, Truck } from 'lucide-react';
+import MicroTrend from '@/components/dashboard/MicroTrend';
+import { VisualMetric } from '@/components/dashboard/VisualMetric';
 
 export default function ReferenceDashboard({ report, selectedStoreId, timeRange }: { report: DashboardReport; selectedStoreId: string; timeRange: string }) {
   const paid = report.orders.filter(isPaidOrder);
@@ -38,6 +41,7 @@ export default function ReferenceDashboard({ report, selectedStoreId, timeRange 
   const ratio = (n: number, d: number) => d > 0 ? n / d * 100 : null;
   const delivered = paid.filter(o => ['delivered', 'completed'].includes(o.order_status)).length;
   const stocked = report.inventory.filter(i => numeric(i.stock_quantity) > 0).length;
+  const lowStock = report.inventory.filter(i => numeric(i.stock_quantity) > 0 && numeric(i.stock_quantity) <= (i.low_stock_threshold == null ? 5 : numeric(i.low_stock_threshold))).length;
   const recorded = report.current.costRows.filter(o => ['order_total', 'snapshot'].includes(o.cost_quality)).length;
   const repeat = [...buyers.values()].filter(n => n > 1).length;
   const paymentGroups = [
@@ -55,9 +59,19 @@ export default function ReferenceDashboard({ report, selectedStoreId, timeRange 
   });
 
   return <div className="ch-model-grid">
+    <div className="ch-snapshot-signals" aria-label="Operational indicators">
+      {[
+        { label: 'Orders', value: report.orders.length, icon: ClipboardList, detail: 'All orders in selected scope' },
+        { label: 'Paid', value: paid.length, icon: CircleCheck, detail: 'Eligible paid orders in selected scope' },
+        { label: 'Undelivered paid', value: paid.length - delivered, icon: Truck, detail: 'Paid orders not yet delivered or completed' },
+        { label: 'Average product sale', value: paid.length ? formatCurrency(report.current.totalRevenue / paid.length) : '—', icon: Receipt, detail: 'Paid product sales / paid orders, excluding delivery' },
+        { label: 'Low stock · global', value: lowStock, icon: Boxes, detail: 'Current shared warehouse stock records at or below threshold' },
+        { label: 'Incomplete costs', value: report.current.missingCosts, icon: PackageSearch, detail: 'Paid orders without complete product costs' },
+      ].map(item => <div key={item.label} title={item.detail}><item.icon size={16} aria-hidden="true" /><span>{item.label}</span><strong key={item.value} className="ch-value-arrival">{typeof item.value === 'number' ? item.value.toLocaleString('en-GB') : item.value}</strong></div>)}
+    </div>
     <section className="ch-panel ch-model-financial-band" aria-label="Financial totals and key ratios">
-      <div className="ch-model-total"><span className="ch-model-label">Product sales</span><strong>{formatCurrency(report.current.totalRevenue)}</strong><span className="ch-model-meta">{paid.length.toLocaleString('en-GB')} paid orders</span><dl><div><dt>Paid expenses</dt><dd>{formatCurrency(report.current.totalOverhead)}</dd></div><div><dt>Warehouse</dt><dd>{report.current.totalInventoryValue === null ? '—' : formatCurrency(report.current.totalInventoryValue)}</dd></div></dl></div>
-      <div className="ch-model-total"><span className="ch-model-label">Order gross profit</span><strong>{report.current.actualGrossProfit === null ? '—' : formatCurrency(report.current.actualGrossProfit)}</strong><span className="ch-model-meta">{report.current.missingCosts ? 'Incomplete costs' : report.current.estimatedCosts ? 'Estimated costs included' : 'Before fees & overhead'}</span><dl><div><dt>After paid expenses</dt><dd>{report.current.netProfit === null ? '—' : formatCurrency(report.current.netProfit)}</dd></div></dl></div>
+      <div className="ch-model-total"><span className="ch-model-label">Product sales</span><strong key={report.current.totalRevenue} className="ch-value-arrival">{formatCurrency(report.current.totalRevenue)}</strong><MicroTrend values={momentum[0].data.map(d => d.value)} label="Daily product sales in GBP" /><dl><div><dt>Paid expenses</dt><dd>{formatCurrency(report.current.totalOverhead)}</dd></div><div><dt>Warehouse · global</dt><dd>{report.current.totalInventoryValue === null ? '—' : formatCurrency(report.current.totalInventoryValue)}</dd></div></dl></div>
+      <div className="ch-model-total"><span className="ch-model-label">Order gross profit</span><strong key={report.current.actualGrossProfit} className="ch-value-arrival">{report.current.actualGrossProfit === null ? '—' : formatCurrency(report.current.actualGrossProfit)}</strong>{momentum[1] && <MicroTrend values={momentum[1].data.map(d => d.value)} label="Daily order gross profit in GBP" color="#f04fed" />}<span className="ch-model-meta">{report.current.missingCosts ? 'Incomplete costs' : report.current.estimatedCosts ? 'Estimated costs included' : 'Before fees & overhead'}</span><dl><div><dt>After paid expenses</dt><dd>{report.current.netProfit === null ? '—' : formatCurrency(report.current.netProfit)}</dd></div></dl></div>
       <GradientRing label="Delivered" value={ratio(delivered, paid.length)} detail={`${delivered} / ${paid.length} paid orders`} />
       <GradientRing label="Recorded costs" value={ratio(recorded, paid.length)} detail={`${recorded} / ${paid.length} paid orders`} />
       <GradientRing label="Stock available" value={ratio(stocked, report.inventory.length)} detail="Current warehouse · all stores" />
@@ -66,11 +80,11 @@ export default function ReferenceDashboard({ report, selectedStoreId, timeRange 
       <div className="ch-model-dot-rows">{paymentGroups.map(row => { const percent = ratio(row.value, report.orders.length); return <div key={row.label}><span>{row.label}</span><div className="ch-model-dots" aria-hidden="true">{Array.from({ length: 10 }, (_, i) => <i key={i} style={{ background: percent !== null && i < Math.round(percent / 10) ? row.color : 'var(--model-track)' }} />)}</div><strong>{percent === null ? '—' : percent.toFixed(1) + '%'}</strong><small>{row.value}</small></div>; })}</div>
     </Panel>
     <section className="ch-panel ch-model-trend-profile" aria-label="Sales trend and operating ratios">
-      <div className="ch-model-trend"><TimeSeriesChart compact series={momentum} timeRange={timeRange} title="Sales & order gross profit" subtitle={report.current.actualGrossProfit === null ? 'GBP · Profit unavailable: incomplete costs' : 'GBP · Gross includes delivery, before fees'} /></div>
+      <div className="ch-model-trend"><TimeSeriesChart compact dense series={momentum} timeRange={timeRange} title="Sales & order gross profit" subtitle={report.current.actualGrossProfit === null ? 'GBP · Profit unavailable: incomplete costs' : 'GBP · Gross includes delivery, before fees'} /></div>
       <HealthRadar axes={[{ label: 'Paid', value: ratio(paid.length, report.orders.length), detail: 'Eligible paid / all orders' }, { label: 'Delivery', value: ratio(delivered, paid.length), detail: 'Delivered / paid orders' }, { label: 'Repeat', value: ratio(repeat, buyers.size), detail: 'Repeat / identified buyers' }, { label: 'Costs', value: ratio(recorded, paid.length), detail: 'Recorded costs / paid orders' }, { label: 'Stock', value: ratio(stocked, report.inventory.length), detail: 'Positive stock / stock records' }]} />
     </section>
     <Panel title="Sales & profitability" subtitle="Store comparison · before fees & overhead" className="ch-model-profit"><StoreScatter stores={scatter} /></Panel>
-    <Panel title="Repeat customers" className="ch-model-customer"><GradientRing segmented label="Repeat buyer ratio" value={ratio(repeat, buyers.size)} detail={`${repeat} of ${buyers.size} identified buyers`} /></Panel>
+    <Panel title="Repeat customers" className="ch-model-customer"><GradientRing segmented label="Repeat buyer ratio" value={ratio(repeat, buyers.size)} detail={`${repeat} of ${buyers.size} identified buyers`} /><div className="ch-visual-metrics"><VisualMetric label="Single-order buyers" value={buyers.size - repeat} /><VisualMetric label="Orders / buyer" value={buyers.size ? ([...buyers.values()].reduce((sum, count) => sum + count, 0) / buyers.size).toFixed(2) : '—'} /></div></Panel>
     <Panel title="Weekly sales" className="ch-model-weekly"><WeeklyColumns series={series.map(s => ({ id: s.id, name: s.name, values: s.data }))} dates={dates.slice(-7)} /></Panel>
     <Panel title="Order activity" className="ch-model-activity"><ActivityCalendar days={[...calendar.values()]} start={start} end={end} /></Panel>
   </div>;

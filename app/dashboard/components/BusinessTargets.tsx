@@ -9,16 +9,16 @@ import { GradientRing } from '@/components/dashboard/ReferenceCharts';
 import { MetricState } from '@/components/dashboard/VisualMetric';
 
 type Target = { id: string; store_id: string | null; name: string; target_type: string; target_value: number; period_start: string; period_end: string };
-export default function BusinessTargets({ currentStats, periodStart, periodEnd, visual = false }: { currentStats: PeriodSummary; periodStart: Date; periodEnd: Date; visual?: boolean }) {
+export default function BusinessTargets({ currentStats, periodStart, periodEnd, visual = false, refreshKey = 0 }: { currentStats: PeriodSummary; periodStart: Date; periodEnd: Date; visual?: boolean; refreshKey?: number }) {
   const { selectedStoreId } = useDashboardFilterStore();
   const [targets, setTargets] = useState<Target[]>([]);
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
-  useEffect(() => { let cancelled = false; setLoading(true); setError(false); readReportRows<Target>(() => supabase.from('business_targets').select('id,store_id,name,target_type,target_value,period_start,period_end').eq('is_active', true).order('id'), 'Targets').then(rows => { if (!cancelled) setTargets(rows.filter(t => selectedStoreId === 'all' ? !t.store_id : t.store_id === selectedStoreId)); }).catch(() => { if (!cancelled) setError(true); }).finally(() => { if (!cancelled) setLoading(false); }); return () => { cancelled = true; }; }, [selectedStoreId]);
+  useEffect(() => { let cancelled = false; setLoading(true); if (!visual) setError(false); readReportRows<Target>(() => supabase.from('business_targets').select('id,store_id,name,target_type,target_value,period_start,period_end').eq('is_active', true).order('id'), 'Targets').then(rows => { if (!cancelled) { setTargets(rows.filter(t => selectedStoreId === 'all' ? !t.store_id : t.store_id === selectedStoreId)); setError(false); } }).catch(() => { if (!cancelled) setError(true); }).finally(() => { if (!cancelled) setLoading(false); }); return () => { cancelled = true; }; }, [selectedStoreId, refreshKey, visual]);
   const day = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const metric = (type: string) => type === 'revenue' ? currentStats.totalRevenue : type === 'orders' ? currentStats.totalOrders : type === 'profit' ? currentStats.actualGrossProfit : null;
   if (visual) return <Panel title="Target progress" subtitle="Saved targets · matching store and dates">
-    {loading || error || !targets.length ? <MetricState loading={loading} error={error} label="No active targets" /> : <div className="ch-visual-targets">{targets.map(t => {
+    {error || !targets.length ? <MetricState loading={loading} error={error} label="No active targets" /> : <div className="ch-visual-targets">{targets.map(t => {
       const matched = day(periodStart) === t.period_start.slice(0, 10) && day(periodEnd) === t.period_end.slice(0, 10);
       const current = matched ? metric(t.target_type) : null;
       const target = Number(t.target_value);

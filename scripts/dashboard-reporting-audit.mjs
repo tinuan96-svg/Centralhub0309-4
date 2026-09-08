@@ -48,6 +48,79 @@ assert.equal(percentChange(-50, -100), 50, 'Reduced losses should have positive 
 assert.equal(percentChange(-150, -100), -50);
 
 const { metricTotal, metricRate, metricGroups } = load('lib/dashboard/channelMetrics.ts');
+const { createRefreshQueue, metricTileSpan } = load('lib/dashboard/refreshQueue.ts');
+let nextTimer = 0, reads = 0, concurrent = 0, maxConcurrent = 0, enabled = true;
+const scheduled = new Map(), completions = [];
+const queue = createRefreshQueue(async () => {
+  reads++; concurrent++; maxConcurrent = Math.max(maxConcurrent, concurrent);
+  await new Promise(resolve => completions.push(resolve));
+  concurrent--;
+}, { enabled: () => enabled, schedule: fn => { const id = ++nextTimer; scheduled.set(id, fn); return id; }, cancel: id => scheduled.delete(id) });
+const settle = async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); };
+const fire = async () => { const callbacks = [...scheduled.values()]; scheduled.clear(); callbacks.forEach(fn => fn()); await settle(); };
+queue.request(); queue.request(); queue.request();
+assert.equal(scheduled.size, 1, 'Event bursts produce one scheduled read');
+await fire(); assert.equal(reads, 1);
+queue.request(); queue.request();
+assert.equal(scheduled.size, 0, 'Do not overlap an in-flight report');
+completions.shift()(); await settle();
+assert.equal(scheduled.size, 1, 'Changes during a fetch must cause one follow-up read');
+await fire(); assert.equal(reads, 2); assert.equal(maxConcurrent, 1);
+enabled = false; queue.request(); completions.shift()(); await settle();
+assert.equal(scheduled.size, 0, 'Hidden or offline pages pause the read loop');
+enabled = true; queue.request(0); await fire(); assert.equal(reads, 3);
+queue.request(); queue.dispose(); completions.shift()(); await settle(); queue.request();
+assert.equal(scheduled.size, 0, 'Unmount cancels pending work and prevents late follow-ups');
+
+// Exercise the actual transport with a simulated channel and browser lifecycle.
+// No live records, subscriptions or operational writes are used by this test.
+let transportCleanup, eventCallback, channelStatus, binding, changes = 0, removedChannels = 0;
+const states = [], intervals = new Map(), windowEvents = new Map(), documentEvents = new Map();
+const browserNavigator = { onLine: true };
+const browserDocument = { visibilityState: 'visible', addEventListener: (name, fn) => documentEvents.set(name, fn), removeEventListener: name => documentEvents.delete(name) };
+const browserWindow = { setInterval: (fn, ms) => { intervals.set(ms, fn); return ms; }, clearInterval: id => intervals.delete(id), addEventListener: (name, fn) => windowEvents.set(name, fn), removeEventListener: name => windowEvents.delete(name) };
+const channel = { on: (_event, config, fn) => { binding = config; eventCallback = fn; return channel; }, subscribe: fn => { channelStatus = fn; return channel; } };
+const transportModule = { exports: {} };
+const transportCode = ts.transpileModule(fs.readFileSync(path.join(root, 'lib/hooks/useDashboardRealtime.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
+new Function('exports', 'require', 'window', 'document', 'navigator', transportCode)(transportModule.exports, spec => {
+  if (spec === 'react') return { useEffect: effect => { transportCleanup = effect(); }, useState: value => [value, next => states.push(next)] };
+  if (spec === '@/lib/supabase') return { supabase: { channel: () => channel, removeChannel: () => { removedChannels++; } } };
+  throw new Error('Unexpected transport dependency: ' + spec);
+}, browserWindow, browserDocument, browserNavigator);
+transportModule.exports.useDashboardRealtime(() => changes++);
+assert.deepEqual(binding, { event: '*', schema: 'public' }, 'One schema binding must tolerate unpublished report sources');
+assert.deepEqual([...intervals.keys()], [30000], 'Only one foreground fallback timer is created');
+channelStatus('SUBSCRIBED'); assert.equal(states.at(-1), 'connected');
+const beforeEvents = changes;
+eventCallback({ table: 'orders' }); eventCallback({ table: 'whatsapp_messages' }); eventCallback({ table: 'security_heartbeats' }); eventCallback({ table: 'unrelated_table' });
+assert.equal(changes, beforeEvents + 3, 'Relevant published events refresh the report; unrelated records do not');
+browserDocument.visibilityState = 'hidden'; documentEvents.get('visibilitychange')();
+const pausedChanges = changes;
+eventCallback({ table: 'orders' }); intervals.get(30000)();
+assert.equal(changes, pausedChanges); assert.equal(states.at(-1), 'paused');
+browserNavigator.onLine = false; windowEvents.get('offline')();
+browserDocument.visibilityState = 'visible'; documentEvents.get('visibilitychange')();
+assert.equal(changes, pausedChanges); assert.equal(states.at(-1), 'offline');
+browserNavigator.onLine = true; windowEvents.get('online')();
+assert.equal(changes, pausedChanges + 1, 'Reconnect refreshes records missed while paused');
+channelStatus('CHANNEL_ERROR'); assert.equal(states.at(-1), 'polling');
+intervals.get(30000)(); assert.equal(changes, pausedChanges + 2, 'Polling continues after a channel error');
+transportCleanup(); const disposedChanges = changes;
+eventCallback({ table: 'orders' }); channelStatus('SUBSCRIBED');
+assert.equal(changes, disposedChanges); assert.equal(removedChannels, 1);
+assert.equal(intervals.size + windowEvents.size + documentEvents.size, 0, 'Unmount removes timers, listeners and channel');
+
+for (const height of [1, 80, 120, 234.5, 500]) for (const gap of [8, 10.4, 12]) {
+  const occupied = metricTileSpan(height, 8, gap) * (8 + gap) - gap;
+  assert.ok(occupied >= height && occupied - height < 8 + gap, 'Packed cards must fit without overlap or an extra empty row');
+}
+const MicroTrend = load('components/dashboard/MicroTrend.tsx').default;
+for (const values of [[0], [0, 0], [-20, 0, 10]]) {
+  const html = renderToStaticMarkup(React.createElement(MicroTrend, { values, label: 'Daily sales' }));
+  assert.doesNotMatch(html, /NaN|Infinity/);
+  assert.match(html, /<polyline/, 'Real zero and signed readings are drawn');
+}
+assert.match(renderToStaticMarkup(React.createElement(MicroTrend, { values: [], label: 'Daily sales' })), /unavailable/);
 assert.equal(metricTotal([], 'spend'), null, 'No import is unavailable, not measured zero');
 assert.equal(metricTotal([{ spend: 0 }], 'spend'), 0, 'Retain an imported zero');
 assert.equal(metricTotal([{ spend: 100 }, { spend: null }], 'spend'), null, 'Partial imported totals must not be published');

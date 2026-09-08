@@ -20,7 +20,7 @@ export default function FinancialCommandSummary({ refreshKey = 0 }: { refreshKey
   useEffect(() => {
     let cancelled = false;
     const end = new Date(); const start = new Date(); start.setDate(end.getDate() - 6);
-    setLoading(true); setMetrics(null); setRecon(null); setFailed({ finance: false, bank: false });
+    setLoading(true); setFailed({ finance: false, bank: false });
     Promise.allSettled([
       supabase.rpc('get_financial_performance', { p_start_date: start.toISOString().slice(0, 10), p_end_date: end.toISOString().slice(0, 10) }),
       supabase.from('v_bank_reconciliation_summary').select('*').single(),
@@ -39,13 +39,13 @@ export default function FinancialCommandSummary({ refreshKey = 0 }: { refreshKey
   const reconciliationRate = bankTotal !== null && bankTotal > 0 && reconciled !== null && Number.isFinite(reconciled) ? reconciled / bankTotal * 100 : null;
   return <>
     <Panel title="Finance" subtitle="Last 7 days · all stores · accounting">
-      {loading || !metrics ? <MetricState loading={loading} error={failed.finance} label="No financial data" /> : <>
+      {!metrics ? <MetricState loading={loading} error={failed.finance} label="No financial data" /> : <>
         <div className="ch-visual-metrics"><VisualMetric label="7D Revenue" value={amount(metrics.revenue)} icon={<Banknote size={14} />} /><VisualMetric label="7D Net profit" value={amount(metrics.net_profit)} icon={<TrendingUp size={14} />} /><VisualMetric label="Profit / order" value={amount(metrics.average_profit_per_order)} /><VisualMetric label="Bank Closing" value={amount(metrics.closing_cash)} icon={<Landmark size={14} />} /></div>
         <MetricBars data={[{ label: 'Revenue', value: metrics.revenue == null ? NaN : Number(metrics.revenue), color: '#50e4eb' }, { label: 'Net profit', value: metrics.net_profit == null ? NaN : Number(metrics.net_profit), color: '#f04fed' }]} format={formatCurrency} />
       </>}
     </Panel>
     <Panel title="Bank reconciliation" subtitle="Current bank records · all stores">
-      {loading || !recon ? <MetricState loading={loading} error={failed.bank} label="No bank data" /> : <>
+      {!recon ? <MetricState loading={loading} error={failed.bank} label="No bank data" /> : <>
         <div className="ch-visual-ring-pair"><GradientRing label="Reconciled" value={reconciliationRate} detail={`${reconciled ?? '—'} / ${bankTotal ?? '—'} transactions`} /><div className="ch-visual-metrics ch-visual-metrics-column"><VisualMetric label="Unreconciled" value={recon.unreconciled_transactions ?? '—'} icon={<CircleAlert size={14} />} /><VisualMetric label="Outstanding" value={amount(recon.unreconciled_value)} /><VisualMetric label="Older than today" value={recon.overdue_reconciliation_transactions ?? '—'} /></div></div>
       </>}
     </Panel>

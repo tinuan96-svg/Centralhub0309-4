@@ -10,6 +10,7 @@ import CommunicationAnalytics from './CommunicationAnalytics';
 import IntegrationHealth from './IntegrationHealth';
 import BusinessTargets from './BusinessTargets';
 import ChannelVisuals from './ChannelVisuals';
+import MetricMasonry from '@/components/dashboard/MetricMasonry';
 
 export default function SectionVisuals({ report, selectedStoreId, refreshKey }: { report: DashboardReport; selectedStoreId: string; refreshKey: number }) {
   const paid = report.orders.filter(isPaidOrder);
@@ -22,7 +23,7 @@ export default function SectionVisuals({ report, selectedStoreId, refreshKey }: 
   const low = report.inventory.filter(i => numeric(i.stock_quantity) > 0 && numeric(i.stock_quantity) <= (i.low_stock_threshold == null ? 5 : numeric(i.low_stock_threshold))).length;
   const storeSales = report.stores.filter(s => selectedStoreId === 'all' || s.id === selectedStoreId).map((store, i) => ({ label: store.name, value: paid.filter(o => o.store_id === store.id).reduce((sum, o) => sum + productRevenue(o), 0), color: CHART_COLOURS[i % CHART_COLOURS.length] }));
   if (paid.some(o => !o.store_id)) storeSales.push({ label: 'Unassigned', value: paid.filter(o => !o.store_id).reduce((sum, o) => sum + productRevenue(o), 0), color: '#94a3b8' });
-  return <div className="ch-section-visual-grid">
+  return <MetricMasonry>
     <FinancialCommandSummary refreshKey={refreshKey} />
     <Panel title="Stock availability" subtitle="Current warehouse · all stores"><DonutChart data={[{ label: 'Available', value: report.inventory.length - out - low, color: '#50e4eb' }, { label: 'Low stock', value: low, color: '#fbbf24' }, { label: 'Zero / negative', value: out, color: '#f04fed' }]} label="stock records" /></Panel>
     <Panel title="Top products" subtitle="Paid product sales · selected period"><MetricBars data={report.products.slice(0, 5).map(p => ({ label: p.name, value: p.revenue }))} format={formatCurrency} /></Panel>
@@ -42,9 +43,9 @@ export default function SectionVisuals({ report, selectedStoreId, refreshKey }: 
       { label: 'Estimated', value: report.current.estimatedCosts, color: '#fbbf24' },
       { label: 'Incomplete', value: report.current.missingCosts, color: '#f04fed' },
     ]} label="paid orders" /><div className="ch-visual-metrics"><VisualMetric label="No buyer email" value={paid.filter(o => !o.customer_email?.trim()).length} detail="Excluded from repeat-buyer ratio" /></div></Panel>
-    <BusinessTargets key={refreshKey} visual currentStats={report.current} periodStart={report.start} periodEnd={report.end} />
-    <CommunicationAnalytics visual key={'messages-' + selectedStoreId + '-' + refreshKey} />
-    <IntegrationHealth visual key={'integrations-' + refreshKey} />
+    <BusinessTargets key={selectedStoreId} refreshKey={refreshKey} visual currentStats={report.current} periodStart={report.start} periodEnd={report.end} />
+    <CommunicationAnalytics visual key={'messages-' + selectedStoreId} refreshKey={refreshKey} />
+    <IntegrationHealth visual refreshKey={refreshKey} />
     <ChannelVisuals key={selectedStoreId + report.start.toISOString() + report.end.toISOString()} start={report.start.toISOString().slice(0, 10)} end={report.end.toISOString().slice(0, 10)} selectedStoreId={selectedStoreId} refreshKey={refreshKey} />
-  </div>;
+  </MetricMasonry>;
 }

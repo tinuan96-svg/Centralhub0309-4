@@ -3,21 +3,41 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
-const dashboardTables = ['orders', 'order_items', 'products', 'bank_transactions', 'expense_invoices', 'shipments', 'whatsapp_conversations', 'marketing_connections', 'security_events', 'security_heartbeats'] as const;
+// Published tables notify immediately; the foreground check also covers views and
+// imports that do not publish events. Keep one dashboard transport and poll timer.
+const dashboardTables = new Set(['orders', 'order_items', 'products', 'inventory_movements', 'bank_transactions', 'expense_invoices', 'shipments', 'whatsapp_contacts', 'whatsapp_conversations', 'whatsapp_messages', 'marketing_connections', 'system_notifications', 'financial_plan_projects', 'financial_plan_milestones', 'security_events', 'security_heartbeats']);
+export type DashboardConnection = 'connecting' | 'connected' | 'polling' | 'offline' | 'paused';
+export const DASHBOARD_POLL_MS = 30_000;
 
 export function useDashboardRealtime(onChange: () => void) {
-  const [status, setStatus] = useState<'connecting' | 'live' | 'offline'>('connecting');
+  const [status, setStatus] = useState<DashboardConnection>('connecting');
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const changed = () => { if (timer) clearTimeout(timer); timer = setTimeout(onChange, 450); };
-    let channel = supabase.channel(`dashboard-live-${Math.random().toString(36).slice(2)}`);
-    for (const table of dashboardTables) channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, changed);
-    channel.subscribe(value => setStatus(value === 'SUBSCRIBED' ? 'live' : value === 'CHANNEL_ERROR' || value === 'TIMED_OUT' ? 'offline' : 'connecting'));
-    const online = () => { setStatus('connecting'); onChange(); };
-    const offline = () => setStatus('offline');
-    window.addEventListener('online', online); window.addEventListener('offline', offline);
-    const fallback = window.setInterval(onChange, 60000);
-    return () => { if (timer) clearTimeout(timer); window.clearInterval(fallback); window.removeEventListener('online', online); window.removeEventListener('offline', offline); void supabase.removeChannel(channel); };
+    let disposed = false;
+    let subscribed = false;
+    const enabled = () => !disposed && navigator.onLine && document.visibilityState !== 'hidden';
+    const updateStatus = () => { if (!disposed) setStatus(!navigator.onLine ? 'offline' : document.visibilityState === 'hidden' ? 'paused' : subscribed ? 'connected' : 'polling'); };
+    const changed = () => { if (enabled()) onChange(); };
+    // A schema subscription receives only published, authorized records. It avoids
+    // binding failures for dashboard sources that are not in the publication.
+    const channel = supabase.channel(`dashboard-live-${Math.random().toString(36).slice(2)}`)
+      .on('postgres_changes', { event: '*', schema: 'public' }, payload => {
+        if (dashboardTables.has(payload.table)) changed();
+      })
+      .subscribe(value => {
+        if (disposed) return;
+        subscribed = value === 'SUBSCRIBED'; updateStatus();
+        if (subscribed) changed();
+      });
+    const resume = () => { updateStatus(); changed(); };
+    const fallback = window.setInterval(resume, DASHBOARD_POLL_MS);
+    window.addEventListener('online', resume); window.addEventListener('offline', updateStatus);
+    window.addEventListener('focus', resume); document.addEventListener('visibilitychange', resume);
+    updateStatus();
+    return () => {
+      disposed = true; window.clearInterval(fallback); void supabase.removeChannel(channel);
+      window.removeEventListener('online', resume); window.removeEventListener('offline', updateStatus);
+      window.removeEventListener('focus', resume); document.removeEventListener('visibilitychange', resume);
+    };
   }, [onChange]);
   return status;
 }
