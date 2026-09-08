@@ -1,5 +1,5 @@
-import CustomerJourneyClient from './CustomerJourneyClient';
+import { redirect } from 'next/navigation';
 
 export default function Page() {
-  return <CustomerJourneyClient params={{}} searchParams={{}} />;
+  redirect('/analytics#traffic-attribution');
 }
