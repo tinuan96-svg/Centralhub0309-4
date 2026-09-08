@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils/currency';
 import { EmptyState } from './Charts';
 
-export const MODEL_COLORS = ['#39e6ef', '#ea41ef', '#a58bff', '#4b91ff', '#74ecc9'];
+export const MODEL_COLORS = ['#39e6ef', '#38bdf8', '#93c5fd', '#4b91ff', '#74ecc9'];
 const readablePercent = (value: number | null) => value === null || !Number.isFinite(value) ? '—' : value.toFixed(1) + '%';
 
 export function GradientRing({ value, label, detail, segmented = false }: { value: number | null; label: string; detail: string; segmented?: boolean }) {
@@ -15,7 +15,7 @@ export function GradientRing({ value, label, detail, segmented = false }: { valu
   return <div className={'ch-model-ring ' + (segmented ? 'ch-model-ring-segmented' : '')}>
     <span className="ch-model-label">{label}</span>
     <svg viewBox="0 0 180 180" role="img" aria-label={label + ': ' + readablePercent(valid)}>
-      <defs><linearGradient id={id} x1="0" y1="1" x2="1" y2="0"><stop offset="0%" stopColor="#2997ff" /><stop offset="45%" stopColor="#874cff" /><stop offset="100%" stopColor="#ff42ec" /></linearGradient></defs>
+      <defs><linearGradient id={id} x1="0" y1="1" x2="1" y2="0"><stop offset="0%" stopColor="#2997ff" /><stop offset="45%" stopColor="#3b82f6" /><stop offset="100%" stopColor="#7dd3fc" /></linearGradient></defs>
       {segmented ? Array.from({ length: 80 }, (_, i) => {
         const a = (i / 80 * 360 - 90) * Math.PI / 180;
         return <line key={i} x1={90 + Math.cos(a) * 54} y1={90 + Math.sin(a) * 54} x2={90 + Math.cos(a) * 78} y2={90 + Math.sin(a) * 78} stroke={i < arc / 100 * 80 ? `url(#${id})` : 'var(--model-track)'} strokeWidth="3.7" />;
@@ -37,11 +37,11 @@ export function HealthRadar({ axes }: { axes: RateAxis[] }) {
   const polygon = (radius: number) => axes.map((_, i) => point(i, radius).join(',')).join(' ');
   return <div className="ch-model-radar">
     {known ? <svg viewBox="0 0 300 274" role="img" aria-label={'Operating ratios. ' + axes.map(a => a.label + ' ' + readablePercent(a.value)).join(', ')}>
-      <defs><radialGradient id={id}><stop stopColor="#fc4cec" stopOpacity=".9" /><stop offset="100%" stopColor="#a352ed" stopOpacity=".35" /></radialGradient></defs>
+      <defs><radialGradient id={id}><stop stopColor="#38bdf8" stopOpacity=".9" /><stop offset="100%" stopColor="#60a5fa" stopOpacity=".35" /></radialGradient></defs>
       {[22, 44, 66, 88].map(radius => <circle key={radius} cx="150" cy="142" r={radius} fill="none" stroke="var(--model-grid)" />)}
       <polygon points={polygon(88)} fill="none" stroke="var(--model-grid)" />
       {axes.map((a, i) => { const p = point(i, 88); const label = point(i, 110); return <g key={a.label}><line x1="150" y1="142" x2={p[0]} y2={p[1]} stroke="var(--model-grid)" /><text x={label[0]} y={label[1] + 4} textAnchor="middle" fontSize="16" fill="var(--model-muted)">{a.label}</text></g>; })}
-      <polygon points={axes.map((a, i) => point(i, Math.max(0, Math.min(100, a.value!)) / 100 * 88).join(',')).join(' ')} fill={`url(#${id})`} stroke="#e995fa" strokeWidth="2" />
+      <polygon points={axes.map((a, i) => point(i, Math.max(0, Math.min(100, a.value!)) / 100 * 88).join(',')).join(' ')} fill={`url(#${id})`} stroke="#bae6fd" strokeWidth="2" />
       {axes.map((a, i) => { const p = point(i, Math.max(0, Math.min(100, a.value!)) / 100 * 88); return <circle key={a.label} cx={p[0]} cy={p[1]} r="3" fill="#55e5ec"><title>{a.label + ': ' + readablePercent(a.value)}</title></circle>; })}
     </svg> : <EmptyState>More data is needed for a complete operating profile.</EmptyState>}
     <details className="ch-model-details"><summary>Operating ratios</summary><dl>{axes.map(a => <div key={a.label}><dt>{a.label} · {a.detail}</dt><dd>{readablePercent(a.value)}</dd></div>)}</dl><p className="ch-model-meta">Each axis runs from 0 to 100%. Stock is the current shared warehouse; other ratios use this reporting period.</p></details>
