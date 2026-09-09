@@ -17,6 +17,7 @@ const META_SCOPES = [
   'pages_show_list',
   'pages_read_engagement',
   'pages_manage_metadata',
+  'pages_messaging',
   'instagram_basic',
   'instagram_manage_messages',
 ] as const
