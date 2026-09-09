@@ -33,8 +33,10 @@ async function requireAdmin(req: Request) {
 }
 
 async function cryptoKey() {
-  const raw = unb64(secret('MARKETING_TOKEN_ENCRYPTION_KEY'))
-  if (raw.length !== 32) throw new Error('MARKETING_TOKEN_ENCRYPTION_KEY must decode to exactly 32 bytes')
+  const material = secret('MARKETING_TOKEN_ENCRYPTION_KEY')
+  let raw: Uint8Array
+  try { raw = unb64(material) } catch { raw = new Uint8Array() }
+  if (raw.length !== 32) raw = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(material)))
   return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt'])
 }
 async function encrypt(value: string) {
