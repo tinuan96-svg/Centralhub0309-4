@@ -62,6 +62,7 @@ export default function DashboardOverview({ refreshKey, appearance = 'dark', con
       <DashboardLiveStatus connection={connection} loading={loading} error={!!error} updatedAt={report?.loadedAt || null} />
       {error && <div role="alert" className="ch-note ch-error flex items-center gap-3"><CircleAlert size={20} /><span>{error}{report ? ' Showing the last successful report until the next update.' : ''}</span></div>}
       {loading && !report && <div role="status" aria-label="Loading dashboard" className="ch-kpi-grid">{Array.from({ length: 6 }, (_, i) => <div key={i} className="ch-panel h-28 animate-pulse"><div className="h-3 w-20 bg-slate-700/50 rounded mb-5" /><div className="h-7 w-28 bg-slate-700/50 rounded" /></div>)}</div>}
+      {!report && <div className="ch-grid-main"><SecurityPulse selectedStoreId={selectedStoreId} compact /></div>}
       {report && <div className="ch-visual-surface">
         <p className="ch-console-scope">{report.start.toLocaleDateString('en-GB')} – {report.end.toLocaleDateString('en-GB')} · {selectedStoreId === 'all' ? 'All stores' : stores[0]?.name || 'Selected store'}</p>
         <DashboardWorkspace widgets={dashboardWidgets} />
