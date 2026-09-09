@@ -2,7 +2,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-google-pipeline-secret',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
@@ -32,15 +32,20 @@ function dateValue(value: unknown) {
   return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null
 }
 
-async function requireAdmin(req: Request) {
+async function requireAccess(req: Request) {
+  const db = admin()
+  const pipeline = req.headers.get('x-google-pipeline-secret')?.trim()
+  if (pipeline) {
+    const { data, error } = await db.rpc('verify_integration_cron_secret', { p_name: 'google_data_pipeline_cron', p_secret: pipeline })
+    if (!error && data === true) return { db, mode: 'pipeline' as const }
+  }
   const token = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim()
   if (!token) throw new Error('Authorization required')
-  const db = admin()
   const { data: auth, error } = await db.auth.getUser(token)
   if (error || !auth.user) throw new Error('Invalid session')
   const { data: profile } = await db.from('user_profiles').select('profile_role,is_active').eq('id', auth.user.id).maybeSingle()
   if (profile?.profile_role !== 'admin' || profile?.is_active === false) throw new Error('Admin access required')
-  return db
+  return { db, mode: 'admin' as const }
 }
 
 async function reconcile(db: any, storeId: string, date: string) {
@@ -154,14 +159,24 @@ async function reconcile(db: any, storeId: string, date: string) {
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
   try {
-    const db = await requireAdmin(req)
+    const { db, mode } = await requireAccess(req)
     const body = await req.json().catch(() => ({}))
-    const storeId = String(body.storeId || '').trim()
-    if (!storeId) throw new Error('storeId is required')
     const requestedDate = dateValue(body.date)
     const date = requestedDate || new Date(Date.now() - 86400000).toISOString().slice(0, 10)
-    const result = await reconcile(db, storeId, date)
-    return json({ success: true, result })
+    if (body.action === 'cron') {
+      if (mode !== 'pipeline') throw new Error('Pipeline authorization required')
+      const { data: configs, error } = await db.from('analytics_store_configs').select('store_id').not('ga4_property_id', 'is', null)
+      if (error) throw error
+      const results = []
+      for (const config of configs || []) {
+        try { results.push({ storeId: config.store_id, success: true, result: await reconcile(db, config.store_id, date) }) }
+        catch (error) { results.push({ storeId: config.store_id, success: false, error: error instanceof Error ? error.message : 'Reconciliation failed' }) }
+      }
+      return json({ success: results.every(item => item.success), date, results })
+    }
+    const storeId = String(body.storeId || '').trim()
+    if (!storeId) throw new Error('storeId is required')
+    return json({ success: true, result: await reconcile(db, storeId, date) })
   } catch (error) {
     console.error('[analytics-reconcile]', error)
     return json({ success: false, error: error instanceof Error ? error.message : 'Analytics reconciliation failed' }, 400)
