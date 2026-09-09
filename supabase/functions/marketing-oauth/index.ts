@@ -197,7 +197,9 @@ async function start(req: Request) {
 }
 
 async function callback(req: Request) {
-  const u = new URL(req.url), state = u.searchParams.get('state'), code = u.searchParams.get('code'), err = u.searchParams.get('error_description') || u.searchParams.get('error'), appUrl = secret('MARKETING_APP_URL').replace(/\/$/, '')
+  const u = new URL(req.url)
+  const state = u.searchParams.get('state'), code = u.searchParams.get('code'), err = u.searchParams.get('error_description') || u.searchParams.get('error')
+  const appUrl = String(Deno.env.get('MARKETING_APP_URL') || 'https://centralhub.network').trim().replace(/\/$/, '')
   const finish = (status: string, message?: string, storeId?: string) => {
     const target = new URL(`${appUrl}/marketing/integrations`); target.searchParams.set('oauth', status); if (storeId) target.searchParams.set('store_id', storeId); if (message) target.searchParams.set('message', message.slice(0, 180))
     return new Response(null, { status: 302, headers: { Location: target.toString() } })
