@@ -25,6 +25,11 @@ function humanName(metaName: string) {
     .map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ')
 }
 
+function templateVersion(name: string) {
+  const match = String(name || '').match(/_v(\d+)$/i)
+  return match ? Number(match[1]) : 0
+}
+
 type KnownMapping = {
   eventKey: string
   variables: string[]
@@ -34,12 +39,19 @@ type KnownMapping = {
 
 const knownMappings: Record<string, KnownMapping> = {
   order_confirm_v1: { eventKey: 'order.confirmed', variables: ['customer_name', 'order_number'], description: 'Order Confirmed', orderStatus: 'confirmed' },
+  order_confirm_v2: { eventKey: 'order.confirmed', variables: ['customer_name', 'order_number'], description: 'Order Confirmed', orderStatus: 'confirmed' },
   shipment_booked_v1: { eventKey: 'order.shipment_booked', variables: ['order_number', 'tracking_url'], description: 'Shipment Booked', orderStatus: 'shipment_booked' },
+  shipment_booked_v2: { eventKey: 'order.shipment_booked', variables: ['order_number', 'tracking_url'], description: 'Shipment Booked', orderStatus: 'shipment_booked' },
   order_shipped_v1: { eventKey: 'order.shipped', variables: ['order_number', 'tracking_url'], description: 'Order Shipped', orderStatus: 'shipped' },
+  order_shipped_v2: { eventKey: 'order.shipped', variables: ['order_number', 'tracking_url'], description: 'Order Shipped', orderStatus: 'shipped' },
   order_out_for_delivery_v1: { eventKey: 'order.out_for_delivery', variables: ['order_number', 'tracking_url'], description: 'Out for Delivery', orderStatus: 'out_for_delivery' },
+  order_out_for_delivery_v2: { eventKey: 'order.out_for_delivery', variables: ['order_number', 'tracking_url'], description: 'Out for Delivery', orderStatus: 'out_for_delivery' },
   order_delivered_v1: { eventKey: 'order.delivered', variables: ['customer_name', 'order_number'], description: 'Order Delivered', orderStatus: 'delivered' },
+  order_delivered_v2: { eventKey: 'order.delivered', variables: ['customer_name', 'order_number'], description: 'Order Delivered', orderStatus: 'delivered' },
   order_cancelled_v1: { eventKey: 'order.cancelled', variables: ['customer_name', 'order_number'], description: 'Order Cancelled', orderStatus: 'cancelled' },
+  order_cancelled_v2: { eventKey: 'order.cancelled', variables: ['customer_name', 'order_number'], description: 'Order Cancelled', orderStatus: 'cancelled' },
   order_returned_v1: { eventKey: 'order.returned', variables: ['customer_name', 'order_number'], description: 'Order Returned', orderStatus: 'returned' },
+  order_returned_v2: { eventKey: 'order.returned', variables: ['customer_name', 'order_number'], description: 'Order Returned', orderStatus: 'returned' },
   order_processing_v1: { eventKey: 'order.processing', variables: ['customer_name', 'order_number'], description: 'Order Processing', orderStatus: 'processing' },
   order_refunded_v1: { eventKey: 'order.refunded', variables: ['customer_name', 'order_number'], description: 'Order Refunded', orderStatus: 'refunded' },
 }
@@ -144,62 +156,75 @@ serve(async (req) => {
           registryCreated++
         }
 
-        // Do not replace a working template mapping with a new template until
-        // Meta has approved it. This keeps the existing fallback live during review.
         if (known && approved) {
           const { data: registry } = await supabase.from('whatsapp_template_registry')
-            .select('id')
+            .select('id,meta_template_name')
             .eq('store_id', channel.store_id)
             .eq('meta_template_name', metaName)
             .eq('language', language)
             .maybeSingle()
+
           if (registry) {
             const { data: existingMapping } = await supabase.from('whatsapp_event_template_mappings')
-              .select('id')
+              .select('id,template:whatsapp_template_registry(meta_template_name)')
               .eq('store_id', channel.store_id)
               .eq('event_key', known.eventKey)
               .maybeSingle()
-            if (existingMapping) {
-              const { error } = await supabase.from('whatsapp_event_template_mappings').update({
-                template_id: registry.id,
-                channel_id: channelId,
-                variables: known.variables,
-                description: known.description,
-                enabled: true,
-                customer_visible: true,
-                updated_at: new Date().toISOString(),
-              }).eq('id', existingMapping.id)
-              if (error) throw error
-            } else {
-              const { error } = await supabase.from('whatsapp_event_template_mappings').insert({
-                store_id: channel.store_id,
-                event_key: known.eventKey,
-                event_type: 'TRANSACTIONAL',
-                event_source: 'ORDER_SERVICE',
-                description: known.description,
-                template_id: registry.id,
-                channel_id: channelId,
-                enabled: true,
-                customer_visible: true,
-                requires_opt_in: false,
-                variables: known.variables,
-              })
-              if (error) throw error
-            }
-            mappingsLinked++
 
-            if (known.orderStatus) {
-              const { error: ruleError, count } = await supabase.from('order_whatsapp_template_rules')
-                .update({ template_name: metaName, language, enabled: true, updated_at: new Date().toISOString() }, { count: 'exact' })
-                .eq('store_id', channel.store_id)
-                .eq('order_status', known.orderStatus)
-              if (ruleError) throw ruleError
-              rulesPromoted += count || 0
+            const currentTemplateName = String(existingMapping?.template?.meta_template_name || '')
+            const canPromote = !currentTemplateName || templateVersion(metaName) >= templateVersion(currentTemplateName)
+
+            if (canPromote) {
+              if (existingMapping) {
+                const { error } = await supabase.from('whatsapp_event_template_mappings').update({
+                  template_id: registry.id,
+                  channel_id: channelId,
+                  variables: known.variables,
+                  description: known.description,
+                  enabled: true,
+                  customer_visible: true,
+                  updated_at: new Date().toISOString(),
+                }).eq('id', existingMapping.id)
+                if (error) throw error
+              } else {
+                const { error } = await supabase.from('whatsapp_event_template_mappings').insert({
+                  store_id: channel.store_id,
+                  event_key: known.eventKey,
+                  event_type: 'TRANSACTIONAL',
+                  event_source: 'ORDER_SERVICE',
+                  description: known.description,
+                  template_id: registry.id,
+                  channel_id: channelId,
+                  enabled: true,
+                  customer_visible: true,
+                  requires_opt_in: false,
+                  variables: known.variables,
+                })
+                if (error) throw error
+              }
+              mappingsLinked++
+
+              if (known.orderStatus) {
+                const { data: currentRule } = await supabase.from('order_whatsapp_template_rules')
+                  .select('template_name')
+                  .eq('store_id', channel.store_id)
+                  .eq('order_status', known.orderStatus)
+                  .maybeSingle()
+                const currentRuleTemplate = String(currentRule?.template_name || '')
+                if (!currentRuleTemplate || templateVersion(metaName) >= templateVersion(currentRuleTemplate)) {
+                  const { error: ruleError, count } = await supabase.from('order_whatsapp_template_rules')
+                    .update({ template_name: metaName, language, enabled: true, updated_at: new Date().toISOString() }, { count: 'exact' })
+                    .eq('store_id', channel.store_id)
+                    .eq('order_status', known.orderStatus)
+                  if (ruleError) throw ruleError
+                  rulesPromoted += count || 0
+                }
+              }
             }
           }
         }
 
-        details.push({ name: metaName, language, status: metaTmpl.status, synced: true, linked_event: known?.eventKey || null, promoted: Boolean(known && approved) })
+        details.push({ name: metaName, language, status: metaTmpl.status, synced: true, linked_event: known?.eventKey || null })
       } catch (e: any) {
         errors++
         details.push({ name: metaTmpl?.name || null, synced: false, error: e?.message || String(e) })
