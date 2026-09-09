@@ -13,6 +13,8 @@ const DHL_BASE = Deno.env.get("DHL_ENV") === "uat"
 const DHL_CLIENT_ID = Deno.env.get("DHL_CLIENT_ID") || "";
 const DHL_CLIENT_SECRET = Deno.env.get("DHL_CLIENT_SECRET") || "";
 const DHL_TRACKING_KEY = Deno.env.get("DHL_TRACKING_KEY") || "";
+const TRACKING_TEMPLATE_NAME = "delivery_tracking_update_v1";
+const CUSTOMER_EVENT_MAX_AGE_MS = 60 * 60 * 1000;
 
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
@@ -37,6 +39,32 @@ const shipmentToOrderStatus: Record<string, string> = {
 function mapStatus(value: string | null | undefined) {
   const key = String(value || "").toUpperCase();
   return statusMap[key] || "in_transit";
+}
+
+function shouldQueueCustomerTrackingEvent(event: TrackingEvent) {
+  const description = String(event.description || "").replace(/\s+/g, " ").trim();
+  const text = description.toLowerCase();
+  if (!description) return false;
+
+  const eventTime = new Date(event.timestamp).getTime();
+  if (!Number.isFinite(eventTime) || Math.abs(Date.now() - eventTime) > CUSTOMER_EVENT_MAX_AGE_MS) return false;
+
+  // Dedicated lifecycle templates already cover these milestones. Keep the
+  // carrier-event template for the useful scans between them so customers do
+  // not receive two WhatsApp messages for the same milestone.
+  if (
+    text.includes("shipment created and ready for pickup") ||
+    text.includes("external shipment recorded manually") ||
+    text.includes("notification for delivery has been sent") ||
+    text === "the parcel is in transit" ||
+    text.includes("out for delivery") ||
+    text.includes("successfully delivered") ||
+    text === "the shipment has been collected"
+  ) return false;
+
+  const status = String(event.status || "").toLowerCase();
+  if (["out_for_delivery", "delivered"].includes(status)) return false;
+  return true;
 }
 
 async function getAccessToken() {
@@ -131,7 +159,7 @@ Deno.serve(async (req: Request) => {
 
     const results: any[] = [];
     for (const row of shipments || []) {
-      const result: any = { id: row.id, tracking_number: row.tracking_number, old_status: row.status, new_status: row.status, changed: false, events_added: 0 };
+      const result: any = { id: row.id, tracking_number: row.tracking_number, old_status: row.status, new_status: row.status, changed: false, events_added: 0, whatsapp_events_queued: 0 };
       try {
         const tracking = await trackShipment(row.tracking_number);
         if (!tracking.ok) {
@@ -145,8 +173,20 @@ Deno.serve(async (req: Request) => {
         for (const event of tracking.events || []) {
           const { data: existing } = await db.from("shipment_events").select("id").eq("shipment_id", row.id).eq("event_time", event.timestamp).limit(1).maybeSingle();
           if (!existing) {
-            const { error } = await db.from("shipment_events").insert({ shipment_id: row.id, status: event.status, location: event.location || null, description: event.description, event_time: event.timestamp });
-            if (!error) result.events_added += 1;
+            const queueWhatsApp = shouldQueueCustomerTrackingEvent(event);
+            const { error } = await db.from("shipment_events").insert({
+              shipment_id: row.id,
+              status: event.status,
+              location: event.location || null,
+              description: event.description,
+              event_time: event.timestamp,
+              whatsapp_status: queueWhatsApp ? "pending" : null,
+              whatsapp_template_name: queueWhatsApp ? TRACKING_TEMPLATE_NAME : null,
+            });
+            if (!error) {
+              result.events_added += 1;
+              if (queueWhatsApp) result.whatsapp_events_queued += 1;
+            }
           }
         }
 
@@ -203,7 +243,14 @@ Deno.serve(async (req: Request) => {
       results.push(result);
     }
 
-    return new Response(JSON.stringify({ success: true, processed: results.length, status_changes: results.filter((r) => r.changed).length, total_events_added: results.reduce((sum, r) => sum + Number(r.events_added || 0), 0), details: results }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({
+      success: true,
+      processed: results.length,
+      status_changes: results.filter((r) => r.changed).length,
+      total_events_added: results.reduce((sum, r) => sum + Number(r.events_added || 0), 0),
+      total_whatsapp_events_queued: results.reduce((sum, r) => sum + Number(r.whatsapp_events_queued || 0), 0),
+      details: results,
+    }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (error) {
     return new Response(JSON.stringify({ success: false, error: error instanceof Error ? error.message : "tracking_worker_failed" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
