@@ -3,7 +3,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey, x-whatsapp-retry-secret",
 };
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
@@ -11,13 +11,54 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
   headers: { ...corsHeaders, "Content-Type": "application/json" },
 });
 
+const terminalNotificationStatuses = new Set(["sent", "delivered", "read", "superseded"]);
+
+async function authorize(req: Request, db: any, serviceRoleKey: string) {
+  const cronSecret = String(req.headers.get("x-whatsapp-retry-secret") || "").trim();
+  if (cronSecret) {
+    const { data, error } = await db.rpc("verify_integration_cron_secret", {
+      p_name: "whatsapp_retry_cron_secret",
+      p_secret: cronSecret,
+    });
+    if (!error && data === true) return { ok: true, mode: "cron" };
+  }
+
+  const auth = String(req.headers.get("authorization") || "");
+  const token = auth.replace(/^Bearer\s+/i, "").trim();
+  if (!token) return { ok: false, mode: "none" };
+  if (token === serviceRoleKey) return { ok: true, mode: "service_role" };
+
+  const { data: userData, error: userError } = await db.auth.getUser(token);
+  const user = userData?.user;
+  if (userError || !user) return { ok: false, mode: "invalid_user" };
+
+  const { data: profile } = await db
+    .from("user_profiles")
+    .select("profile_role,is_active")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profile?.profile_role === "admin" && profile?.is_active !== false) {
+    return { ok: true, mode: "admin" };
+  }
+  return { ok: false, mode: "forbidden" };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
+  if (!["GET", "POST"].includes(req.method)) return json({ error: "Method not allowed" }, 405);
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-    const supabase = createClient(supabaseUrl, serviceRoleKey);
+    if (!supabaseUrl || !serviceRoleKey) return json({ error: "Supabase service configuration missing" }, 500);
+
+    const supabase = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
+    const access = await authorize(req, supabase, serviceRoleKey);
+    if (!access.ok) return json({ error: "Unauthorized" }, 401);
 
     const { data: pendingRetries, error: fetchError } = await supabase
       .from("whatsapp_notification_queue")
@@ -28,7 +69,9 @@ Deno.serve(async (req: Request) => {
       .limit(20);
 
     if (fetchError) return json({ error: fetchError.message }, 500);
-    if (!pendingRetries?.length) return json({ processed: 0, message: "No pending retries" });
+    if (!pendingRetries?.length) {
+      return json({ processed: 0, message: "No pending retries", auth_mode: access.mode });
+    }
 
     let processed = 0;
     let succeeded = 0;
@@ -46,7 +89,7 @@ Deno.serve(async (req: Request) => {
 
       const { data: notification, error: notificationError } = await supabase
         .from("order_whatsapp_notifications")
-        .select("id, store_id, order_id, customer_phone, event_key, template_name, status")
+        .select("id, store_id, order_id, customer_phone, phone_number, event_key, order_status, template_name, language, status")
         .eq("id", retry.notification_id)
         .maybeSingle();
 
@@ -73,60 +116,107 @@ Deno.serve(async (req: Request) => {
         continue;
       }
 
-      if (notification.status === "sent") {
+      if (terminalNotificationStatuses.has(String(notification.status || "").toLowerCase())) {
         await supabase.from("whatsapp_notification_queue").update({
           status: "completed",
+          last_error: null,
           updated_at: new Date().toISOString(),
         }).eq("id", retry.id);
         processed++;
         continue;
       }
 
-      const { data: mapping, error: mappingError } = await supabase
-        .from("whatsapp_event_template_mappings")
-        .select("template:whatsapp_template_registry(meta_template_name, language, variables)")
-        .eq("store_id", notification.store_id)
-        .eq("event_key", notification.event_key)
-        .eq("enabled", true)
-        .maybeSingle();
+      const customerPhone = String(notification.customer_phone || notification.phone_number || "").trim();
+      const eventKey = String(
+        notification.event_key || (notification.order_status ? `order.${notification.order_status}` : "")
+      ).trim();
 
-      if (mappingError || !mapping?.template) {
+      if (!customerPhone) {
         await supabase.from("whatsapp_notification_queue").update({
           status: "failed",
-          last_error: mappingError?.message || "Template mapping not found",
+          last_error: "Customer phone missing",
           updated_at: new Date().toISOString(),
         }).eq("id", retry.id);
+        await supabase.from("order_whatsapp_notifications").update({
+          status: "failed",
+          error_message: "Customer phone missing",
+          updated_at: new Date().toISOString(),
+        }).eq("id", notification.id);
         failed++;
         processed++;
         continue;
       }
 
-      const template = mapping.template as any;
+      let template: any = null;
+
+      if (eventKey) {
+        const { data: mapping } = await supabase
+          .from("whatsapp_event_template_mappings")
+          .select("template:whatsapp_template_registry(meta_template_name, language, variables, status)")
+          .eq("store_id", notification.store_id)
+          .eq("event_key", eventKey)
+          .eq("enabled", true)
+          .maybeSingle();
+        template = mapping?.template || null;
+      }
+
+      // Compatibility fallback for notifications created by an older trigger.
+      if (!template && notification.template_name) {
+        const { data: registryTemplate } = await supabase
+          .from("whatsapp_template_registry")
+          .select("meta_template_name, language, variables, status")
+          .eq("store_id", notification.store_id)
+          .eq("meta_template_name", notification.template_name)
+          .maybeSingle();
+        template = registryTemplate || null;
+      }
+
+      if (!template || !["active", "approved"].includes(String(template.status || "").toLowerCase())) {
+        const reason = "Active WhatsApp template mapping not found";
+        await supabase.from("whatsapp_notification_queue").update({
+          status: "failed",
+          last_error: reason,
+          updated_at: new Date().toISOString(),
+        }).eq("id", retry.id);
+        await supabase.from("order_whatsapp_notifications").update({
+          status: "failed",
+          error_message: reason,
+          updated_at: new Date().toISOString(),
+        }).eq("id", notification.id);
+        failed++;
+        processed++;
+        continue;
+      }
+
       const { data: order, error: orderError } = await supabase
         .from("orders")
-        .select("customer_name, order_number, tracking_number, carrier")
+        .select("customer_name, order_number, tracking_number, tracking_url, carrier")
         .eq("id", notification.order_id)
         .maybeSingle();
 
       if (orderError || !order) {
+        const reason = orderError?.message || "Order not found";
         await supabase.from("whatsapp_notification_queue").update({
           status: "failed",
-          last_error: orderError?.message || "Order not found",
+          last_error: reason,
           updated_at: new Date().toISOString(),
         }).eq("id", retry.id);
         failed++;
         processed++;
         continue;
       }
+
+      const trackingUrl = String(order.tracking_url || "").trim() ||
+        (/dhl/i.test(String(order.carrier || "")) && order.tracking_number
+          ? `https://www.dhl.com/en/express/tracking.html?AWB=${order.tracking_number}`
+          : "");
 
       const templateVars = Array.isArray(template.variables) ? template.variables : [];
       const varMap: Record<string, string> = {
         customer_name: order.customer_name || "",
         order_number: order.order_number || "",
         tracking_number: order.tracking_number || "",
-        tracking_url: order.carrier === "DHL" && order.tracking_number
-          ? `https://www.dhl.com/en/express/tracking.html?AWB=${order.tracking_number}`
-          : "",
+        tracking_url: trackingUrl,
       };
       const parameters = templateVars.map((v: string) => ({
         type: "text",
@@ -134,11 +224,11 @@ Deno.serve(async (req: Request) => {
       }));
 
       const sendPayload = {
-        to: notification.customer_phone,
+        to: customerPhone,
         type: "template",
         template: {
           name: template.meta_template_name,
-          language: template.language || "en_GB",
+          language: template.language || notification.language || "en_GB",
           components: parameters.length ? [{ type: "body", parameters }] : [],
         },
         storeId: notification.store_id,
@@ -149,8 +239,6 @@ Deno.serve(async (req: Request) => {
       let sendError = "";
 
       try {
-        // Route retries through the canonical sender so token, WABA, phone ID,
-        // Meta error handling, notification state and outbound logging cannot drift.
         const response = await fetch(`${supabaseUrl}/functions/v1/whatsapp-send`, {
           method: "POST",
           headers: {
@@ -182,6 +270,7 @@ Deno.serve(async (req: Request) => {
         const permanent = /invalid|unauthorized|forbidden|not found|template|recipient|authentication|expired|(#?190)|credential|phone number/i.test(sendError);
         const newRetryCount = retry.retry_count + 1;
         const shouldStop = permanent || newRetryCount >= retry.max_retries;
+
         await supabase.from("whatsapp_notification_queue").update({
           retry_count: newRetryCount,
           status: shouldStop ? (permanent ? "failed" : "exhausted") : "pending",
@@ -190,22 +279,18 @@ Deno.serve(async (req: Request) => {
           updated_at: new Date().toISOString(),
         }).eq("id", retry.id);
 
-        // whatsapp-send normally updates this, but make sure retry state is also
-        // persisted when the sender itself is unavailable.
-        if (!sendSuccess) {
-          await supabase.from("order_whatsapp_notifications").update({
-            status: shouldStop ? "failed" : "sending",
-            error_message: sendError,
-            updated_at: new Date().toISOString(),
-          }).eq("id", notification.id).neq("status", "sent");
-        }
+        await supabase.from("order_whatsapp_notifications").update({
+          status: shouldStop ? "failed" : "sending",
+          error_message: sendError,
+          updated_at: new Date().toISOString(),
+        }).eq("id", notification.id).in("status", ["queued", "sending", "failed"]);
         failed++;
       }
 
       processed++;
     }
 
-    return json({ processed, succeeded, failed });
+    return json({ processed, succeeded, failed, auth_mode: access.mode });
   } catch (error: any) {
     return json({ error: error?.message || String(error) }, 500);
   }
