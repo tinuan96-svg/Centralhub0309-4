@@ -2,14 +2,17 @@ import { supabase } from '../supabase';
 
 export interface PackingMaterial {
   id: string;
+  sku?: string | null;
   name: string;
   category: 'box' | 'filler' | 'tape' | 'label' | 'other';
   size: string | null;
   supplier_name: string | null;
   purchase_cost_per_unit: number;
-  selling_cost_per_unit: number | null;
+  pack_cost_net?: number;
+  vat_rate?: number;
   opening_stock: number;
   current_stock: number;
+  used_stock: number;
   minimum_stock_alert: number;
   unit: string;
   is_active: boolean;
@@ -24,7 +27,6 @@ export interface PackingMaterial {
   units_per_pack?: number | null;
   usage_capacity?: number | null;
   usage_capacity_unit?: string | null;
-  sku?: string;
 }
 
 export interface PackingMaterialTransaction {
@@ -32,12 +34,11 @@ export interface PackingMaterialTransaction {
   material_id: string;
   type: 'IN' | 'OUT' | 'ADJUSTMENT';
   quantity: number;
-  reference_type: 'order' | 'purchase_order' | 'manual' | null;
+  reference_type: 'invoice' | 'order' | 'purchase_order' | 'manual' | null;
   reference_id: string | null;
   notes: string | null;
-  created_by: string | null;
   created_at: string;
-  packaging_materials?: { name: string } | null;
+  packing_materials?: { name: string } | null;
 }
 
 export interface PackingPurchaseOrder {
@@ -45,7 +46,7 @@ export interface PackingPurchaseOrder {
   po_number: string;
   supplier_name: string;
   supplier_id?: string | null;
-  status: 'draft' | 'ordered' | 'received' | 'cancelled';
+  status: string;
   total_cost: number;
   order_date: string | null;
   expected_delivery_date: string | null;
@@ -56,140 +57,114 @@ export interface PackingPurchaseOrder {
   updated_at: string;
 }
 
-type CanonicalPackagingMaterial = {
-  id: string;
-  sku: string;
-  name: string;
-  category: string;
-  dimensions: string | null;
-  unit_type: string;
-  units_per_pack: number;
-  latest_pack_cost_net: number | null;
-  latest_unit_cost_net: number | null;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-  usage_capacity: number | null;
-  usage_capacity_unit: string | null;
-};
-
-const asNumber = (value: unknown, fallback = 0) => {
+const n = (value: unknown, fallback = 0) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
-const toPackingMaterial = (
-  row: CanonicalPackagingMaterial,
-  openingStock = 0,
-  currentStock = 0,
-): PackingMaterial => {
-  const supportedCategories = new Set(['box', 'filler', 'tape', 'label', 'other']);
-  const category = supportedCategories.has(row.category) ? row.category : 'other';
-  const unitsPerPack = asNumber(row.units_per_pack, 1);
-  const packCost = row.latest_pack_cost_net ?? null;
-  const unitCost = row.latest_unit_cost_net ?? (
-    packCost == null ? null : packCost / Math.max(unitsPerPack, 1)
-  );
-
-  return {
-    id: row.id,
-    sku: row.sku,
-    name: row.name,
-    category: category as PackingMaterial['category'],
-    size: row.dimensions,
-    supplier_name: null,
-    purchase_cost_per_unit: asNumber(unitCost),
-    selling_cost_per_unit: null,
-    opening_stock: openingStock,
-    current_stock: currentStock,
-    minimum_stock_alert: 0,
-    unit: row.unit_type || 'unit',
-    is_active: Boolean(row.is_active),
-    internal_length: null,
-    internal_width: null,
-    internal_height: null,
-    max_weight: null,
-    volume_cm3: null,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-    unit_type: row.unit_type,
-    units_per_pack: unitsPerPack,
-    usage_capacity: row.usage_capacity,
-    usage_capacity_unit: row.usage_capacity_unit,
-  };
+const categoryOf = (value: unknown): PackingMaterial['category'] => {
+  const raw = String(value || '').toLowerCase();
+  if (raw === 'box' || raw === 'boxes') return 'box';
+  if (raw === 'tape') return 'tape';
+  if (raw === 'label' || raw === 'labels') return 'label';
+  if (raw.includes('fill') || raw.includes('bubble') || raw.includes('protect')) return 'filler';
+  return 'other';
 };
 
-const totalsByMaterial = (rows: Array<{ material_id: string; quantity: unknown }>) =>
-  rows.reduce<Record<string, number>>((totals, row) => {
-    totals[row.material_id] = (totals[row.material_id] || 0) + asNumber(row.quantity);
-    return totals;
-  }, {});
+const parseDimensions = (category: PackingMaterial['category'], value: unknown) => {
+  if (category !== 'box') return { length: null, width: null, height: null, volume: null };
+  const text = String(value || '');
+  const values = [...text.matchAll(/([0-9]+(?:\.[0-9]+)?)/g)].map((m) => Number(m[1]));
+  if (values.length < 3) return { length: null, width: null, height: null, volume: null };
+  let [a, b, c] = values.slice(0, 3);
+  if (/\bmm\b/i.test(text)) [a, b, c] = [a / 10, b / 10, c / 10];
+  else if (/\bin(?:ch(?:es)?)?\b/i.test(text)) [a, b, c] = [a * 2.54, b * 2.54, c * 2.54];
+  return { length: a, width: b, height: c, volume: a * b * c };
+};
 
 export class PackingMaterialService {
   static async getAllMaterials(): Promise<PackingMaterial[]> {
-    const [{ data, error }, { data: purchases }, { data: consumed }] = await Promise.all([
-      supabase
-        .from('packaging_materials')
-        .select('id,sku,name,category,dimensions,unit_type,units_per_pack,latest_pack_cost_net,latest_unit_cost_net,is_active,created_at,updated_at,usage_capacity,usage_capacity_unit')
-        .order('name', { ascending: true }),
-      supabase
-        .from('packaging_material_purchase_items')
-        .select('material_id,units_received'),
-      supabase
-        .from('order_packing_items')
-        .select('material_id,quantity_used'),
+    const [materialsResult, purchasesResult, allocationsResult, creditorsResult] = await Promise.all([
+      supabase.from('packaging_materials').select('id,sku,name,category,dimensions,unit_type,units_per_pack,latest_pack_cost_net,latest_unit_cost_net,vat_rate,creditor_id,is_active,created_at,updated_at,unit_weight_kg,usage_capacity,usage_capacity_unit').order('name'),
+      supabase.from('packaging_material_purchase_items').select('material_id,units_received'),
+      supabase.from('order_packaging_allocations').select('material_id,quantity_used'),
+      supabase.from('finance_creditors').select('id,name'),
     ]);
 
-    if (error) {
-      console.error('[PackingService] Error fetching materials:', error);
-      return [];
-    }
+    if (materialsResult.error) throw new Error(`Packaging materials could not be loaded: ${materialsResult.error.message}`);
+    if (purchasesResult.error) throw new Error(`Packaging purchases could not be loaded: ${purchasesResult.error.message}`);
+    if (allocationsResult.error) throw new Error(`Packaging usage could not be loaded: ${allocationsResult.error.message}`);
 
-    const purchasedTotals = totalsByMaterial(
-      (purchases || []).map((row: any) => ({ material_id: row.material_id, quantity: row.units_received })),
-    );
-    const consumedTotals = totalsByMaterial(
-      (consumed || []).map((row: any) => ({ material_id: row.material_id, quantity: row.quantity_used })),
-    );
+    const purchased = new Map<string, number>();
+    for (const row of purchasesResult.data || []) purchased.set(row.material_id, (purchased.get(row.material_id) || 0) + n(row.units_received));
+    const used = new Map<string, number>();
+    for (const row of allocationsResult.data || []) used.set(row.material_id, (used.get(row.material_id) || 0) + n(row.quantity_used));
+    const creditors = new Map((creditorsResult.data || []).map((row: any) => [row.id, row.name]));
 
-    return ((data || []) as CanonicalPackagingMaterial[]).map((row) => {
-      const openingStock = purchasedTotals[row.id] || 0;
-      const currentStock = Math.max(0, openingStock - (consumedTotals[row.id] || 0));
-      return toPackingMaterial(row, openingStock, currentStock);
+    return (materialsResult.data || []).map((row: any) => {
+      const category = categoryOf(row.category);
+      const dims = parseDimensions(category, row.dimensions);
+      const openingStock = purchased.get(row.id) || 0;
+      const usedStock = used.get(row.id) || 0;
+      const unitsPerPack = Math.max(1, n(row.units_per_pack, 1));
+      const unitCost = row.latest_unit_cost_net == null
+        ? (row.latest_pack_cost_net == null ? 0 : n(row.latest_pack_cost_net) / unitsPerPack)
+        : n(row.latest_unit_cost_net);
+      return {
+        id: row.id,
+        sku: row.sku,
+        name: row.name,
+        category,
+        size: row.dimensions,
+        supplier_name: row.creditor_id ? creditors.get(row.creditor_id) || null : null,
+        purchase_cost_per_unit: unitCost,
+        pack_cost_net: row.latest_pack_cost_net == null ? undefined : n(row.latest_pack_cost_net),
+        vat_rate: n(row.vat_rate, 20),
+        opening_stock: openingStock,
+        used_stock: usedStock,
+        current_stock: Math.max(0, openingStock - usedStock),
+        minimum_stock_alert: 0,
+        unit: row.unit_type || 'unit',
+        is_active: row.is_active !== false,
+        internal_length: dims.length,
+        internal_width: dims.width,
+        internal_height: dims.height,
+        max_weight: null,
+        volume_cm3: dims.volume,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        unit_type: row.unit_type,
+        units_per_pack: unitsPerPack,
+        usage_capacity: row.usage_capacity == null ? null : n(row.usage_capacity),
+        usage_capacity_unit: row.usage_capacity_unit,
+      } as PackingMaterial;
     });
   }
 
   static async getMaterialById(id: string): Promise<PackingMaterial | null> {
-    const { data, error } = await supabase
-      .from('packaging_materials')
-      .select('id,sku,name,category,dimensions,unit_type,units_per_pack,latest_pack_cost_net,latest_unit_cost_net,is_active,created_at,updated_at,usage_capacity,usage_capacity_unit')
-      .eq('id', id)
-      .maybeSingle();
-
-    if (error || !data) return null;
-    return toPackingMaterial(data as CanonicalPackagingMaterial);
+    const rows = await this.getAllMaterials();
+    return rows.find((row) => row.id === id) || null;
   }
 
   static async createMaterial(material: Partial<PackingMaterial>): Promise<{ success: boolean; data?: PackingMaterial; error?: string }> {
+    const name = String(material.name || '').trim();
+    if (!name) return { success: false, error: 'Material name is required.' };
     const payload = {
-      sku: material.sku || `CH-PKG-${Date.now()}`,
-      name: material.name || 'Packaging material',
+      sku: String(material.sku || '').trim() || `CH-PKG-${Date.now()}`,
+      name,
       category: material.category || 'other',
       dimensions: material.size || null,
       unit_type: material.unit || 'unit',
-      units_per_pack: material.units_per_pack || 1,
-      latest_unit_cost_net: material.purchase_cost_per_unit ?? null,
+      units_per_pack: Math.max(1, n(material.units_per_pack, 1)),
+      latest_pack_cost_net: material.pack_cost_net ?? null,
+      latest_unit_cost_net: n(material.purchase_cost_per_unit),
+      vat_rate: material.vat_rate ?? 20,
       is_active: material.is_active ?? true,
     };
-
-    const { data, error } = await supabase
-      .from('packaging_materials')
-      .insert(payload)
-      .select('id,sku,name,category,dimensions,unit_type,units_per_pack,latest_pack_cost_net,latest_unit_cost_net,is_active,created_at,updated_at,usage_capacity,usage_capacity_unit')
-      .single();
-
+    const { data, error } = await supabase.from('packaging_materials').insert(payload).select('id').single();
     if (error) return { success: false, error: error.message };
-    return { success: true, data: toPackingMaterial(data as CanonicalPackagingMaterial) };
+    const created = await this.getMaterialById(data.id);
+    return created ? { success: true, data: created } : { success: false, error: 'Material saved but could not be reloaded.' };
   }
 
   static async updateMaterial(id: string, updates: Partial<PackingMaterial>): Promise<{ success: boolean; error?: string }> {
@@ -200,78 +175,75 @@ export class PackingMaterialService {
     if (updates.size !== undefined) payload.dimensions = updates.size;
     if (updates.unit !== undefined) payload.unit_type = updates.unit;
     if (updates.units_per_pack !== undefined) payload.units_per_pack = updates.units_per_pack;
+    if (updates.pack_cost_net !== undefined) payload.latest_pack_cost_net = updates.pack_cost_net;
     if (updates.purchase_cost_per_unit !== undefined) payload.latest_unit_cost_net = updates.purchase_cost_per_unit;
+    if (updates.vat_rate !== undefined) payload.vat_rate = updates.vat_rate;
     if (updates.is_active !== undefined) payload.is_active = updates.is_active;
-
-    const { error } = await supabase
-      .from('packaging_materials')
-      .update(payload)
-      .eq('id', id);
-
-    if (error) return { success: false, error: error.message };
-    return { success: true };
+    const { error } = await supabase.from('packaging_materials').update(payload).eq('id', id);
+    return error ? { success: false, error: error.message } : { success: true };
   }
 
   static async adjustStock(): Promise<{ success: boolean; error?: string }> {
-    return {
-      success: false,
-      error: 'Packaging stock is derived from goods received and packing records. Use GRN or packing confirmation to change it.',
-    };
+    return { success: false, error: 'Packaging stock is derived from received supplier purchases minus order packaging allocations.' };
   }
 
-  static async getTransactions(materialId?: string, limit = 50): Promise<PackingMaterialTransaction[]> {
-    let query = supabase
-      .from('order_packing_items')
-      .select('id,material_id,quantity_used,created_at,order_packing(order_id)')
-      .order('created_at', { ascending: false })
-      .limit(limit);
-
-    if (materialId) query = query.eq('material_id', materialId);
-
-    const { data, error } = await query;
-    if (error || !data) return [];
-
-    const materialIds = [...new Set(data.map((row: any) => row.material_id).filter(Boolean))];
-    const { data: materials } = materialIds.length
-      ? await supabase.from('packaging_materials').select('id,name').in('id', materialIds)
-      : { data: [] as any[] };
-    const names = new Map((materials || []).map((row: any) => [row.id, row.name]));
-
-    return data.map((row: any) => ({
-      id: row.id,
-      material_id: row.material_id,
-      type: 'OUT',
-      quantity: -Math.abs(asNumber(row.quantity_used)),
-      reference_type: 'order',
-      reference_id: row.order_packing?.order_id || null,
-      notes: 'Packing consumption',
-      created_by: null,
-      created_at: row.created_at,
-      packaging_materials: { name: names.get(row.material_id) || 'Packaging material' },
-    }));
+  static async getTransactions(materialId?: string, limit = 200): Promise<PackingMaterialTransaction[]> {
+    let purchaseQuery = supabase.from('packaging_material_purchase_items').select('id,material_id,units_received,finance_document_id,order_reference,purchase_date,created_at');
+    let usageQuery = supabase.from('order_packaging_allocations').select('id,material_id,quantity_used,order_id,allocation_basis,is_estimated,created_at');
+    if (materialId) {
+      purchaseQuery = purchaseQuery.eq('material_id', materialId);
+      usageQuery = usageQuery.eq('material_id', materialId);
+    }
+    const [purchaseResult, usageResult, materialResult] = await Promise.all([
+      purchaseQuery,
+      usageQuery,
+      supabase.from('packaging_materials').select('id,name'),
+    ]);
+    if (purchaseResult.error) throw new Error(`Packaging purchase activity could not be loaded: ${purchaseResult.error.message}`);
+    if (usageResult.error) throw new Error(`Packaging usage activity could not be loaded: ${usageResult.error.message}`);
+    if (materialResult.error) throw new Error(`Packaging material names could not be loaded: ${materialResult.error.message}`);
+    const names = new Map((materialResult.data || []).map((row: any) => [row.id, row.name]));
+    const rows: PackingMaterialTransaction[] = [
+      ...(purchaseResult.data || []).map((row: any) => ({
+        id: `in-${row.id}`,
+        material_id: row.material_id,
+        type: 'IN' as const,
+        quantity: n(row.units_received),
+        reference_type: 'invoice' as const,
+        reference_id: row.finance_document_id || null,
+        notes: row.order_reference ? `Supplier reference ${row.order_reference}` : 'Supplier packaging purchase',
+        created_at: row.purchase_date ? `${row.purchase_date}T12:00:00Z` : row.created_at,
+        packing_materials: { name: names.get(row.material_id) || 'Packaging material' },
+      })),
+      ...(usageResult.data || []).map((row: any) => ({
+        id: `out-${row.id}`,
+        material_id: row.material_id,
+        type: 'OUT' as const,
+        quantity: -Math.abs(n(row.quantity_used)),
+        reference_type: 'order' as const,
+        reference_id: row.order_id || null,
+        notes: `${row.allocation_basis || 'order packaging'}${row.is_estimated ? ' · estimated' : ''}`,
+        created_at: row.created_at,
+        packing_materials: { name: names.get(row.material_id) || 'Packaging material' },
+      })),
+    ];
+    return rows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, limit);
   }
 
   static async getPurchaseOrders(): Promise<PackingPurchaseOrder[]> {
-    const { data, error } = await supabase
-      .from('purchase_orders')
-      .select('id,po_number,status,total_cost,order_date,expected_delivery_date,actual_delivery_date,notes,created_by,created_at,updated_at,supplier_id')
-      .order('created_at', { ascending: false });
-
-    if (error || !data) return [];
-
-    const supplierIds = [...new Set(data.map((row: any) => row.supplier_id).filter(Boolean))];
-    const { data: suppliers } = supplierIds.length
-      ? await supabase.from('suppliers').select('id,name').in('id', supplierIds)
-      : { data: [] as any[] };
-    const supplierNames = new Map((suppliers || []).map((row: any) => [row.id, row.name]));
-
-    return data.map((row: any) => ({
+    const [poResult, supplierResult] = await Promise.all([
+      supabase.from('purchase_orders').select('id,po_number,status,total_cost,order_date,expected_delivery_date,actual_delivery_date,notes,created_by,created_at,updated_at,supplier_id').order('created_at', { ascending: false }),
+      supabase.from('suppliers').select('id,name'),
+    ]);
+    if (poResult.error) throw new Error(`Material purchase orders could not be loaded: ${poResult.error.message}`);
+    const suppliers = new Map((supplierResult.data || []).map((row: any) => [row.id, row.name]));
+    return (poResult.data || []).map((row: any) => ({
       id: row.id,
       po_number: row.po_number,
       supplier_id: row.supplier_id,
-      supplier_name: supplierNames.get(row.supplier_id) || 'Supplier',
+      supplier_name: suppliers.get(row.supplier_id) || 'Supplier',
       status: row.status,
-      total_cost: asNumber(row.total_cost),
+      total_cost: n(row.total_cost),
       order_date: row.order_date,
       expected_delivery_date: row.expected_delivery_date,
       received_date: row.actual_delivery_date,
@@ -282,62 +254,25 @@ export class PackingMaterialService {
     }));
   }
 
-  static async createPurchaseOrder(po: Partial<PackingPurchaseOrder>): Promise<{ success: boolean; data?: PackingPurchaseOrder; error?: string }> {
-    if (!po.supplier_id) {
-      return { success: false, error: 'A supplier is required for a purchase order.' };
-    }
-
-    const payload = {
-      po_number: po.po_number || `PO-${Date.now()}`,
-      supplier_id: po.supplier_id,
-      status: po.status || 'draft',
-      order_date: po.order_date || new Date().toISOString().slice(0, 10),
-      expected_delivery_date: po.expected_delivery_date || null,
-      total_cost: po.total_cost || 0,
-      currency: 'GBP',
-      source_type: 'manual',
-      notes: po.notes || null,
-      created_by: po.created_by || null,
-    };
-
-    const { data, error } = await supabase
-      .from('purchase_orders')
-      .insert(payload)
-      .select('id,po_number,status,total_cost,order_date,expected_delivery_date,actual_delivery_date,notes,created_by,created_at,updated_at,supplier_id')
-      .single();
-
-    if (error) return { success: false, error: error.message };
-    return { success: true, data: (await this.getPurchaseOrders()).find((row) => row.id === data.id) };
-  }
-
-  /**
-   * Predict out-of-stock dates for packaging materials based on 30-day consumption.
-   */
   static async getUsagePredictions(): Promise<Record<string, { avgDailyUsage: number; daysRemaining: number; predictedRunOutDate: string | null }>> {
-    const materials = await this.getAllMaterials();
-    const transactions = await this.getTransactions(undefined, 1000);
-    const usageByMaterial = transactions.reduce<Record<string, number>>((totals, transaction) => {
-      totals[transaction.material_id] = (totals[transaction.material_id] || 0) + Math.abs(transaction.quantity);
-      return totals;
-    }, {});
-
-    const predictions: Record<string, { avgDailyUsage: number; daysRemaining: number; predictedRunOutDate: string | null }> = {};
-    materials.forEach((material) => {
-      const avgDailyUsage = (usageByMaterial[material.id] || 0) / 30;
-      const daysRemaining = avgDailyUsage > 0
-        ? Math.floor(material.current_stock / avgDailyUsage)
-        : 999;
-      const predictedRunOutDate = avgDailyUsage > 0
-        ? new Date(Date.now() + daysRemaining * 86400000).toISOString()
-        : null;
-
-      predictions[material.id] = {
+    const since = new Date(Date.now() - 30 * 86400000).toISOString();
+    const [materials, usageResult] = await Promise.all([
+      this.getAllMaterials(),
+      supabase.from('order_packaging_allocations').select('material_id,quantity_used,created_at').gte('created_at', since),
+    ]);
+    if (usageResult.error) throw new Error(`Packaging usage prediction could not be loaded: ${usageResult.error.message}`);
+    const usage = new Map<string, number>();
+    for (const row of usageResult.data || []) usage.set(row.material_id, (usage.get(row.material_id) || 0) + Math.abs(n(row.quantity_used)));
+    const result: Record<string, { avgDailyUsage: number; daysRemaining: number; predictedRunOutDate: string | null }> = {};
+    for (const material of materials) {
+      const avgDailyUsage = (usage.get(material.id) || 0) / 30;
+      const daysRemaining = avgDailyUsage > 0 ? Math.max(0, Math.floor(material.current_stock / avgDailyUsage)) : 999;
+      result[material.id] = {
         avgDailyUsage: Math.round(avgDailyUsage * 100) / 100,
         daysRemaining,
-        predictedRunOutDate,
+        predictedRunOutDate: avgDailyUsage > 0 ? new Date(Date.now() + daysRemaining * 86400000).toISOString() : null,
       };
-    });
-
-    return predictions;
+    }
+    return result;
   }
 }
