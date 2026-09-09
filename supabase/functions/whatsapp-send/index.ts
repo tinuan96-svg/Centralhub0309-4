@@ -31,6 +31,90 @@ async function resolvePhoneIdFromWaba(token: string, graphVersion: string, wabaI
   return { phoneId: normalizePhoneNumberId(match?.id), displayPhone: match?.display_phone_number || null, verifiedName: match?.verified_name || null, numbers }
 }
 
+function renderTemplateBody(templateDefinition: any, sendTemplate: any) {
+  const definitionBody = Array.isArray(templateDefinition?.components)
+    ? templateDefinition.components.find((c: any) => String(c?.type || '').toUpperCase() === 'BODY')
+    : null
+  let rendered = String(definitionBody?.text || '').trim()
+  if (!rendered) return `[WhatsApp template: ${String(sendTemplate?.name || 'template')}]`
+
+  const sentBody = Array.isArray(sendTemplate?.components)
+    ? sendTemplate.components.find((c: any) => String(c?.type || '').toLowerCase() === 'body')
+    : null
+  const parameters = Array.isArray(sentBody?.parameters) ? sentBody.parameters : []
+  parameters.forEach((parameter: any, index: number) => {
+    const value = String(parameter?.text ?? parameter?.value ?? '')
+    rendered = rendered.replace(new RegExp(`\\{\\{\\s*${index + 1}\\s*\\}\\}`, 'g'), value)
+  })
+  return rendered
+}
+
+async function resolveAutomaticConversation(admin: any, storeId: string, recipient: string, notificationId?: string | null) {
+  const digits = normalizeDisplayPhone(recipient)
+  const variants = Array.from(new Set([String(recipient || '').trim(), digits, digits ? `+${digits}` : ''].filter(Boolean)))
+
+  let contact: any = null
+  if (variants.length) {
+    const { data } = await admin.from('whatsapp_contacts')
+      .select('id,display_name,phone_number')
+      .eq('store_id', storeId)
+      .in('phone_number', variants)
+      .limit(1)
+      .maybeSingle()
+    contact = data
+  }
+
+  let displayName = contact?.display_name || null
+  if (!displayName && notificationId) {
+    const { data: notification } = await admin.from('order_whatsapp_notifications')
+      .select('order_id')
+      .eq('id', notificationId)
+      .maybeSingle()
+    if (notification?.order_id) {
+      const { data: order } = await admin.from('orders')
+        .select('customer_name')
+        .eq('id', notification.order_id)
+        .maybeSingle()
+      displayName = order?.customer_name || null
+    }
+  }
+
+  if (!contact) {
+    const canonicalPhone = digits || String(recipient || '').trim()
+    if (!canonicalPhone) return null
+    const { data, error } = await admin.from('whatsapp_contacts').upsert({
+      store_id: storeId,
+      phone_number: canonicalPhone,
+      display_name: displayName || canonicalPhone,
+      last_message_at: new Date().toISOString(),
+    }, { onConflict: 'store_id,phone_number' }).select('id,display_name,phone_number').single()
+    if (error) throw error
+    contact = data
+  }
+
+  let conversation: any = null
+  const { data: existingConversation } = await admin.from('whatsapp_conversations')
+    .select('id,store_id,contact_id')
+    .eq('contact_id', contact.id)
+    .maybeSingle()
+  conversation = existingConversation
+
+  if (!conversation) {
+    const { data, error } = await admin.from('whatsapp_conversations').upsert({
+      store_id: storeId,
+      contact_id: contact.id,
+      status: 'open',
+      handling_mode: 'AI',
+      last_message_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'contact_id' }).select('id,store_id,contact_id').single()
+    if (error) throw error
+    conversation = data
+  }
+
+  return { conversation, contact }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { status: 200, headers: corsHeaders })
   try {
@@ -147,6 +231,44 @@ serve(async (req) => {
     const messageId = attempt.meta?.messages?.[0]?.id
     if (!messageId) return json({ error: 'Meta returned success without a WhatsApp message ID', meta_response: attempt.meta }, 502)
     if (notificationId) await admin.from('order_whatsapp_notifications').update({ status: 'sent', wa_message_id: messageId, error_message: null, updated_at: new Date().toISOString() }).eq('id', notificationId)
+
+    // Automatic transactional templates bypass the browser-side chat logger.
+    // Persist them centrally so Customer WhatsApp shows the exact message the customer received.
+    if (type === 'template' && notificationId) {
+      try {
+        const resolved = await resolveAutomaticConversation(admin, finalStoreId, to, notificationId)
+        if (resolved?.conversation?.id) {
+          const { data: templateDefinition } = await admin.from('whatsapp_templates')
+            .select('components')
+            .eq('store_id', finalStoreId)
+            .eq('name', template.name)
+            .eq('language', template.language || language)
+            .order('last_synced_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          const renderedText = renderTemplateBody(templateDefinition, template)
+          const now = new Date().toISOString()
+          const { error: messageLogError } = await admin.from('whatsapp_messages').upsert({
+            conversation_id: resolved.conversation.id,
+            wa_message_id: messageId,
+            direction: 'outbound',
+            message_type: 'template',
+            message_text: renderedText,
+            status: 'sent',
+            ai_generated: false,
+            sender_phone: channel?.display_phone_number || null,
+            channel_type: 'whatsapp',
+            updated_at: now,
+          }, { onConflict: 'wa_message_id' })
+          if (messageLogError) console.error('[WhatsApp Send] automatic chat log:', messageLogError.message)
+          await admin.from('whatsapp_conversations').update({ last_message_at: now, updated_at: now }).eq('id', resolved.conversation.id)
+          await admin.from('whatsapp_contacts').update({ last_message_at: now }).eq('id', resolved.contact.id)
+        }
+      } catch (e: any) {
+        console.error('[WhatsApp Send] automatic conversation log:', e?.message || e)
+      }
+    }
+
     try { await admin.from('whatsapp_outbound_log').insert({ wa_message_id: messageId, store_id: finalStoreId, recipient_phone: to, template_name: type === 'template' ? template?.name : null, status: 'sent' }) } catch (e: any) { console.error('[WhatsApp Send] outbound log:', e?.message || e) }
     return json({ success: true, message_id: messageId, graph_api_version: graphVersion, phone_number_id: phoneIdUsed, channel_type: 'whatsapp' }, 200)
   } catch (e: any) {
