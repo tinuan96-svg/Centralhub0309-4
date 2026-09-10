@@ -33,12 +33,14 @@ const continuityCriticalRoutes = [
 ];
 
 // These links must remain discoverable in BOTH desktop and mobile/Fold navigation.
+// Product category/brand reporting was moved into the Products workspace, so the
+// canonical navigation targets are /inventory/categories and /inventory/brands.
 // `/marketing/analytics` is intentionally NOT here: it is now a legacy redirect into the
 // consolidated Analytics Centre. The redirect itself remains continuity-guarded above.
 const navigationParityRoutes = [
   '/dashboard','/stores','/inventory/visibility','/settings/master-data/stores','/orders','/sync-status','/customers',
-  '/inventory','/inventory/bulk','/business-intelligence/executive#approvals','/settings/master-data/categories',
-  '/settings/master-data/brands','/inventory-management/sync','/inventory-management','/inventory-management/stock',
+  '/inventory','/inventory/intelligence','/inventory/categories','/inventory/brands','/inventory/bulk','/business-intelligence/executive#approvals',
+  '/inventory-management/sync','/inventory-management','/inventory-management/stock',
   '/inventory-management/adjustments','/inventory-management/movements','/inventory-audit','/inventory-management/reports',
   '/inventory-management/warehouses','/inventory-management/barcode','/inventory-management/packaging',
   '/inventory-management/expiry','/procurement','/backorder-planning','/inventory-management/purchase-orders',
