@@ -106,11 +106,11 @@ export default function PricingApprovalClient() {
     setBusy(null);
   };
 
-  const actionableRows = useMemo(() => rows.filter(row => !isBlocked(row)), [rows]);
+  const actionableRows = useMemo(() => rows.filter(row => !isBlocked(row) && ['pending', 'approved'].includes(row.approval_status) && row.execution_status !== 'executed'), [rows]);
   const filtered = useMemo(() => rows.filter(row => {
     if (filter === 'all') return true;
     if (filter === 'blocked') return isBlocked(row);
-    if (filter === 'actionable') return !isBlocked(row);
+    if (filter === 'actionable') return !isBlocked(row) && ['pending', 'approved'].includes(row.approval_status) && row.execution_status !== 'executed';
     if (filter === 'executed') return row.execution_status === 'executed';
     return row.approval_status === filter;
   }), [rows, filter]);
