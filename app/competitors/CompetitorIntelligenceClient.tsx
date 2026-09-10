@@ -19,6 +19,7 @@ type CompetitorCell = {
   valid_for_pricing?: boolean;
   authoritative_eligible?: boolean;
   data_quality_state?: string | null;
+  scan_status?: string | null;
   last_scanned_at?: string | null;
   product_url?: string | null;
 };
@@ -50,6 +51,23 @@ const POSITION_LABELS: Record<string, string> = {
   ABOVE_MARKET: 'Above market',
   NO_VALID_DATA: 'No verified price',
 };
+
+function priceStateLabel(cell?: CompetitorCell) {
+  if (!cell) return 'no match';
+  if (cell.valid_for_pricing) return 'verified';
+  const state = String(cell.data_quality_state || '').toUpperCase();
+  if (state === 'STALE') return 'stale';
+  if (state === 'OUT_OF_STOCK') return 'out of stock';
+  if (state === 'STOCK_UNKNOWN') return 'stock unknown';
+  if (state === 'PENDING_MATCH') return 'review match';
+  if (state === 'REVIEW_REQUIRED') return 'review required';
+  if (state === 'UNNORMALIZED') return 'needs normalization';
+  if (state === 'MULTIPACK_REVIEW') return 'pack review';
+  if (cell.match_status === 'pending') return 'review match';
+  if (cell.scan_status && cell.scan_status !== 'success') return cell.scan_status.replaceAll('_', ' ');
+  if (cell.authoritative_eligible === false) return 'not pricing eligible';
+  return cell.match_status || 'review';
+}
 
 export default function CompetitorIntelligenceClient() {
   const [competitors, setCompetitors] = useState<Competitor[]>([]);
@@ -88,8 +106,19 @@ export default function CompetitorIntelligenceClient() {
     setScanning(id);
     setMessage(null);
     try {
-      const result = await competitorService.scanCompetitor(id);
-      setMessage(result?.success ? (result.message || 'Scan completed') : (result?.error || 'Scan failed'));
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error('Admin session expired. Please sign in again.');
+
+      const { data: result, error: invokeError } = await supabase.functions.invoke('competitor-price-scanner', {
+        body: { action: 'scan_competitor', competitor_id: id },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (invokeError) throw invokeError;
+      if (!result?.success) throw new Error(result?.error || 'Scan failed');
+
+      setMessage(result.message || `Scan completed: ${result.succeeded || 0} succeeded, ${result.failed || 0} failed`);
       await load();
     } catch (e: any) {
       setMessage(e?.message || 'Scan failed');
@@ -202,12 +231,13 @@ export default function CompetitorIntelligenceClient() {
                     const cell = cells[c.id] || Object.values(cells).find(v => v.market_key && v.market_key === (c as any).market_key);
                     const valid = !!cell?.valid_for_pricing;
                     const price = cell?.price == null ? null : Number(cell.price);
+                    const state = priceStateLabel(cell);
                     return (
                       <td key={c.id} className="p-3 text-right">
                         {price == null ? <span className="text-slate-700">—</span> : (
                           <div>
                             {cell?.product_url ? <a href={cell.product_url} target="_blank" rel="noreferrer" className={valid ? 'font-black text-cyan-300 hover:underline' : 'font-bold text-slate-500 hover:underline'}>{formatCurrency(price)}</a> : <span className={valid ? 'font-black text-cyan-300' : 'font-bold text-slate-500'}>{formatCurrency(price)}</span>}
-                            <div className="mt-1 text-[8px] uppercase text-slate-600">{valid ? 'verified' : (cell?.match_status || cell?.data_quality_state || 'review')}</div>
+                            <div className={`mt-1 text-[8px] uppercase ${valid ? 'text-emerald-400' : 'text-amber-500/80'}`}>{state}</div>
                           </div>
                         )}
                       </td>
