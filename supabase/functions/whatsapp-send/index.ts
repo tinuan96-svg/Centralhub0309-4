@@ -49,6 +49,42 @@ function renderTemplateBody(templateDefinition: any, sendTemplate: any) {
   return rendered
 }
 
+async function enrichTemplateRuntimeComponents(admin: any, storeId: string, sendTemplate: any, language: string) {
+  const components = Array.isArray(sendTemplate?.components)
+    ? JSON.parse(JSON.stringify(sendTemplate.components))
+    : []
+  if (components.some((c: any) => String(c?.type || '').toLowerCase() === 'header')) return components
+
+  const { data: definition } = await admin.from('whatsapp_templates')
+    .select('components')
+    .eq('store_id', storeId)
+    .eq('name', sendTemplate.name)
+    .eq('language', sendTemplate.language || language)
+    .order('last_synced_at', { ascending: false })
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const definitionComponents = Array.isArray(definition?.components) ? definition.components : []
+  const imageHeader = definitionComponents.find((c: any) =>
+    String(c?.type || '').toUpperCase() === 'HEADER' && String(c?.format || '').toUpperCase() === 'IMAGE'
+  )
+  if (!imageHeader) return components
+
+  let imageUrl = String(imageHeader?.example_image_url || '').trim()
+  if (!imageUrl) {
+    const { data: store } = await admin.from('stores').select('slug').eq('id', storeId).maybeSingle()
+    if (String(store?.slug || '').toLowerCase() === 'malluspices') imageUrl = 'https://malluspices.com/image.png'
+  }
+  if (!imageUrl) throw new Error(`Runtime image URL is not configured for template ${sendTemplate.name}`)
+
+  components.unshift({
+    type: 'header',
+    parameters: [{ type: 'image', image: { link: imageUrl } }],
+  })
+  return components
+}
+
 async function resolveAutomaticConversation(admin: any, storeId: string, recipient: string, notificationId?: string | null) {
   const digits = normalizeDisplayPhone(recipient)
   const variants = Array.from(new Set([String(recipient || '').trim(), digits, digits ? `+${digits}` : ''].filter(Boolean)))
@@ -200,8 +236,11 @@ serve(async (req) => {
 
     const graphVersion = normalizeGraphApiVersion(Deno.env.get('WHATSAPP_GRAPH_API_VERSION'))
     const payload: any = { messaging_product: 'whatsapp', recipient_type: 'individual', to }
-    if (type === 'template') { payload.type = 'template'; payload.template = { name: template.name, language: { code: template.language || language }, components: template.components || [] } }
-    else { payload.type = 'text'; payload.text = { preview_url: false, body: text } }
+    if (type === 'template') {
+      const runtimeComponents = await enrichTemplateRuntimeComponents(admin, finalStoreId, template, language)
+      payload.type = 'template'
+      payload.template = { name: template.name, language: { code: template.language || language }, components: runtimeComponents }
+    } else { payload.type = 'text'; payload.text = { preview_url: false, body: text } }
 
     async function sendViaMeta(phoneId: string) {
       const endpoint = `https://graph.facebook.com/${graphVersion}/${phoneId}/messages`
@@ -232,8 +271,6 @@ serve(async (req) => {
     if (!messageId) return json({ error: 'Meta returned success without a WhatsApp message ID', meta_response: attempt.meta }, 502)
     if (notificationId) await admin.from('order_whatsapp_notifications').update({ status: 'sent', wa_message_id: messageId, error_message: null, updated_at: new Date().toISOString() }).eq('id', notificationId)
 
-    // Automatic transactional templates bypass the browser-side chat logger.
-    // Persist them centrally so Customer WhatsApp shows the exact message the customer received.
     if (type === 'template' && notificationId) {
       try {
         const resolved = await resolveAutomaticConversation(admin, finalStoreId, to, notificationId)
