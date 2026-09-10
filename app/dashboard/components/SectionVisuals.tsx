@@ -10,7 +10,7 @@ import FinancialCommandSummary from '@/app/finance/FinancialCommandSummary';
 import CommunicationAnalytics from './CommunicationAnalytics';
 import IntegrationHealth from './IntegrationHealth';
 import BusinessTargets from './BusinessTargets';
-import ChannelVisuals from './ChannelVisuals';
+import { CHANNEL_VISUAL_CARDS, ChannelVisualCard, ChannelVisualsProvider } from './ChannelVisuals';
 import MetricMasonry from '@/components/dashboard/MetricMasonry';
 
 export type SectionVisualWidgetDefinition = {
@@ -37,7 +37,7 @@ export function getSectionVisualWidgets({ report, selectedStoreId, refreshKey }:
   if (paid.some(o => !o.store_id)) storeSales.push({ label: 'Unassigned', value: paid.filter(o => !o.store_id).reduce((sum, o) => sum + productRevenue(o), 0), color: '#94a3b8' });
 
   const common = { desktop: 4, tablet: 6, mobile: 12, minHeight: 260 };
-  return [
+  const operational: SectionVisualWidgetDefinition[] = [
     { id: 'finance-summary', title: 'Finance', description: 'Seven-day accounting summary', ...common, minHeight: 300, content: <FinancialCommandSummary refreshKey={refreshKey} card="finance" /> },
     { id: 'bank-reconciliation', title: 'Bank reconciliation', description: 'Current reconciliation status', ...common, minHeight: 300, content: <FinancialCommandSummary refreshKey={refreshKey} card="bank" /> },
     { id: 'stock-availability', title: 'Stock availability', description: 'Current warehouse stock availability', ...common, content: <Panel title="Stock availability" subtitle="Current warehouse · all stores"><DonutChart data={[{ label: 'Available', value: report.inventory.length - out - low, color: '#50e4eb' }, { label: 'Low stock', value: low, color: '#fbbf24' }, { label: 'Zero / negative', value: out, color: '#f04fed' }]} label="stock records" /></Panel> },
@@ -61,10 +61,23 @@ export function getSectionVisualWidgets({ report, selectedStoreId, refreshKey }:
     ]} label="paid orders" /><div className="ch-visual-metrics"><VisualMetric label="No buyer email" value={paid.filter(o => !o.customer_email?.trim()).length} detail="Excluded from repeat-buyer ratio" /></div></Panel> },
     { id: 'customer-communications', title: 'Customer communications', description: 'Open conversations and today’s messages', ...common, content: <CommunicationAnalytics visual key={'messages-' + selectedStoreId} refreshKey={refreshKey} /> },
     { id: 'integration-health', title: 'Integration health', description: 'Saved operational integration checks', ...common, content: <IntegrationHealth visual refreshKey={refreshKey} /> },
-    { id: 'channel-analytics', title: 'Channel analytics', description: 'Website and marketing analytics cards', desktop: 12, tablet: 12, mobile: 12, minHeight: 360, content: <MetricMasonry><ChannelVisuals key={selectedStoreId + report.start.toISOString() + report.end.toISOString()} start={report.start.toISOString().slice(0, 10)} end={report.end.toISOString().slice(0, 10)} selectedStoreId={selectedStoreId} refreshKey={refreshKey} /></MetricMasonry> },
+  ];
+
+  return [
+    ...operational,
+    ...CHANNEL_VISUAL_CARDS.map(card => ({
+      id: `channel-${card.id}`,
+      title: card.title,
+      description: card.description,
+      ...common,
+      minHeight: card.id === 'website-activity' || card.id === 'shopping-activity' ? 320 : 260,
+      content: <ChannelVisualCard kind={card.id} />,
+    })),
   ];
 }
 
 export default function SectionVisuals(props: { report: DashboardReport; selectedStoreId: string; refreshKey: number }) {
-  return <MetricMasonry>{getSectionVisualWidgets(props).map(widget => <Fragment key={widget.id}>{widget.content}</Fragment>)}</MetricMasonry>;
+  const { report, selectedStoreId, refreshKey } = props;
+  const providerProps = { start: report.start.toISOString().slice(0, 10), end: report.end.toISOString().slice(0, 10), selectedStoreId, refreshKey };
+  return <ChannelVisualsProvider {...providerProps}><MetricMasonry>{getSectionVisualWidgets(props).map(widget => <Fragment key={widget.id}>{widget.content}</Fragment>)}</MetricMasonry></ChannelVisualsProvider>;
 }
