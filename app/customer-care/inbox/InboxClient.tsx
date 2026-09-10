@@ -51,6 +51,10 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
   const [isTicketModalOpen, setIsTicketModalOpen] = useState(false);
   const [showMobileProfile, setShowMobileProfile] = useState(false);
   const [showConversationList, setShowConversationList] = useState(false);
+  const [messageMenuId, setMessageMenuId] = useState<string | null>(null);
+  const [editingMessage, setEditingMessage] = useState<WhatsAppMessage | null>(null);
+  const [editMessageText, setEditMessageText] = useState('');
+  const [messageActionBusy, setMessageActionBusy] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -126,6 +130,7 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
         event: 'INSERT', schema: 'public', table: 'whatsapp_messages', filter: `conversation_id=eq.${selectedConv.id}`
       }, (payload) => {
         const newMsg = payload.new as WhatsAppMessage;
+        if (newMsg.locally_deleted_at) return;
         setMessages(prev => {
           if (prev.find(m => m.id === newMsg.id || (m.wa_message_id && m.wa_message_id === newMsg.wa_message_id))) return prev;
           return [...prev, newMsg];
@@ -135,6 +140,10 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
         event: 'UPDATE', schema: 'public', table: 'whatsapp_messages', filter: `conversation_id=eq.${selectedConv.id}`
       }, (payload) => {
         const updatedMsg = payload.new as WhatsAppMessage;
+        if (updatedMsg.locally_deleted_at) {
+          setMessages(prev => prev.filter(m => m.id !== updatedMsg.id));
+          return;
+        }
         setMessages(prev => prev.map(m => {
           if (m.id !== updatedMsg.id) return m;
           if (!updatedMsg.status || canApplyMessageStatus(m.status, updatedMsg.status)) return { ...m, ...updatedMsg };
@@ -150,7 +159,7 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
     const el = chatScrollRef.current;
     if (!el) return;
     requestAnimationFrame(() => el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }));
-  }, [messages]);
+  }, [messages.length]);
 
   const handleSend = async () => {
     if (!msgInput.trim() || !selectedConv || sending) return;
@@ -176,6 +185,44 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
       alert(err.message || 'Connection error. Please check your internet and Meta API configuration.');
     } finally {
       setSending(false);
+    }
+  };
+
+  const startLocalEdit = (message: WhatsAppMessage) => {
+    setMessageMenuId(null);
+    setEditingMessage(message);
+    setEditMessageText(message.message_text || '');
+  };
+
+  const saveLocalEdit = async () => {
+    if (!editingMessage || !editMessageText.trim() || messageActionBusy) return;
+    setMessageActionBusy(true);
+    try {
+      const updated = await whatsappService.editMessageLocally(editingMessage, editMessageText);
+      setMessages(prev => prev.map(m => m.id === updated.id ? { ...m, ...updated } : m));
+      setEditingMessage(null);
+      setEditMessageText('');
+    } catch (err: any) {
+      alert(err?.message || 'Could not edit this message.');
+    } finally {
+      setMessageActionBusy(false);
+    }
+  };
+
+  const hideMessage = async (message: WhatsAppMessage) => {
+    setMessageMenuId(null);
+    const remoteNotice = message.wa_message_id
+      ? '\n\nThis only removes it from the CentralHub inbox. WhatsApp does not provide a recall/edit API for an already sent message, so the customer copy will remain unchanged.'
+      : '';
+    if (!window.confirm(`Remove this message from the CentralHub chat view?${remoteNotice}`)) return;
+    setMessageActionBusy(true);
+    try {
+      await whatsappService.hideMessageLocally(message.id);
+      setMessages(prev => prev.filter(m => m.id !== message.id));
+    } catch (err: any) {
+      alert(err?.message || 'Could not remove this message from the inbox.');
+    } finally {
+      setMessageActionBusy(false);
     }
   };
 
@@ -220,14 +267,14 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
   }
 
   return (
-    <div className="flex h-[calc(100dvh-64px)] w-full max-w-full min-h-0 overflow-hidden relative bg-slate-950">
-      {/* Desktop / tablet conversation list. On phones a compact recent-contact strip stays visible above chat. */}
-      <aside className={`${selectedConv ? 'hidden md:flex' : 'flex'} w-full md:w-64 lg:w-72 2xl:w-80 flex-none min-h-0 border-r border-slate-800 flex-col bg-slate-900/50`}>
+    <div className="flex h-[calc(100dvh-64px)] max-h-[calc(100dvh-64px)] w-full max-w-full min-h-0 overflow-hidden relative bg-slate-950">
+      {/* Desktop / tablet conversation list. The list owns its vertical scroll. */}
+      <aside className={`${selectedConv ? 'hidden md:flex' : 'flex'} w-full md:w-64 lg:w-72 2xl:w-80 h-full max-h-full flex-none min-h-0 overflow-hidden border-r border-slate-800 flex-col bg-slate-900/50`}>
         <div className="h-12 lg:h-14 shrink-0 px-3 lg:px-4 border-b border-slate-800 flex items-center justify-between bg-slate-900">
           <h2 className="text-base lg:text-lg font-bold text-white uppercase tracking-tight">Inbox</h2>
           <span className="text-[10px] lg:text-xs text-slate-500">{conversations.length}</span>
         </div>
-        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+        <div className="flex-1 h-0 min-h-0 overflow-y-scroll overscroll-contain touch-pan-y [scrollbar-gutter:stable]" style={{ WebkitOverflowScrolling: 'touch' }}>
           {conversations.map((conv) => (
             <button
               key={conv.id}
@@ -245,12 +292,13 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
               </div>
             </button>
           ))}
+          <div className="h-6" aria-hidden="true" />
         </div>
       </aside>
 
-      <main className={`${!selectedConv ? 'hidden md:flex' : 'flex'} min-w-0 min-h-0 flex-1 basis-0 flex-col bg-slate-950`}>
+      <main className={`${!selectedConv ? 'hidden md:flex' : 'flex'} min-w-0 min-h-0 h-full flex-1 basis-0 flex-col bg-slate-950 overflow-hidden`}>
         {selectedConv ? (
-          <div className="flex min-h-0 h-full flex-col">
+          <div className="flex min-h-0 h-full flex-col overflow-hidden">
             {/* Always-visible recent customers on Android/mobile. */}
             <div className="md:hidden shrink-0 border-b border-slate-800 bg-slate-900/95 px-2 py-1.5">
               <div className="flex items-center gap-1.5 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -330,14 +378,32 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
               )}
             </div>
 
-            <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-2.5 sm:px-4 lg:px-5 py-2.5 sm:py-4 lg:py-6 space-y-2.5 sm:space-y-3 bg-slate-950" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <div ref={chatScrollRef} className="flex-1 h-0 min-h-0 overflow-y-scroll overscroll-contain touch-pan-y px-2.5 sm:px-4 lg:px-5 py-2.5 sm:py-4 lg:py-6 space-y-2.5 sm:space-y-3 bg-slate-950" style={{ WebkitOverflowScrolling: 'touch' }}>
               {messages.length === 0 ? (
                 <div className="h-full flex items-center justify-center text-xs sm:text-sm text-slate-500">No messages yet</div>
               ) : messages.map((msg) => (
-                <div key={msg.id} className={`flex ${msg.direction === 'inbound' ? 'justify-start' : 'justify-end'}`}>
-                  <div className={`max-w-[91%] sm:max-w-[76%] lg:max-w-[72%] rounded-xl sm:rounded-2xl px-3 py-2 sm:px-3.5 sm:py-2.5 shadow-sm text-[12px] sm:text-sm ${msg.direction === 'inbound' ? 'bg-slate-800 text-slate-100 rounded-tl-md' : msg.ai_generated ? 'bg-blue-600/20 border border-blue-500/30 text-blue-100 rounded-tr-md' : 'bg-emerald-600 text-white rounded-tr-md'}`}>
+                <div key={msg.id} className={`group flex ${msg.direction === 'inbound' ? 'justify-start' : 'justify-end'}`}>
+                  <div className={`relative max-w-[91%] sm:max-w-[76%] lg:max-w-[72%] rounded-xl sm:rounded-2xl px-3 py-2 sm:px-3.5 sm:py-2.5 shadow-sm text-[12px] sm:text-sm ${msg.direction === 'inbound' ? 'bg-slate-800 text-slate-100 rounded-tl-md' : msg.ai_generated ? 'bg-blue-600/20 border border-blue-500/30 text-blue-100 rounded-tr-md' : 'bg-emerald-600 text-white rounded-tr-md'}`}>
+                    <button
+                      type="button"
+                      aria-label="Message actions"
+                      onClick={() => setMessageMenuId(prev => prev === msg.id ? null : msg.id)}
+                      className="absolute -top-2 -right-2 z-10 w-7 h-7 rounded-full border border-slate-700 bg-slate-950/95 text-slate-300 shadow-md flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100"
+                    >
+                      ⋮
+                    </button>
+                    {messageMenuId === msg.id && (
+                      <div className="absolute right-0 top-7 z-30 w-44 overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-2xl text-left">
+                        {msg.message_text && (
+                          <button type="button" onClick={() => startLocalEdit(msg)} className="w-full px-3 py-2 text-xs text-slate-200 hover:bg-slate-800 text-left">Edit in CentralHub</button>
+                        )}
+                        <button type="button" onClick={() => hideMessage(msg)} className="w-full px-3 py-2 text-xs text-red-300 hover:bg-red-500/10 text-left">Remove from inbox</button>
+                        {msg.wa_message_id && <div className="px-3 py-2 border-t border-slate-800 text-[9px] leading-snug text-slate-500">WhatsApp-sent messages cannot be recalled or changed on the customer's phone.</div>}
+                      </div>
+                    )}
                     <WhatsAppMessageContent message={msg} />
                     <div className="flex items-center justify-end gap-1 mt-1">
+                      {msg.locally_edited_at && <span className="text-[8px] sm:text-[9px] opacity-60">Edited in CentralHub</span>}
                       <span className="text-[8px] sm:text-[10px] opacity-70">{formatDate(msg.created_at)}</span>
                       {msg.direction === 'outbound' && <span title={msg.delivery_error_message || `WhatsApp status: ${messageStatusLabel(msg.status)}`} className="text-[8px] sm:text-[9px] uppercase font-bold tracking-tight opacity-75">{messageStatusLabel(msg.status)}</span>}
                     </div>
@@ -384,7 +450,7 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
       </main>
 
       {/* Structured customer details: permanently visible on very wide desktop, full-screen sheet on smaller screens. */}
-      <aside className={`${showMobileProfile ? 'fixed inset-0 z-50 flex' : 'hidden'} 2xl:flex 2xl:static w-full 2xl:w-80 border-l border-slate-800 bg-slate-900 flex-col overflow-y-auto`}>
+      <aside className={`${showMobileProfile ? 'fixed inset-0 z-50 flex' : 'hidden'} 2xl:flex 2xl:static w-full 2xl:w-80 min-h-0 border-l border-slate-800 bg-slate-900 flex-col overflow-y-auto`}>
         {selectedConv && (
           <div className="p-3 sm:p-4 space-y-4 text-slate-200 w-full">
             <div className="flex justify-between items-center 2xl:hidden border-b border-slate-800 pb-3 sticky top-0 bg-slate-900 z-10">
@@ -467,15 +533,15 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
         )}
       </aside>
 
-      {/* Complete recent-customer list for Android; the compact strip means this is never the only way to switch customer. */}
+      {/* Complete recent-customer list for Android; use explicit scroll ownership so Chrome/WebView cannot trap it. */}
       {showConversationList && (
-        <div className="md:hidden fixed inset-0 z-[60] bg-slate-950 flex flex-col">
+        <div className="md:hidden fixed inset-0 z-[60] h-[100dvh] max-h-[100dvh] overflow-hidden bg-slate-950 flex flex-col">
           <div className="h-12 shrink-0 px-3 border-b border-slate-800 flex items-center gap-3 bg-slate-900">
             <button type="button" onClick={() => setShowConversationList(false)} className="w-8 h-8 rounded-full hover:bg-slate-800 text-slate-300" aria-label="Close conversation list">✕</button>
             <div className="font-semibold text-sm text-white">Recent customers</div>
             <span className="ml-auto text-[10px] text-slate-500">{conversations.length}</span>
           </div>
-          <div className="flex-1 overflow-y-auto overscroll-contain">
+          <div className="flex-1 h-0 min-h-0 overflow-y-scroll overscroll-contain touch-pan-y pb-[calc(1rem+env(safe-area-inset-bottom))]" style={{ WebkitOverflowScrolling: 'touch' }}>
             {conversations.map((conv) => (
               <button key={conv.id} onClick={() => { setSelectedConv(conv); setShowConversationList(false); }} className={`w-full text-left px-3 py-2.5 border-b border-slate-800 hover:bg-slate-900 ${selectedConv?.id === conv.id ? 'bg-cyan-500/10' : ''}`}>
                 <div className="flex items-start justify-between gap-2">
@@ -493,6 +559,21 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
                 </div>
               </button>
             ))}
+            <div className="h-8" aria-hidden="true" />
+          </div>
+        </div>
+      )}
+
+      {editingMessage && (
+        <div className="fixed inset-0 z-[80] bg-black/65 flex items-center justify-center p-3" onClick={() => !messageActionBusy && setEditingMessage(null)}>
+          <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-bold text-white">Edit message in CentralHub</h3>
+            <p className="mt-1 text-[10px] leading-relaxed text-amber-300">This changes the CentralHub inbox record only. A message already sent through WhatsApp cannot be edited on the customer's phone.</p>
+            <textarea autoFocus rows={5} value={editMessageText} onChange={(e) => setEditMessageText(e.target.value)} className="mt-3 w-full resize-y rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-white outline-none focus:border-cyan-500" />
+            <div className="mt-3 flex justify-end gap-2">
+              <button type="button" disabled={messageActionBusy} onClick={() => setEditingMessage(null)} className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300">Cancel</button>
+              <button type="button" disabled={messageActionBusy || !editMessageText.trim()} onClick={saveLocalEdit} className="rounded-lg bg-cyan-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{messageActionBusy ? 'Saving…' : 'Save local edit'}</button>
+            </div>
           </div>
         </div>
       )}
