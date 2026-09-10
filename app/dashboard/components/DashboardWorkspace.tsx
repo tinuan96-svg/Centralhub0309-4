@@ -36,6 +36,11 @@ type StoredLayout = {
 const STORAGE_KEY = 'centralhub-dashboard-layout-v2';
 const LAYOUT_VERSION = 2;
 const SCOPE = 'super_admin';
+const NEW_LIVE_WIDGET_IDS = new Set([
+  'operations-command-centre', 'live-commerce', 'traffic-pulse', 'sync-mesh', 'inventory-radar',
+  'fulfilment-control', 'customer-ops-live', 'shipping-control-live', 'site-health-matrix',
+  'store-scoreboard-live', 'live-signal-stream',
+]);
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -76,10 +81,12 @@ function mergeStoredLayout(stored: StoredLayout | null, defaults: StoredLayout):
         visible: item.visible !== false,
       };
     });
-    defaults.breakpoints[breakpoint].forEach(item => {
-      if (!incomingIds.has(item.id)) merged.push({ ...item, order: merged.length });
+    defaults.breakpoints[breakpoint].forEach((item, defaultIndex) => {
+      if (incomingIds.has(item.id)) return;
+      const insertAt = NEW_LIVE_WIDGET_IDS.has(item.id) ? Math.min(defaultIndex, merged.length) : merged.length;
+      merged.splice(insertAt, 0, { ...item, order: insertAt });
     });
-    return merged;
+    return merged.map((item, order) => ({ ...item, order }));
   };
   return { version: LAYOUT_VERSION, breakpoints: { desktop: merge('desktop'), tablet: merge('tablet'), mobile: merge('mobile') } };
 }
