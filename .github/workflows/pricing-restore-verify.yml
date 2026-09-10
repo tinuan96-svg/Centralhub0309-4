@@ -7,6 +7,7 @@ on:
       - 'app/pricing/**'
       - 'components/ClassifiedSidebar.tsx'
       - 'components/MobileHeader.tsx'
+      - 'app/customer-care/inbox/whatsapp-inbox.module.css'
       - 'supabase/migrations/**pricing**'
       - '.github/workflows/pricing-restore-verify.yml'
   workflow_dispatch:
