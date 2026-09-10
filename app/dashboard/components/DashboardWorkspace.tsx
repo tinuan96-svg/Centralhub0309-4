@@ -40,6 +40,12 @@ const NEW_LIVE_WIDGET_IDS = new Set([
   'operations-command-centre', 'live-commerce', 'traffic-pulse', 'sync-mesh', 'inventory-radar',
   'fulfilment-control', 'customer-ops-live', 'shipping-control-live', 'site-health-matrix',
   'store-scoreboard-live', 'live-signal-stream',
+  'operational-indicators', 'paid-order-total', 'order-gross-profit', 'delivery-completion',
+  'recorded-cost-coverage', 'stock-available-index', 'paid-payment-methods-model',
+  'sales-profit-trend', 'operations-health-radar', 'sales-profitability-model', 'operating-rates',
+  'store-sales-mix-model', 'repeat-customers', 'weekly-sales', 'order-activity',
+  'website-activity', 'traffic-sources', 'shopping-activity', 'advertising-return',
+  'advertising-rates', 'advertising-spend', 'marketing-reserve',
 ]);
 
 function clamp(value: number, min: number, max: number) {
