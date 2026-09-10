@@ -1,0 +1,159 @@
+.shell {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: #0b141a;
+}
+
+.shell :global(> div) {
+  height: 100% !important;
+  max-height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+/* Left conversation rail */
+.shell :global(> div > aside:first-of-type) {
+  height: 100% !important;
+  max-height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  background: #111b21 !important;
+  border-color: #222d34 !important;
+}
+
+.shell :global(> div > aside:first-of-type > div:first-child) {
+  background: #202c33 !important;
+  border-color: #2a3942 !important;
+}
+
+.shell :global(> div > aside:first-of-type > div:nth-child(2)) {
+  flex: 1 1 auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+  position: relative;
+}
+
+.shell :global(> div > aside:first-of-type > div:nth-child(2) > button) {
+  touch-action: pan-y;
+  border-color: rgba(134,150,160,.14) !important;
+}
+
+.shell :global(> div > aside:first-of-type > div:nth-child(2) > button:hover) {
+  background: #202c33 !important;
+}
+
+/* Chat column */
+.shell :global(main) {
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  background: #0b141a !important;
+}
+
+.shell :global(main > div) {
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+.shell :global(main header) {
+  background: #202c33 !important;
+  border-color: #2a3942 !important;
+}
+
+/* Message timeline: this is the WhatsApp-like movable area. */
+.shell :global(main div[style*="WebkitOverflowScrolling"]) {
+  flex: 1 1 0% !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  background-color: #0b141a !important;
+  background-image:
+    radial-gradient(circle at 25px 25px, rgba(255,255,255,.018) 1px, transparent 1px),
+    radial-gradient(circle at 75px 75px, rgba(255,255,255,.012) 1px, transparent 1px);
+  background-size: 100px 100px;
+}
+
+/* Bubble styling aligned to WhatsApp Web proportions. */
+.shell :global(main div[style*="WebkitOverflowScrolling"] .group > div) {
+  border-radius: 8px !important;
+  box-shadow: 0 1px .5px rgba(11,20,26,.35) !important;
+  max-width: min(76%, 680px) !important;
+}
+
+.shell :global(main div[style*="WebkitOverflowScrolling"] .group > div.bg-slate-800) {
+  background: #202c33 !important;
+}
+
+.shell :global(main div[style*="WebkitOverflowScrolling"] .group > div.bg-emerald-600) {
+  background: #005c4b !important;
+}
+
+.shell :global(main div[style*="WebkitOverflowScrolling"] .group > div.bg-blue-600\/20) {
+  background: #005c4b !important;
+  border-color: transparent !important;
+  color: #e9edef !important;
+}
+
+/* Composer stays fixed while only timeline moves. */
+.shell :global(main footer) {
+  flex: 0 0 auto !important;
+  position: relative;
+  z-index: 20;
+  background: #202c33 !important;
+  border-color: #2a3942 !important;
+}
+
+.shell :global(main footer textarea) {
+  background: #2a3942 !important;
+  border-color: #2a3942 !important;
+  color: #e9edef !important;
+}
+
+.shell :global(main footer textarea::placeholder) {
+  color: #8696a0 !important;
+}
+
+/* Right details rail */
+.shell :global(> div > aside:last-of-type) {
+  background: #111b21 !important;
+  border-color: #222d34 !important;
+}
+
+/* Better native-looking thin scrollbars on desktop while preserving touch. */
+.shell :global(*) {
+  scrollbar-width: thin;
+  scrollbar-color: #374248 transparent;
+}
+
+.shell :global(*::-webkit-scrollbar) {
+  width: 6px;
+  height: 6px;
+}
+
+.shell :global(*::-webkit-scrollbar-thumb) {
+  background: #374248;
+  border-radius: 999px;
+}
+
+.shell :global(*::-webkit-scrollbar-track) {
+  background: transparent;
+}
+
+@media (max-width: 767px) {
+  .shell :global(main div[style*="WebkitOverflowScrolling"] .group > div) {
+    max-width: 88% !important;
+  }
+}
