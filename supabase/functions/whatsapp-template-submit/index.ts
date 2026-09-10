@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-whatsapp-retry-secret',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
@@ -14,6 +14,32 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 async function parseResponse(response: Response) {
   const raw = await response.text()
   try { return raw ? JSON.parse(raw) : {} } catch { return { raw } }
+}
+
+async function authorize(req: Request, db: any, serviceRoleKey: string) {
+  const cronSecret = String(req.headers.get('x-whatsapp-retry-secret') || '').trim()
+  if (cronSecret) {
+    const { data, error } = await db.rpc('verify_integration_cron_secret', {
+      p_name: 'whatsapp_retry_cron_secret',
+      p_secret: cronSecret,
+    })
+    if (!error && data === true) return { ok: true, mode: 'cron' }
+  }
+
+  const token = String(req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim()
+  if (!token) return { ok: false, mode: 'none' }
+  if (token === serviceRoleKey) return { ok: true, mode: 'service_role' }
+
+  const { data: userData, error: userError } = await db.auth.getUser(token)
+  const user = userData?.user
+  if (userError || !user) return { ok: false, mode: 'invalid_user' }
+
+  const { data: profile } = await db.from('user_profiles')
+    .select('profile_role,is_active')
+    .eq('id', user.id)
+    .maybeSingle()
+  if (profile?.profile_role === 'admin' && profile?.is_active !== false) return { ok: true, mode: 'admin' }
+  return { ok: false, mode: 'forbidden' }
 }
 
 async function resolveAppId(token: string, graphVersion: string) {
@@ -92,14 +118,16 @@ serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'method_not_allowed' }, 405)
 
   try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    if (!supabaseUrl || !serviceRoleKey) return json({ error: 'Supabase service configuration missing' }, 500)
+
+    const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
+    const access = await authorize(req, supabase, serviceRoleKey)
+    if (!access.ok) return json({ error: 'Unauthorized' }, 401)
+
     const { templateId } = await req.json().catch(() => ({}))
     if (!templateId) return json({ error: 'Template ID is required' }, 400)
-
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-      { auth: { persistSession: false } },
-    )
 
     const { data: template, error: templateError } = await supabase
       .from('whatsapp_templates')
@@ -112,6 +140,11 @@ serve(async (req) => {
     }
     if (template.channel.status && !['active', 'connected'].includes(String(template.channel.status).toLowerCase())) {
       return json({ error: 'WhatsApp channel is not active' }, 409)
+    }
+
+    const currentStatus = String(template.status || '').toUpperCase()
+    if (template.meta_template_id && ['PENDING', 'APPROVED'].includes(currentStatus)) {
+      return json({ success: true, already_submitted: true, meta_id: template.meta_template_id, status: currentStatus, auth_mode: access.mode })
     }
 
     const graphVersion = String(Deno.env.get('WHATSAPP_GRAPH_API_VERSION') || 'v26.0').replace(/^v/i, 'v')
@@ -168,7 +201,7 @@ serve(async (req) => {
       }).eq('id', registry.id)
     }
 
-    return json({ success: true, meta_id: metaData.id || null, graph_api_version: graphVersion })
+    return json({ success: true, meta_id: metaData.id || null, graph_api_version: graphVersion, auth_mode: access.mode })
   } catch (error: any) {
     console.error('[WhatsApp Submit] Error:', error?.message || error)
     return json({ error: error?.message || 'Template submission failed' }, 500)
