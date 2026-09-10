@@ -16,6 +16,7 @@ export default function MobileLayout({ children }: MobileLayoutProps) {
   const pathname = usePathname();
   const isLoginPage = pathname === '/login';
   const section = pathname.split('/')[1] || 'dashboard';
+  const isSupportInbox = pathname.startsWith('/customer-care/inbox');
   // Keep the narrow cover display in the mobile shell. The unfolded Fold
   // starts at the shared fold-inner breakpoint and uses the desktop shell.
   const isMobile = useMediaQuery('(max-width: 699px)');
@@ -28,8 +29,16 @@ export default function MobileLayout({ children }: MobileLayoutProps) {
     <div data-section={section} className="ch-workspace flex flex-col h-[100dvh] w-full max-w-full min-w-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden relative">
       <DhlInvoiceAutoSync />
       <MobileHeader />
-      <main className="flex-1 min-h-0 min-w-0 w-full max-w-full overflow-y-auto overflow-x-hidden overscroll-contain px-safe-left pr-safe-right">
-        <div className="min-w-0 w-full max-w-full pb-32">{children}</div>
+      <main
+        className={isSupportInbox
+          ? 'flex-1 min-h-0 min-w-0 w-full max-w-full overflow-hidden px-safe-left pr-safe-right pb-[calc(4rem+env(safe-area-inset-bottom))]'
+          : 'flex-1 min-h-0 min-w-0 w-full max-w-full overflow-y-auto overflow-x-hidden overscroll-contain px-safe-left pr-safe-right'}
+      >
+        <div className={isSupportInbox
+          ? 'h-full min-h-0 min-w-0 w-full max-w-full overflow-hidden'
+          : 'min-w-0 w-full max-w-full pb-32'}>
+          {children}
+        </div>
       </main>
       {pathname === '/dashboard' && <QuickActionsFab />}
       <MobileBottomNav />
