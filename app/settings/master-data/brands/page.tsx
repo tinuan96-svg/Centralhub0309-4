@@ -1,5 +1,16 @@
-import BrandsClient from "./BrandsClient";
+import { redirect } from 'next/navigation';
 
-export default function Page({ params, searchParams }: { params: any; searchParams: any }) {
-  return <BrandsClient params={params} searchParams={searchParams} />;
+function withSearch(path: string, values: Record<string, string | string[] | undefined> | undefined) {
+  const query = new URLSearchParams();
+  Object.entries(values || {}).forEach(([key, value]) => {
+    if (Array.isArray(value)) value.forEach(item => query.append(key, item));
+    else if (value !== undefined) query.set(key, value);
+  });
+  const suffix = query.toString();
+  return suffix ? `${path}?${suffix}` : path;
+}
+
+export default async function Page({ searchParams }: { searchParams: any }) {
+  const resolvedSearchParams = await Promise.resolve(searchParams);
+  redirect(withSearch('/inventory/brands', resolvedSearchParams));
 }

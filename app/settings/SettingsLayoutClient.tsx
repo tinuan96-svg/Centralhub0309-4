@@ -16,8 +16,6 @@ export default function SettingsLayout({
   const pathname = usePathname();
 
   const navItems = [
-    { href: '/settings/master-data/categories', label: 'Categories', icon: '📁' },
-    { href: '/settings/master-data/brands', label: 'Brands', icon: '🏷️' },
     { href: '/settings/master-data/suppliers', label: 'Suppliers', icon: '🏭' },
     { href: '/settings/master-data/stores', label: 'Stores', icon: '🏪' },
     { href: '/settings/notifications', label: 'Notifications', icon: '🔔' },
