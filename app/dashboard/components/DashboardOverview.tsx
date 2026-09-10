@@ -9,7 +9,7 @@ import { EmptyState } from '@/components/dashboard/Charts';
 import DashboardLiveStatus from './DashboardLiveStatus';
 import SecurityPulse from './SecurityPulse';
 import ReferenceDashboard from './ReferenceDashboard';
-import SectionVisuals from './SectionVisuals';
+import { getSectionVisualWidgets } from './SectionVisuals';
 import DashboardFilterBar from './DashboardFilterBar';
 import DashboardKpiGrid from './DashboardKpiGrid';
 import ActionRequired from './ActionRequired';
@@ -49,7 +49,7 @@ export default function DashboardOverview({ refreshKey, appearance = 'dark', con
     { id: 'business-overview', title: 'Business overview', description: 'Main paid-order totals, sales and trend visualisations', desktop: 12, tablet: 12, mobile: 12, minHeight: 360, content: <ReferenceDashboard report={report} selectedStoreId={selectedStoreId} timeRange={timeRange} /> },
     { id: 'security-pulse', title: 'Security pulse', description: 'Realtime security and site-risk monitoring', desktop: 4, tablet: 6, mobile: 12, minHeight: 250, content: <SecurityPulse selectedStoreId={selectedStoreId} compact /> },
     { id: 'kpi-indexes', title: 'KPI indexes', description: 'Revenue, profit, orders and inventory indexes', desktop: 8, tablet: 6, mobile: 12, minHeight: 250, content: <div className="ch-visual-comparisons"><DashboardKpiGrid compact current={report.current} previous={report.previous} /></div> },
-    { id: 'section-visuals', title: 'Section visualisations', description: 'Graphs and indicators from operational sections', desktop: 12, tablet: 12, mobile: 12, minHeight: 360, content: <SectionVisuals report={report} selectedStoreId={selectedStoreId} refreshKey={report.loadedAt.getTime()} /> },
+    ...getSectionVisualWidgets({ report, selectedStoreId, refreshKey: report.loadedAt.getTime() }),
     { id: 'action-required', title: 'Action required', description: 'Items needing admin attention', desktop: 6, tablet: 12, mobile: 12, minHeight: 240, content: <ActionRequired key={selectedStoreId + report.loadedAt.toISOString()} /> },
     { id: 'ai-insights', title: 'AI insights', description: 'Decision support and system observations', desktop: 6, tablet: 12, mobile: 12, minHeight: 240, content: <AIInsights key={selectedStoreId + report.loadedAt.toISOString()} /> },
     { id: 'audit-log', title: 'Audit log', description: 'Recent CentralHub system activity', desktop: 12, tablet: 12, mobile: 12, minHeight: 240, content: <AuditLogWidget key={report.loadedAt.toISOString()} /> },
