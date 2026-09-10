@@ -98,7 +98,12 @@ export const whatsappService = {
   },
 
   async getMessages(conversationId: string) {
-    const { data, error } = await supabase.from('whatsapp_messages').select('*').eq('conversation_id', conversationId).order('created_at', { ascending: true });
+    const { data, error } = await supabase
+      .from('whatsapp_messages')
+      .select('*')
+      .eq('conversation_id', conversationId)
+      .is('locally_deleted_at', null)
+      .order('created_at', { ascending: true });
     if (error) throw error;
 
     const messages = (data || []) as WhatsAppMessage[];
@@ -140,6 +145,28 @@ export const whatsappService = {
         delivery_error_message: log.error_message ?? message.delivery_error_message ?? null,
       };
     });
+  },
+
+  async editMessageLocally(message: WhatsAppMessage, newText: string) {
+    const text = newText.trim();
+    if (!text) throw new Error('Message cannot be empty.');
+    const updates: any = {
+      message_text: text,
+      locally_edited_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    if (!(message as any).local_original_text) updates.local_original_text = message.message_text || '';
+    const { data, error } = await supabase.from('whatsapp_messages').update(updates).eq('id', message.id).select().single();
+    if (error) throw error;
+    return data as WhatsAppMessage;
+  },
+
+  async hideMessageLocally(messageId: string) {
+    const { error } = await supabase.from('whatsapp_messages').update({
+      locally_deleted_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq('id', messageId);
+    if (error) throw error;
   },
 
   async getMediaUrl(messageId: string) {
