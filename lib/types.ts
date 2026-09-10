@@ -51,6 +51,9 @@ export interface WhatsAppMessage {
   failed_at?: string | null;
   delivery_error_code?: string | number | null;
   delivery_error_message?: string | null;
+  locally_edited_at?: string | null;
+  locally_deleted_at?: string | null;
+  local_original_text?: string | null;
   sender_phone: string | null;
   status: MessageStatus;
   ai_generated: boolean;
