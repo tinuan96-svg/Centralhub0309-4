@@ -5,7 +5,7 @@ declare
   v_header jsonb := jsonb_build_object(
     'type','HEADER',
     'format','IMAGE',
-    'example_image_url','https://malluspices.com/business-logo.jpg'
+    'example_image_url','https://malluspices.com/image.png'
   );
   v_buttons jsonb := jsonb_build_object(
     'type','BUTTONS',
