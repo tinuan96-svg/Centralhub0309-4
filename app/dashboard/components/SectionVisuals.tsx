@@ -10,7 +10,7 @@ import FinancialCommandSummary from '@/app/finance/FinancialCommandSummary';
 import CommunicationAnalytics from './CommunicationAnalytics';
 import IntegrationHealth from './IntegrationHealth';
 import BusinessTargets from './BusinessTargets';
-import ChannelVisuals from './ChannelVisuals';
+import { CHANNEL_VISUAL_CARDS, ChannelVisualCard } from './ChannelVisuals';
 import MetricMasonry from '@/components/dashboard/MetricMasonry';
 
 export type SectionVisualWidgetDefinition = {
@@ -28,15 +28,42 @@ export function getSectionVisualWidgets({ report, selectedStoreId, refreshKey }:
   const paid = report.orders.filter(isPaidOrder);
   const group = (key: 'order_status' | 'payment_method' | 'delivery_city', rows = paid) => {
     const values = new Map<string, number>();
-    rows.forEach(o => { const label = (String(o[key] || 'Unknown')).replace(/_/g, ' '); values.set(label, (values.get(label) || 0) + 1); });
+    rows.forEach(o => {
+      const label = String(o[key] || 'Unknown').replace(/_/g, ' ');
+      values.set(label, (values.get(label) || 0) + 1);
+    });
     return [...values].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
   };
+
   const out = report.inventory.filter(i => numeric(i.stock_quantity) <= 0).length;
   const low = report.inventory.filter(i => numeric(i.stock_quantity) > 0 && numeric(i.stock_quantity) <= (i.low_stock_threshold == null ? 5 : numeric(i.low_stock_threshold))).length;
-  const storeSales = report.stores.filter(s => selectedStoreId === 'all' || s.id === selectedStoreId).map((store, i) => ({ label: store.name, value: paid.filter(o => o.store_id === store.id).reduce((sum, o) => sum + productRevenue(o), 0), color: CHART_COLOURS[i % CHART_COLOURS.length] }));
-  if (paid.some(o => !o.store_id)) storeSales.push({ label: 'Unassigned', value: paid.filter(o => !o.store_id).reduce((sum, o) => sum + productRevenue(o), 0), color: '#94a3b8' });
+  const storeSales = report.stores
+    .filter(s => selectedStoreId === 'all' || s.id === selectedStoreId)
+    .map((store, i) => ({
+      label: store.name,
+      value: paid.filter(o => o.store_id === store.id).reduce((sum, o) => sum + productRevenue(o), 0),
+      color: CHART_COLOURS[i % CHART_COLOURS.length],
+    }));
+  if (paid.some(o => !o.store_id)) {
+    storeSales.push({
+      label: 'Unassigned',
+      value: paid.filter(o => !o.store_id).reduce((sum, o) => sum + productRevenue(o), 0),
+      color: '#94a3b8',
+    });
+  }
 
   const common = { desktop: 4, tablet: 6, mobile: 12, minHeight: 260 };
+  const channelWidgets: SectionVisualWidgetDefinition[] = CHANNEL_VISUAL_CARDS.map(card => ({
+    id: card.id,
+    title: card.title,
+    description: card.description,
+    desktop: card.id === 'website-activity' ? 8 : 4,
+    tablet: 6,
+    mobile: 12,
+    minHeight: card.id === 'website-activity' ? 330 : 280,
+    content: <ChannelVisualCard kind={card.id} />,
+  }));
+
   return [
     { id: 'finance-summary', title: 'Finance', description: 'Seven-day accounting summary', ...common, minHeight: 300, content: <FinancialCommandSummary refreshKey={refreshKey} card="finance" /> },
     { id: 'bank-reconciliation', title: 'Bank reconciliation', description: 'Current reconciliation status', ...common, minHeight: 300, content: <FinancialCommandSummary refreshKey={refreshKey} card="bank" /> },
@@ -61,7 +88,7 @@ export function getSectionVisualWidgets({ report, selectedStoreId, refreshKey }:
     ]} label="paid orders" /><div className="ch-visual-metrics"><VisualMetric label="No buyer email" value={paid.filter(o => !o.customer_email?.trim()).length} detail="Excluded from repeat-buyer ratio" /></div></Panel> },
     { id: 'customer-communications', title: 'Customer communications', description: 'Open conversations and today’s messages', ...common, content: <CommunicationAnalytics visual key={'messages-' + selectedStoreId} refreshKey={refreshKey} /> },
     { id: 'integration-health', title: 'Integration health', description: 'Saved operational integration checks', ...common, content: <IntegrationHealth visual refreshKey={refreshKey} /> },
-    { id: 'channel-analytics', title: 'Channel analytics', description: 'Website and marketing analytics cards', desktop: 12, tablet: 12, mobile: 12, minHeight: 360, content: <MetricMasonry><ChannelVisuals key={selectedStoreId + report.start.toISOString() + report.end.toISOString()} start={report.start.toISOString().slice(0, 10)} end={report.end.toISOString().slice(0, 10)} selectedStoreId={selectedStoreId} refreshKey={refreshKey} /></MetricMasonry> },
+    ...channelWidgets,
   ];
 }
 
