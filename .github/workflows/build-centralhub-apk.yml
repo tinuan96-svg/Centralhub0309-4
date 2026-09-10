@@ -56,4 +56,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-# Build marker: rebuild the APK from the latest main revision when web-only changes are made.\n# Fold compact-sidebar verification build.
+# CentralHub's installed Android shell loads https://centralhub.network directly.
+# Normal UI, dashboard, database and API changes therefore arrive through the
+# live deployment and must not trigger another APK build/install cycle.
+# This workflow is reserved for actual Android shell/config/dependency changes.
