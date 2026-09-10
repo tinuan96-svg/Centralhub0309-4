@@ -3,13 +3,13 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-whatsapp-retry-secret',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
-  headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
 })
 
 function variablesFromComponents(components: any[]): string[] {
@@ -30,45 +30,96 @@ function templateVersion(name: string) {
   return match ? Number(match[1]) : 0
 }
 
+function templateBase(name: string) {
+  return String(name || '').replace(/_v\d+$/i, '')
+}
+
 type KnownMapping = {
   eventKey: string
   variables: string[]
   description: string
   orderStatus?: string
+  eventSource: 'ORDER_SERVICE' | 'DHL_TRACKING'
 }
 
-const knownMappings: Record<string, KnownMapping> = {
-  order_confirm_v1: { eventKey: 'order.confirmed', variables: ['customer_name', 'order_number'], description: 'Order Confirmed', orderStatus: 'confirmed' },
-  order_confirm_v2: { eventKey: 'order.confirmed', variables: ['customer_name', 'order_number'], description: 'Order Confirmed', orderStatus: 'confirmed' },
-  shipment_booked_v1: { eventKey: 'order.shipment_booked', variables: ['order_number', 'tracking_url'], description: 'Shipment Booked', orderStatus: 'shipment_booked' },
-  shipment_booked_v2: { eventKey: 'order.shipment_booked', variables: ['order_number', 'tracking_url'], description: 'Shipment Booked', orderStatus: 'shipment_booked' },
-  order_shipped_v1: { eventKey: 'order.shipped', variables: ['order_number', 'tracking_url'], description: 'Order Shipped', orderStatus: 'shipped' },
-  order_shipped_v2: { eventKey: 'order.shipped', variables: ['order_number', 'tracking_url'], description: 'Order Shipped', orderStatus: 'shipped' },
-  order_out_for_delivery_v1: { eventKey: 'order.out_for_delivery', variables: ['order_number', 'tracking_url'], description: 'Out for Delivery', orderStatus: 'out_for_delivery' },
-  order_out_for_delivery_v2: { eventKey: 'order.out_for_delivery', variables: ['order_number', 'tracking_url'], description: 'Out for Delivery', orderStatus: 'out_for_delivery' },
-  order_delivered_v1: { eventKey: 'order.delivered', variables: ['customer_name', 'order_number'], description: 'Order Delivered', orderStatus: 'delivered' },
-  order_delivered_v2: { eventKey: 'order.delivered', variables: ['customer_name', 'order_number'], description: 'Order Delivered', orderStatus: 'delivered' },
-  order_cancelled_v1: { eventKey: 'order.cancelled', variables: ['customer_name', 'order_number'], description: 'Order Cancelled', orderStatus: 'cancelled' },
-  order_cancelled_v2: { eventKey: 'order.cancelled', variables: ['customer_name', 'order_number'], description: 'Order Cancelled', orderStatus: 'cancelled' },
-  order_returned_v1: { eventKey: 'order.returned', variables: ['customer_name', 'order_number'], description: 'Order Returned', orderStatus: 'returned' },
-  order_returned_v2: { eventKey: 'order.returned', variables: ['customer_name', 'order_number'], description: 'Order Returned', orderStatus: 'returned' },
-  order_processing_v1: { eventKey: 'order.processing', variables: ['customer_name', 'order_number'], description: 'Order Processing', orderStatus: 'processing' },
-  order_refunded_v1: { eventKey: 'order.refunded', variables: ['customer_name', 'order_number'], description: 'Order Refunded', orderStatus: 'refunded' },
+function knownMapping(metaName: string): KnownMapping | null {
+  const version = templateVersion(metaName)
+  switch (templateBase(metaName)) {
+    case 'order_confirm':
+      return { eventKey: 'order.confirmed', variables: ['customer_name', 'order_number'], description: 'Order Confirmed', orderStatus: 'confirmed', eventSource: 'ORDER_SERVICE' }
+    case 'shipment_booked':
+      return { eventKey: 'order.shipment_booked', variables: version >= 4 ? ['order_number'] : ['order_number', 'tracking_url'], description: 'Shipment Booked', orderStatus: 'shipment_booked', eventSource: 'ORDER_SERVICE' }
+    case 'order_shipped':
+      return { eventKey: 'order.shipped', variables: version >= 4 ? ['order_number'] : ['order_number', 'tracking_url'], description: 'Order Shipped', orderStatus: 'shipped', eventSource: 'ORDER_SERVICE' }
+    case 'order_out_for_delivery':
+      return { eventKey: 'order.out_for_delivery', variables: version >= 4 ? ['order_number'] : ['order_number', 'tracking_url'], description: 'Out for Delivery', orderStatus: 'out_for_delivery', eventSource: 'ORDER_SERVICE' }
+    case 'order_delivered':
+      return { eventKey: 'order.delivered', variables: ['customer_name', 'order_number'], description: 'Order Delivered', orderStatus: 'delivered', eventSource: 'ORDER_SERVICE' }
+    case 'order_cancelled':
+      return { eventKey: 'order.cancelled', variables: ['customer_name', 'order_number'], description: 'Order Cancelled', orderStatus: 'cancelled', eventSource: 'ORDER_SERVICE' }
+    case 'order_returned':
+      return { eventKey: 'order.returned', variables: ['customer_name', 'order_number'], description: 'Order Returned', orderStatus: 'returned', eventSource: 'ORDER_SERVICE' }
+    case 'order_processing':
+      return { eventKey: 'order.processing', variables: ['customer_name', 'order_number'], description: 'Order Processing', orderStatus: 'processing', eventSource: 'ORDER_SERVICE' }
+    case 'order_refunded':
+      return { eventKey: 'order.refunded', variables: ['customer_name', 'order_number'], description: 'Order Refunded', orderStatus: 'refunded', eventSource: 'ORDER_SERVICE' }
+    case 'delivery_tracking_update':
+      return {
+        eventKey: 'shipment.tracking_update',
+        variables: version >= 3
+          ? ['order_number', 'tracking_update', 'tracking_location', 'tracking_time']
+          : ['order_number', 'tracking_update', 'tracking_location', 'tracking_time', 'tracking_url'],
+        description: 'DHL shipment tracking update',
+        eventSource: 'DHL_TRACKING',
+      }
+    default:
+      return null
+  }
+}
+
+async function authorize(req: Request, db: any, serviceRoleKey: string) {
+  const cronSecret = String(req.headers.get('x-whatsapp-retry-secret') || '').trim()
+  if (cronSecret) {
+    const { data, error } = await db.rpc('verify_integration_cron_secret', {
+      p_name: 'whatsapp_retry_cron_secret',
+      p_secret: cronSecret,
+    })
+    if (!error && data === true) return { ok: true, mode: 'cron' }
+  }
+
+  const token = String(req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim()
+  if (!token) return { ok: false, mode: 'none' }
+  if (token === serviceRoleKey) return { ok: true, mode: 'service_role' }
+
+  const { data: userData, error: userError } = await db.auth.getUser(token)
+  const user = userData?.user
+  if (userError || !user) return { ok: false, mode: 'invalid_user' }
+
+  const { data: profile } = await db.from('user_profiles')
+    .select('profile_role,is_active')
+    .eq('id', user.id)
+    .maybeSingle()
+  if (profile?.profile_role === 'admin' && profile?.is_active !== false) return { ok: true, mode: 'admin' }
+  return { ok: false, mode: 'forbidden' }
 }
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { status: 200, headers: corsHeaders })
+  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
 
   try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    if (!supabaseUrl || !serviceRoleKey) return json({ error: 'Supabase service configuration missing' }, 500)
+
+    const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
+    const access = await authorize(req, supabase, serviceRoleKey)
+    if (!access.ok) return json({ error: 'Unauthorized' }, 401)
+
     const body = await req.json().catch(() => ({}))
     const channelId = String(body?.channelId || '').trim()
     const requestedStoreId = String(body?.storeId || '').trim()
     if (!channelId) return json({ error: 'Channel ID is required' }, 400)
-
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    )
 
     const { data: channel, error: channelError } = await supabase
       .from('whatsapp_channels')
@@ -78,6 +129,7 @@ serve(async (req) => {
 
     if (channelError || !channel?.access_token || !channel?.waba_id) return json({ error: 'Channel not configured correctly' }, 404)
     if (requestedStoreId && requestedStoreId !== channel.store_id) return json({ error: 'Channel/store mismatch' }, 403)
+    if (channel.status && !['active', 'connected'].includes(String(channel.status).toLowerCase())) return json({ error: 'WhatsApp channel is not active' }, 409)
 
     const graphVersion = String(Deno.env.get('WHATSAPP_GRAPH_API_VERSION') || 'v26.0').replace(/^v/i, 'v')
     const metaUrl = `https://graph.facebook.com/${graphVersion}/${channel.waba_id}/message_templates?limit=100`
@@ -101,10 +153,12 @@ serve(async (req) => {
         const metaName = String(metaTmpl?.name || '').trim()
         const language = String(metaTmpl?.language || 'en_GB').trim()
         if (!metaName) continue
+
         const components = Array.isArray(metaTmpl?.components) ? metaTmpl.components : []
         const inferredVars = variablesFromComponents(components)
         const metaStatus = String(metaTmpl?.status || 'UNKNOWN').toUpperCase()
         const approved = metaStatus === 'APPROVED'
+        const known = knownMapping(metaName)
 
         const { error: upsertError } = await supabase.from('whatsapp_templates').upsert({
           store_id: channel.store_id,
@@ -122,7 +176,6 @@ serve(async (req) => {
         if (upsertError) throw upsertError
         synced++
 
-        const known = knownMappings[metaName]
         const { data: existingRegistry } = await supabase.from('whatsapp_template_registry')
           .select('id,name,meta_template_name,variables')
           .eq('store_id', channel.store_id)
@@ -130,6 +183,7 @@ serve(async (req) => {
           .eq('language', language)
           .maybeSingle()
 
+        let registryId = existingRegistry?.id || null
         if (existingRegistry) {
           const currentVars = Array.isArray(existingRegistry.variables) ? existingRegistry.variables : []
           const update: any = {
@@ -142,7 +196,7 @@ serve(async (req) => {
           if (error) throw error
           registryUpdated++
         } else {
-          const { error } = await supabase.from('whatsapp_template_registry').insert({
+          const { data: created, error } = await supabase.from('whatsapp_template_registry').insert({
             store_id: channel.store_id,
             name: humanName(metaName),
             meta_template_id: String(metaTmpl.id || ''),
@@ -151,74 +205,63 @@ serve(async (req) => {
             language,
             variables: known?.variables || inferredVars,
             status: String(metaTmpl.status || 'UNKNOWN').toLowerCase(),
-          })
+          }).select('id').single()
           if (error) throw error
+          registryId = created?.id || null
           registryCreated++
         }
 
-        if (known && approved) {
-          const { data: registry } = await supabase.from('whatsapp_template_registry')
-            .select('id,meta_template_name')
+        if (known && approved && registryId) {
+          // Keep the registry variables aligned with the exact template generation.
+          await supabase.from('whatsapp_template_registry').update({ variables: known.variables }).eq('id', registryId)
+
+          const { data: existingMapping } = await supabase.from('whatsapp_event_template_mappings')
+            .select('id,template:whatsapp_template_registry(meta_template_name)')
             .eq('store_id', channel.store_id)
-            .eq('meta_template_name', metaName)
-            .eq('language', language)
+            .eq('event_key', known.eventKey)
             .maybeSingle()
 
-          if (registry) {
-            const { data: existingMapping } = await supabase.from('whatsapp_event_template_mappings')
-              .select('id,template:whatsapp_template_registry(meta_template_name)')
-              .eq('store_id', channel.store_id)
-              .eq('event_key', known.eventKey)
-              .maybeSingle()
+          const currentTemplateName = String(existingMapping?.template?.meta_template_name || '')
+          const canPromote = !currentTemplateName || templateVersion(metaName) >= templateVersion(currentTemplateName)
 
-            const currentTemplateName = String(existingMapping?.template?.meta_template_name || '')
-            const canPromote = !currentTemplateName || templateVersion(metaName) >= templateVersion(currentTemplateName)
+          if (canPromote) {
+            const mappingPayload = {
+              store_id: channel.store_id,
+              event_key: known.eventKey,
+              event_type: 'TRANSACTIONAL',
+              event_source: known.eventSource,
+              description: known.description,
+              template_id: registryId,
+              channel_id: channelId,
+              enabled: true,
+              customer_visible: true,
+              requires_opt_in: false,
+              variables: known.variables,
+              updated_at: new Date().toISOString(),
+            }
+            const { error } = await supabase.from('whatsapp_event_template_mappings')
+              .upsert(mappingPayload, { onConflict: 'store_id,event_key' })
+            if (error) throw error
+            mappingsLinked++
 
-            if (canPromote) {
-              if (existingMapping) {
-                const { error } = await supabase.from('whatsapp_event_template_mappings').update({
-                  template_id: registry.id,
-                  channel_id: channelId,
-                  variables: known.variables,
-                  description: known.description,
-                  enabled: true,
-                  customer_visible: true,
-                  updated_at: new Date().toISOString(),
-                }).eq('id', existingMapping.id)
-                if (error) throw error
-              } else {
-                const { error } = await supabase.from('whatsapp_event_template_mappings').insert({
+            if (known.orderStatus) {
+              const { data: currentRule } = await supabase.from('order_whatsapp_template_rules')
+                .select('template_name')
+                .eq('store_id', channel.store_id)
+                .eq('order_status', known.orderStatus)
+                .maybeSingle()
+              const currentRuleTemplate = String(currentRule?.template_name || '')
+              if (!currentRuleTemplate || templateVersion(metaName) >= templateVersion(currentRuleTemplate)) {
+                const { error: ruleError } = await supabase.from('order_whatsapp_template_rules').upsert({
                   store_id: channel.store_id,
-                  event_key: known.eventKey,
-                  event_type: 'TRANSACTIONAL',
-                  event_source: 'ORDER_SERVICE',
-                  description: known.description,
-                  template_id: registry.id,
-                  channel_id: channelId,
+                  order_status: known.orderStatus,
+                  template_name: metaName,
+                  language,
                   enabled: true,
-                  customer_visible: true,
-                  requires_opt_in: false,
-                  variables: known.variables,
-                })
-                if (error) throw error
-              }
-              mappingsLinked++
-
-              if (known.orderStatus) {
-                const { data: currentRule } = await supabase.from('order_whatsapp_template_rules')
-                  .select('template_name')
-                  .eq('store_id', channel.store_id)
-                  .eq('order_status', known.orderStatus)
-                  .maybeSingle()
-                const currentRuleTemplate = String(currentRule?.template_name || '')
-                if (!currentRuleTemplate || templateVersion(metaName) >= templateVersion(currentRuleTemplate)) {
-                  const { error: ruleError, count } = await supabase.from('order_whatsapp_template_rules')
-                    .update({ template_name: metaName, language, enabled: true, updated_at: new Date().toISOString() }, { count: 'exact' })
-                    .eq('store_id', channel.store_id)
-                    .eq('order_status', known.orderStatus)
-                  if (ruleError) throw ruleError
-                  rulesPromoted += count || 0
-                }
+                  updated_at: new Date().toISOString(),
+                }, { onConflict: 'store_id,order_status' })
+                if (ruleError) throw ruleError
+                rulesPromoted++
               }
             }
           }
@@ -231,7 +274,19 @@ serve(async (req) => {
       }
     }
 
-    return json({ success: true, graph_api_version: graphVersion, fetched: templates.length, synced, registry_updated: registryUpdated, registry_created: registryCreated, mappings_linked: mappingsLinked, rules_promoted: rulesPromoted, errors, details })
+    return json({
+      success: true,
+      auth_mode: access.mode,
+      graph_api_version: graphVersion,
+      fetched: templates.length,
+      synced,
+      registry_updated: registryUpdated,
+      registry_created: registryCreated,
+      mappings_linked: mappingsLinked,
+      rules_promoted: rulesPromoted,
+      errors,
+      details,
+    })
   } catch (error: any) {
     console.error('[WhatsApp Sync] Error:', error?.message || error)
     return json({ error: error?.message || 'Template sync failed' }, 500)
