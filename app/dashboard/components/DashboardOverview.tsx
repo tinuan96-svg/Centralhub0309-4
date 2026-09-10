@@ -10,6 +10,7 @@ import DashboardLiveStatus from './DashboardLiveStatus';
 import SecurityPulse from './SecurityPulse';
 import ReferenceDashboard from './ReferenceDashboard';
 import { getSectionVisualWidgets } from './SectionVisuals';
+import { getOperationsMonitorWidgets, OperationsMonitorProvider } from './OperationsMonitor';
 import DashboardFilterBar from './DashboardFilterBar';
 import DashboardKpiGrid from './DashboardKpiGrid';
 import ActionRequired from './ActionRequired';
@@ -46,6 +47,7 @@ export default function DashboardOverview({ refreshKey, appearance = 'dark', con
   };
 
   const dashboardWidgets = report ? [
+    ...getOperationsMonitorWidgets(),
     { id: 'business-overview', title: 'Business overview', description: 'Main paid-order totals, sales and trend visualisations', desktop: 12, tablet: 12, mobile: 12, minHeight: 360, content: <ReferenceDashboard report={report} selectedStoreId={selectedStoreId} timeRange={timeRange} /> },
     { id: 'security-pulse', title: 'Security pulse', description: 'Realtime security and site-risk monitoring', desktop: 4, tablet: 6, mobile: 12, minHeight: 250, content: <SecurityPulse selectedStoreId={selectedStoreId} compact /> },
     { id: 'kpi-indexes', title: 'KPI indexes', description: 'Revenue, profit, orders and inventory indexes', desktop: 8, tablet: 6, mobile: 12, minHeight: 250, content: <div className="ch-visual-comparisons"><DashboardKpiGrid compact current={report.current} previous={report.previous} /></div> },
@@ -65,13 +67,13 @@ export default function DashboardOverview({ refreshKey, appearance = 'dark', con
       {!report && <div className="ch-grid-main"><SecurityPulse selectedStoreId={selectedStoreId} compact /></div>}
       {report && <div className="ch-visual-surface">
         <p className="ch-console-scope">{report.start.toLocaleDateString('en-GB')} – {report.end.toLocaleDateString('en-GB')} · {selectedStoreId === 'all' ? 'All stores' : stores[0]?.name || 'Selected store'}</p>
-        <DashboardWorkspace widgets={dashboardWidgets} />
+        <OperationsMonitorProvider><DashboardWorkspace widgets={dashboardWidgets} /></OperationsMonitorProvider>
       </div>}
       {!report && !loading && !error && <EmptyState />}
     </section>
     {report && <div className="ch-dashboard-followup">
       <details className="ch-model-inspection"><summary>Definitions, actions & system messages</summary><div className="ch-dashboard-stack">
-        <div className="ch-note"><p>Paid order total is the amount actually received from paid orders, including delivery charged. Product subtotal is kept separate so it never looks like the order total is missing money. Order gross profit follows Profit Analysis: paid order totals less product costs, before shipping, packing, gateway fees and overhead. After paid expenses subtracts paid expense invoices; it is not accounting net profit. <Link className="ch-link" href="/finance">Open Finance for accounting profit <ArrowUpRight size={14} /></Link></p><p className="mt-2">{report.current.estimatedCosts} orders use estimated current product costs; {report.current.missingCosts} have incomplete cost coverage. Warehouse, bank, integration and reserve figures show their labelled global/current scopes. Finance uses its existing seven-day accounting report. Other period charts use the selected store and dates.</p></div>
+        <div className="ch-note"><p>Paid order total is the amount actually received from paid orders, including delivery charged. Product subtotal is kept separate so it never looks like the order total is missing money. Order gross profit follows Profit Analysis: paid order totals less product costs, before shipping, packing, gateway fees and overhead. After paid expenses subtracts paid expense invoices; it is not accounting net profit. <Link className="ch-link" href="/finance">Open Finance for accounting profit <ArrowUpRight size={14} /></Link></p><p className="mt-2">The 24×7 command-centre cards use a separate compact live snapshot over CentralHub operational tables, realtime database events and a 30-second verification sample. Storefront heartbeat, site-health, sync, messaging, shipping, traffic and stock indicators are measured signals; the Ops index is explicitly a rule-based composite rather than a financial KPI. {report.current.estimatedCosts} orders use estimated current product costs; {report.current.missingCosts} have incomplete cost coverage. Warehouse, bank, integration and reserve figures show their labelled global/current scopes. Finance uses its existing seven-day accounting report. Other period charts use the selected store and dates.</p></div>
         <nav className="ch-workspace-links" aria-label="Section details"><Link href="/stores">Stores</Link><Link href="/inventory">Inventory</Link><Link href="/backorder-planning">Backorders</Link><Link href="/profit-analysis">Product performance</Link><Link href="/picking">Picking</Link><Link href="/packing">Packing</Link><Link href="/shipping">Shipping</Link><Link href="/customers">Customers</Link><Link href="/customer-care/inbox">Inbox</Link><Link href="/customer-care/channels">Channels</Link><Link href="/marketing">Marketing</Link><Link href="/analytics">Analytics</Link></nav>
       </div></details>
     </div>}
