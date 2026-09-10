@@ -1,7 +1,10 @@
 package com.centralhub.network;
 
 import android.Manifest;
+import android.content.ActivityNotFoundException;
+import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.webkit.WebResourceRequest;
@@ -13,6 +16,9 @@ import com.getcapacitor.BridgeActivity;
 import com.google.firebase.messaging.FirebaseMessaging;
 
 public class MainActivity extends BridgeActivity {
+    private static final String CENTRALHUB_ORIGIN = "https://centralhub.network";
+    private static final String EXTRA_ACTION_URL = "centralhub_action_url";
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -53,6 +59,37 @@ public class MainActivity extends BridgeActivity {
         bridge.getWebView().setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                Uri uri = request.getUrl();
+                String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase();
+                if ("http".equals(scheme) || "https".equals(scheme)) {
+                    return false;
+                }
+
+                // Open native Android destinations outside the WebView. This keeps
+                // WhatsApp, phone, email, SMS, maps and Play Store links working.
+                if ("whatsapp".equals(scheme)
+                        || "tel".equals(scheme)
+                        || "mailto".equals(scheme)
+                        || "sms".equals(scheme)
+                        || "geo".equals(scheme)
+                        || "market".equals(scheme)) {
+                    try {
+                        startActivity(new Intent(Intent.ACTION_VIEW, uri));
+                    } catch (ActivityNotFoundException ignored) {
+                        if ("whatsapp".equals(scheme)) {
+                            String phone = uri.getQueryParameter("phone");
+                            String text = uri.getQueryParameter("text");
+                            if (phone != null && !phone.trim().isEmpty()) {
+                                Uri.Builder fallback = Uri.parse("https://wa.me/" + phone.trim()).buildUpon();
+                                if (text != null && !text.trim().isEmpty()) {
+                                    fallback.appendQueryParameter("text", text);
+                                }
+                                startActivity(new Intent(Intent.ACTION_VIEW, fallback.build()));
+                            }
+                        }
+                    }
+                    return true;
+                }
                 return false;
             }
 
@@ -99,6 +136,54 @@ public class MainActivity extends BridgeActivity {
                 }
             }
         });
+
+        handleNotificationIntent(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleNotificationIntent(intent);
+    }
+
+    /**
+     * Route notification taps into the exact CentralHub page supplied by the push
+     * payload. Only CentralHub-relative URLs or the CentralHub HTTPS origin are
+     * accepted, so a push payload cannot turn the native app into an open redirect.
+     */
+    private void handleNotificationIntent(Intent intent) {
+        if (intent == null) return;
+        String actionUrl = intent.getStringExtra(EXTRA_ACTION_URL);
+        if (actionUrl == null || actionUrl.trim().isEmpty()) return;
+        intent.removeExtra(EXTRA_ACTION_URL);
+
+        final String targetUrl = normalizeCentralHubUrl(actionUrl);
+        if (targetUrl == null) return;
+
+        WebView webView = bridge == null ? null : bridge.getWebView();
+        if (webView != null) {
+            webView.post(() -> webView.loadUrl(targetUrl));
+        }
+    }
+
+    private String normalizeCentralHubUrl(String actionUrl) {
+        String value = actionUrl.trim();
+        if (value.startsWith("/")) {
+            return CENTRALHUB_ORIGIN + value;
+        }
+
+        try {
+            Uri uri = Uri.parse(value);
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            if ("https".equalsIgnoreCase(scheme)
+                    && "centralhub.network".equalsIgnoreCase(host)) {
+                return uri.toString();
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
     }
 
     /**
