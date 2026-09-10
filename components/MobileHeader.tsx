@@ -71,10 +71,11 @@ export default function MobileHeader() {
     ] },
     { label: 'Products', icon: '📦', key: '04 — products', subItems: [
       { href: '/inventory', label: 'Product Manager' },
+      { href: '/inventory/intelligence', label: 'Product Intelligence' },
+      { href: '/inventory/categories', label: 'Categories & Sales' },
+      { href: '/inventory/brands', label: 'Brands & Sales' },
       { href: '/inventory/bulk', label: 'Bulk Manager' },
       { href: '/business-intelligence/executive#approvals', label: 'Product Approvals' },
-      { href: '/settings/master-data/categories', label: 'Categories' },
-      { href: '/settings/master-data/brands', label: 'Brands' },
       { href: '/marketing/ai', label: 'SEO & Content' },
       { href: '/inventory-management/sync', label: 'Product Sync' },
     ] },

@@ -17,8 +17,8 @@ const sections: NavSection[] = [
     { href: '/orders', label: 'Order Queue' }, { href: '/sync-status', label: 'Order Monitor' }, { href: '/customers', label: 'Customers' },
   ] },
   { key: '03-catalog-inventory', label: 'Catalog & Inventory', icon: '📦', description: 'Products, stock and inventory control', items: [
-    { href: '/inventory', label: 'Product Manager' }, { href: '/inventory/bulk', label: 'Bulk Product Manager' }, { href: '/business-intelligence/executive#approvals', label: 'Product Approvals' },
-    { href: '/settings/master-data/categories', label: 'Categories' }, { href: '/settings/master-data/brands', label: 'Brands' }, { href: '/inventory-management/sync', label: 'Store Product Sync' },
+    { href: '/inventory', label: 'Product Manager' }, { href: '/inventory/intelligence', label: 'Product Intelligence' }, { href: '/inventory/categories', label: 'Categories & Sales' }, { href: '/inventory/brands', label: 'Brands & Sales' }, { href: '/inventory/bulk', label: 'Bulk Product Manager' }, { href: '/business-intelligence/executive#approvals', label: 'Product Approvals' },
+    { href: '/inventory-management/sync', label: 'Store Product Sync' },
     { href: '/inventory-management', label: 'Inventory Dashboard' }, { href: '/inventory-management/stock', label: 'Stock List' }, { href: '/inventory-management/adjustments', label: 'Stock Adjustments' },
     { href: '/inventory-management/movements', label: 'Stock Movements' }, { href: '/inventory-audit', label: 'Stock Audit' }, { href: '/inventory-management/reports', label: 'Inventory Reports' },
     { href: '/inventory-management/warehouses', label: 'Warehouses & Bins' }, { href: '/inventory-management/barcode', label: 'Barcode Scanner' }, { href: '/inventory-management/packaging', label: 'Packaging' }, { href: '/inventory-management/expiry', label: 'Expiry Management' },

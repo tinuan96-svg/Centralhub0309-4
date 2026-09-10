@@ -5,8 +5,10 @@ import { usePathname } from 'next/navigation';
 
 const tabs = [
   { href: '/inventory', label: 'Products', icon: '📦', exact: true },
+  { href: '/inventory/intelligence', label: 'Intelligence', icon: '📈' },
   { href: '/inventory/categories', label: 'Categories & Sales', icon: '📁' },
   { href: '/inventory/brands', label: 'Brands & Sales', icon: '🏷️' },
+  { href: '/inventory/bulk', label: 'Bulk Manager', icon: '🧰' },
 ];
 
 export default function ProductWorkspaceNav() {
@@ -24,7 +26,7 @@ export default function ProductWorkspaceNav() {
             <span className="rounded-lg border border-cyan-500/25 bg-cyan-500/10 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-cyan-300">Deep intelligence</span>
           </div>
           <p className="mt-1 text-xs text-slate-400">
-            Manage the catalogue, then drill into category and brand sales. Tap any category or brand for its complete paid-sales report.
+            Manage the catalogue, then drill into item, category and brand sales. Tap any category or brand for its complete paid-sales report.
           </p>
           <div className="mt-2 flex flex-wrap gap-1.5 text-[9px] font-bold uppercase tracking-wider text-slate-500">
             <span className="rounded-md border border-slate-800 bg-slate-950/50 px-2 py-1">Store scope</span>

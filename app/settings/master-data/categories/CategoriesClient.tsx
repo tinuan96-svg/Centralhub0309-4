@@ -198,7 +198,7 @@ export default function CategoriesClient({ params, searchParams }: { params: any
                     </div>
                     <div>
                       <Link
-                        href={`/settings/master-data/categories/${parent.id}?storeId=${storeId || 'all'}&timeRange=${timeRange}`}
+                        href={`/inventory/categories/${parent.id}?storeId=${storeId || 'all'}&timeRange=${timeRange}`}
                         className="text-xl font-black text-white uppercase tracking-tight hover:text-blue-400 transition-colors"
                       >
                         {parent.name}
@@ -254,7 +254,7 @@ export default function CategoriesClient({ params, searchParams }: { params: any
                         <div className="flex items-center gap-4 flex-1">
                           <div className="w-1.5 h-1.5 rounded-full bg-blue-500/40" />
                           <Link
-                            href={`/settings/master-data/categories/${sub.id}?storeId=${storeId || 'all'}&timeRange=${timeRange}`}
+                            href={`/inventory/categories/${sub.id}?storeId=${storeId || 'all'}&timeRange=${timeRange}`}
                             className="text-sm font-bold text-slate-300 hover:text-blue-400 transition-colors"
                           >
                             {sub.name}

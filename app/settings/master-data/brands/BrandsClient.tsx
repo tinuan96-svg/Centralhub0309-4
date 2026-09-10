@@ -179,7 +179,7 @@ export default function BrandsClient({ params, searchParams }: { params: any; se
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {brands.map((brand) => (
             <Link
-              href={`/settings/master-data/brands/${brand.id}?storeId=${storeId || 'all'}&timeRange=${timeRange}`}
+              href={`/inventory/brands/${brand.id}?storeId=${storeId || 'all'}&timeRange=${timeRange}`}
               key={brand.id}
               className="bg-slate-900/50 rounded-[2rem] border border-slate-800 p-6 hover:border-blue-500/50 transition-all group relative overflow-hidden"
             >

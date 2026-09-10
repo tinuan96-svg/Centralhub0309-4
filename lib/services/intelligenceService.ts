@@ -69,6 +69,53 @@ export interface ProductPerformance {
   status: 'active' | 'inactive';
 }
 
+export interface ProductIntelligenceTrendPoint {
+  date: string;
+  revenue: number;
+  units: number;
+  profit: number;
+}
+
+export interface ProductIntelligenceGroup {
+  id: string;
+  name: string;
+  revenue: number;
+  units: number;
+  profit: number;
+  orderCount: number;
+  margin: number;
+}
+
+export interface ProductIntelligenceReport {
+  current: {
+    metrics: MetricSet;
+    products: ProductPerformance[];
+    brandCategory: Array<ProductIntelligenceGroup & { brandId: string; brandName: string; categoryId: string; categoryName: string }>;
+    brands: ProductIntelligenceGroup[];
+    categories: ProductIntelligenceGroup[];
+    daily: ProductIntelligenceTrendPoint[];
+    riceBrandTrends: Array<ProductIntelligenceGroup & { trend: ProductIntelligenceTrendPoint[] }>;
+    doubleHorseCategories: ProductIntelligenceGroup[];
+  };
+  previous: {
+    metrics: MetricSet;
+    products: ProductPerformance[];
+  };
+  comparison: {
+    revenue: number;
+    units: number;
+    profit: number;
+    orderCount: number;
+    margin: number;
+  };
+  quality: {
+    unmappedItems: number;
+    zeroCostItems: number;
+    productsWithoutBrand: number;
+    productsWithoutCategory: number;
+  };
+}
+
 export class IntelligenceService {
   /**
    * Helper to get common order query with BI filters applied
@@ -454,6 +501,44 @@ export class IntelligenceService {
     }
   }
 
+  static async getProductIntelligence(options: BIFilterOptions): Promise<ProductIntelligenceReport> {
+    try {
+      const current = await this.buildProductIntelligenceSlice(options);
+      const previousOptions = this.getPreviousPeriodOptions(options);
+      const previous = await this.buildProductIntelligenceSlice(previousOptions);
+
+      const delta = (now: number, before: number) => before > 0 ? ((now - before) / before) * 100 : now > 0 ? 100 : 0;
+
+      return {
+        current: {
+          metrics: current.metrics,
+          products: current.products,
+          brandCategory: current.brandCategory,
+          brands: current.brands,
+          categories: current.categories,
+          daily: current.daily,
+          riceBrandTrends: current.riceBrandTrends,
+          doubleHorseCategories: current.doubleHorseCategories
+        },
+        previous: {
+          metrics: previous.metrics,
+          products: previous.products
+        },
+        comparison: {
+          revenue: delta(current.metrics.revenue, previous.metrics.revenue),
+          units: delta(current.metrics.unitsSold, previous.metrics.unitsSold),
+          profit: delta(current.metrics.grossProfit, previous.metrics.grossProfit),
+          orderCount: delta(current.metrics.orderCount, previous.metrics.orderCount),
+          margin: current.metrics.margin - previous.metrics.margin
+        },
+        quality: current.quality
+      };
+    } catch (err) {
+      console.error('[IntelligenceService] Error in getProductIntelligence:', err);
+      return this.emptyProductIntelligenceReport();
+    }
+  }
+
   static async getBrandDetail(brandId: string, options: BIFilterOptions): Promise<any | null> {
     try {
       const { data: brand, error: bErr } = await supabase
@@ -829,6 +914,248 @@ export class IntelligenceService {
     }
 
     return { start, end };
+  }
+
+  private static async buildProductIntelligenceSlice(options: BIFilterOptions): Promise<ProductIntelligenceReport['current'] & { quality: ProductIntelligenceReport['quality'] }> {
+    const metrics = this.emptyMetrics();
+    const quality = { unmappedItems: 0, zeroCostItems: 0, productsWithoutBrand: 0, productsWithoutCategory: 0 };
+
+    const ordersQuery = this.getBaseOrderQuery(options);
+    const { data: orders, error: orderError } = await ordersQuery;
+    if (orderError || !orders || orders.length === 0) {
+      return {
+        metrics,
+        products: [],
+        brandCategory: [],
+        brands: [],
+        categories: [],
+        daily: [],
+        riceBrandTrends: [],
+        doubleHorseCategories: [],
+        quality
+      };
+    }
+
+    const orderIds = orders.map(o => o.id);
+    const orderMap = new Map(orders.map((order: any) => [order.id, order]));
+
+    const { data: items, error: itemError } = await supabase
+      .from('order_items')
+      .select('product_id, product_name, quantity, total_price, cost_price, order_id, brand, sku')
+      .in('order_id', orderIds);
+
+    if (itemError || !items) throw itemError;
+
+    const productIds = Array.from(new Set(items.map((item: any) => item.product_id).filter(Boolean))) as string[];
+    const { data: products } = productIds.length
+      ? await supabase
+        .from('products')
+        .select(`
+          id, name, sku, is_active, brand_id, category_id, brand, category, category_name,
+          brands(id, name),
+          categories(id, name),
+          central_inventory(stock_quantity)
+        `)
+        .in('id', productIds)
+      : { data: [] as any[] };
+
+    const productMap = new Map((products || []).map((product: any) => [product.id, product]));
+    const productPerformance = new Map<string, ProductPerformance & { orders: Set<string> }>();
+    const brandGroups = new Map<string, ProductIntelligenceGroup & { orders: Set<string> }>();
+    const categoryGroups = new Map<string, ProductIntelligenceGroup & { orders: Set<string> }>();
+    const matrixGroups = new Map<string, ProductIntelligenceGroup & { brandId: string; brandName: string; categoryId: string; categoryName: string; orders: Set<string> }>();
+    const dailyGroups = new Map<string, ProductIntelligenceTrendPoint>();
+    const riceTrendGroups = new Map<string, ProductIntelligenceGroup & { trend: Map<string, ProductIntelligenceTrendPoint>; orders: Set<string> }>();
+    const doubleHorseGroups = new Map<string, ProductIntelligenceGroup & { orders: Set<string> }>();
+    const orderSet = new Set<string>();
+    const storeSet = new Set<string>();
+
+    const ensureGroup = <T extends ProductIntelligenceGroup & { orders: Set<string> }>(map: Map<string, T>, id: string, name: string, extra: Omit<T, keyof ProductIntelligenceGroup | 'orders'> = {} as any): T => {
+      if (!map.has(id)) {
+        map.set(id, {
+          id,
+          name,
+          revenue: 0,
+          units: 0,
+          profit: 0,
+          orderCount: 0,
+          margin: 0,
+          orders: new Set<string>(),
+          ...extra
+        } as T);
+      }
+      return map.get(id)!;
+    };
+
+    const addToGroup = (group: ProductIntelligenceGroup & { orders: Set<string> }, revenue: number, units: number, profit: number, orderId: string) => {
+      group.revenue += revenue;
+      group.units += units;
+      group.profit += profit;
+      group.orders.add(orderId);
+    };
+
+    items.forEach((item: any) => {
+      const product = item.product_id ? productMap.get(item.product_id) : null;
+      const order = orderMap.get(item.order_id);
+      const quantity = Number(item.quantity || 0);
+      const revenue = Number(item.total_price || 0);
+      const cost = Number(item.cost_price || 0) * quantity;
+      const profit = revenue - cost;
+      const date = order?.created_at ? new Date(order.created_at).toISOString().slice(0, 10) : 'unknown';
+
+      if (!item.product_id || !product) quality.unmappedItems++;
+      if (!Number(item.cost_price || 0)) quality.zeroCostItems++;
+      if (product && !product.brand_id && !product.brand && !product.brands?.name) quality.productsWithoutBrand++;
+      if (product && !product.category_id && !product.category && !product.category_name && !product.categories?.name) quality.productsWithoutCategory++;
+
+      metrics.revenue += revenue;
+      metrics.cost += cost;
+      metrics.unitsSold += quantity;
+      orderSet.add(item.order_id);
+      if (order?.store_id) storeSet.add(order.store_id);
+
+      const day = dailyGroups.get(date) || { date, revenue: 0, units: 0, profit: 0 };
+      day.revenue += revenue;
+      day.units += quantity;
+      day.profit += profit;
+      dailyGroups.set(date, day);
+
+      if (item.product_id) {
+        if (!productPerformance.has(item.product_id)) {
+          productPerformance.set(item.product_id, {
+            id: item.product_id,
+            name: product?.name || item.product_name || 'Unknown product',
+            sku: product?.sku || item.sku || null,
+            category_name: product?.categories?.name || product?.category_name || product?.category || null,
+            brand_name: product?.brands?.name || product?.brand || item.brand || null,
+            unitsSold: 0,
+            orderCount: 0,
+            revenue: 0,
+            cost: 0,
+            grossProfit: 0,
+            margin: 0,
+            stock: Number(product?.central_inventory?.[0]?.stock_quantity || 0),
+            status: product?.is_active === false ? 'inactive' : 'active',
+            orders: new Set<string>()
+          });
+        }
+        const performance = productPerformance.get(item.product_id)!;
+        performance.unitsSold += quantity;
+        performance.revenue += revenue;
+        performance.cost += cost;
+        performance.grossProfit += profit;
+        performance.orders.add(item.order_id);
+      }
+
+      const brandId = product?.brand_id || `brand:${product?.brand || item.brand || 'No Brand'}`;
+      const brandName = product?.brands?.name || product?.brand || item.brand || 'No Brand';
+      const categoryId = product?.category_id || `category:${product?.category_name || product?.category || 'Uncategorized'}`;
+      const categoryName = product?.categories?.name || product?.category_name || product?.category || 'Uncategorized';
+
+      addToGroup(ensureGroup(brandGroups, brandId, brandName), revenue, quantity, profit, item.order_id);
+      addToGroup(ensureGroup(categoryGroups, categoryId, categoryName), revenue, quantity, profit, item.order_id);
+      addToGroup(ensureGroup(matrixGroups, `${brandId}:${categoryId}`, `${brandName} / ${categoryName}`, { brandId, brandName, categoryId, categoryName }), revenue, quantity, profit, item.order_id);
+
+      const haystack = `${product?.name || item.product_name || ''} ${categoryName}`.toLowerCase();
+      if (haystack.includes('rice') || haystack.includes('matta') || haystack.includes('ponni') || haystack.includes('palakkadan')) {
+        const rice = ensureGroup(riceTrendGroups, brandId, brandName, { trend: new Map<string, ProductIntelligenceTrendPoint>() });
+        addToGroup(rice, revenue, quantity, profit, item.order_id);
+        const trendPoint = rice.trend.get(date) || { date, revenue: 0, units: 0, profit: 0 };
+        trendPoint.revenue += revenue;
+        trendPoint.units += quantity;
+        trendPoint.profit += profit;
+        rice.trend.set(date, trendPoint);
+      }
+
+      if (brandName.toLowerCase().includes('double horse')) {
+        addToGroup(ensureGroup(doubleHorseGroups, categoryId, categoryName), revenue, quantity, profit, item.order_id);
+      }
+    });
+
+    metrics.orderCount = orderSet.size;
+    metrics.storeCount = storeSet.size;
+    metrics.grossProfit = metrics.revenue - metrics.cost;
+    metrics.margin = metrics.revenue > 0 ? (metrics.grossProfit / metrics.revenue) * 100 : 0;
+
+    const finalize = <T extends ProductIntelligenceGroup & { orders?: Set<string> }>(rows: T[]) => rows.map(row => {
+      const orderCount = row.orders?.size || row.orderCount || 0;
+      const margin = row.revenue > 0 ? (row.profit / row.revenue) * 100 : 0;
+      const { orders: _orders, ...rest } = row as any;
+      return { ...rest, orderCount, margin };
+    });
+
+    const productsOut = Array.from(productPerformance.values()).map(product => {
+      const { orders, ...rest } = product;
+      return {
+        ...rest,
+        orderCount: orders.size,
+        margin: product.revenue > 0 ? (product.grossProfit / product.revenue) * 100 : 0
+      };
+    }).sort((a, b) => b.revenue - a.revenue);
+
+    const riceBrandTrends = Array.from(riceTrendGroups.values()).map(row => {
+      const finalized = finalize([row])[0];
+      return {
+        ...finalized,
+        trend: Array.from(row.trend.values()).sort((a, b) => a.date.localeCompare(b.date))
+      };
+    }).sort((a, b) => b.revenue - a.revenue);
+
+    return {
+      metrics,
+      products: productsOut,
+      brandCategory: finalize(Array.from(matrixGroups.values())).sort((a, b) => b.revenue - a.revenue),
+      brands: finalize(Array.from(brandGroups.values())).sort((a, b) => b.revenue - a.revenue),
+      categories: finalize(Array.from(categoryGroups.values())).sort((a, b) => b.revenue - a.revenue),
+      daily: Array.from(dailyGroups.values()).sort((a, b) => a.date.localeCompare(b.date)),
+      riceBrandTrends,
+      doubleHorseCategories: finalize(Array.from(doubleHorseGroups.values())).sort((a, b) => b.revenue - a.revenue),
+      quality
+    };
+  }
+
+  private static getPreviousPeriodOptions(options: BIFilterOptions): BIFilterOptions {
+    if (!options.startDate || !options.endDate) return { ...options };
+    const duration = options.endDate.getTime() - options.startDate.getTime();
+    if (!Number.isFinite(duration) || duration <= 0) return { ...options };
+    return {
+      ...options,
+      startDate: new Date(options.startDate.getTime() - duration - 1),
+      endDate: new Date(options.startDate.getTime() - 1)
+    };
+  }
+
+  private static emptyProductIntelligenceReport(): ProductIntelligenceReport {
+    const metrics = this.emptyMetrics();
+    return {
+      current: {
+        metrics,
+        products: [],
+        brandCategory: [],
+        brands: [],
+        categories: [],
+        daily: [],
+        riceBrandTrends: [],
+        doubleHorseCategories: []
+      },
+      previous: {
+        metrics: this.emptyMetrics(),
+        products: []
+      },
+      comparison: {
+        revenue: 0,
+        units: 0,
+        profit: 0,
+        orderCount: 0,
+        margin: 0
+      },
+      quality: {
+        unmappedItems: 0,
+        zeroCostItems: 0,
+        productsWithoutBrand: 0,
+        productsWithoutCategory: 0
+      }
+    };
   }
 
   private static emptyMetrics(): MetricSet {
