@@ -61,6 +61,17 @@ async function deferForTemplate(db: any, retry: any, notification: any, reason: 
   }).eq("id", notification.id).in("status", ["queued", "sending", "failed"]);
 }
 
+function versionOf(name: unknown) {
+  const match = String(name || "").match(/_v(\d+)$/i);
+  return match ? Number(match[1]) : 0;
+}
+
+function usesDynamicTrackButton(templateName: unknown) {
+  const name = String(templateName || "");
+  return (name === "delivery_tracking_update_v3") ||
+    (/^(shipment_booked|order_shipped|order_out_for_delivery|order_confirm|order_delivered|order_cancelled|order_returned)_v\d+$/i.test(name) && versionOf(name) >= 4);
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
   if (!["GET", "POST"].includes(req.method)) return json({ error: "Method not allowed" }, 405);
@@ -250,13 +261,23 @@ Deno.serve(async (req: Request) => {
         text: String(varMap[v] ?? `[${v}]`),
       }));
 
+      const components: any[] = parameters.length ? [{ type: "body", parameters }] : [];
+      if (usesDynamicTrackButton(template.meta_template_name)) {
+        components.push({
+          type: "button",
+          sub_type: "url",
+          index: "0",
+          parameters: [{ type: "text", text: String(order.order_number || "Order") }],
+        });
+      }
+
       const sendPayload = {
         to: customerPhone,
         type: "template",
         template: {
           name: template.meta_template_name,
           language: template.language || notification.language || "en_GB",
-          components: parameters.length ? [{ type: "body", parameters }] : [],
+          components,
         },
         storeId: notification.store_id,
         notificationId: notification.id,
