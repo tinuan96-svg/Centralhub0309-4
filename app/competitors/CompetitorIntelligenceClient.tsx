@@ -111,17 +111,17 @@ export default function CompetitorIntelligenceClient() {
       const token = sessionData.session?.access_token;
       if (!token) throw new Error('Admin session expired. Please sign in again.');
 
-      const { data: result, error: invokeError } = await supabase.functions.invoke('competitor-price-scanner', {
-        body: { action: 'scan_competitor', competitor_id: id },
+      const { data: result, error: invokeError } = await supabase.functions.invoke('competitor-full-catalog-scan', {
+        body: { competitor_id: id },
         headers: { Authorization: `Bearer ${token}` },
       });
       if (invokeError) throw invokeError;
-      if (!result?.success) throw new Error(result?.error || 'Scan failed');
+      if (!result?.success) throw new Error(result?.error || 'Full catalogue scan failed');
 
-      setMessage(result.message || `Scan completed: ${result.succeeded || 0} succeeded, ${result.failed || 0} failed`);
+      setMessage(result.message || `Full catalogue scan completed: ${result.discovered || 0} discovered · ${result.exact_matches || 0} exact · ${result.review_matches || 0} review · ${result.price_rows_refreshed || 0} prices refreshed`);
       await load();
     } catch (e: any) {
-      setMessage(e?.message || 'Scan failed');
+      setMessage(e?.message || 'Full catalogue scan failed');
     } finally {
       setScanning(null);
     }
@@ -155,13 +155,13 @@ export default function CompetitorIntelligenceClient() {
         <div>
           <p className="text-[10px] uppercase tracking-[0.25em] text-cyan-400 font-black">Pricing → Competitor Intelligence</p>
           <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">Competitor Price Intelligence</h1>
-          <p className="text-xs text-slate-500 mt-1">Spreadsheet-style market matrix · one CentralHub product per row · verified competitor prices per column</p>
+          <p className="text-xs text-slate-500 mt-1">Full catalogue discovery + strict product matching + spreadsheet-style market matrix · one CentralHub product per row</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {competitors.map((c: any) => (
             <button key={c.id} onClick={() => scan(c.id)} disabled={scanning === c.id}
               className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[11px] font-black text-slate-200 hover:border-cyan-500 disabled:opacity-50">
-              {scanning === c.id ? `Scanning ${c.name}…` : `Scan ${c.name}`}
+              {scanning === c.id ? `Full scanning ${c.name}…` : `Scan ${c.name}`}
             </button>
           ))}
           <button onClick={load} className="rounded-xl bg-cyan-600 px-4 py-2 text-[11px] font-black text-white">Refresh Matrix</button>
