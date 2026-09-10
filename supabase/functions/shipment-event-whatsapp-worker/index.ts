@@ -11,7 +11,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
   headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
 });
 
-const TEMPLATE_NAME = "delivery_tracking_update_v1";
+const FALLBACK_TEMPLATE_NAME = "delivery_tracking_update_v2";
 const TEMPLATE_LANGUAGE = "en_GB";
 const MAX_RETRIES = 3;
 const DUPLICATE_WINDOW_MS = 15 * 60 * 1000;
@@ -54,7 +54,7 @@ function friendlyTrackingUpdate(description: unknown, status: unknown): string |
   const statusText = cleanText(status).toLowerCase();
   if (!raw) return null;
 
-  // These already have dedicated order-stage WhatsApp templates. Avoid duplicate customer messages.
+  // These are covered by dedicated order-stage WhatsApp templates.
   if (
     text.includes("shipment created and ready for pickup") ||
     text.includes("external shipment recorded manually") ||
@@ -97,6 +97,11 @@ function formatUkTime(value: string) {
 
 function normalizePhone(value: unknown) {
   return String(value || "").replace(/\D/g, "");
+}
+
+function versionOf(name: unknown) {
+  const match = String(name || "").match(/_v(\d+)$/i);
+  return match ? Number(match[1]) : 0;
 }
 
 async function ensureConversation(db: any, storeId: string, phone: string, displayName: string) {
@@ -168,6 +173,27 @@ async function hasRecentDuplicate(db: any, event: any, friendlyUpdate: string) {
   return (data || []).some((row: any) => friendlyTrackingUpdate(row.description, row.status) === friendlyUpdate);
 }
 
+async function resolveTrackingTemplate(db: any, storeId: string, requestedName: string | null) {
+  const { data: mapping } = await db.from("whatsapp_event_template_mappings")
+    .select("template:whatsapp_template_registry(meta_template_name,language,status,variables)")
+    .eq("store_id", storeId)
+    .eq("event_key", "shipment.tracking_update")
+    .eq("enabled", true)
+    .maybeSingle();
+
+  const mapped = mapping?.template || null;
+  if (mapped && ["approved", "active"].includes(String(mapped.status || "").toLowerCase())) return mapped;
+
+  const name = requestedName || FALLBACK_TEMPLATE_NAME;
+  const { data } = await db.from("whatsapp_template_registry")
+    .select("meta_template_name,language,status,variables")
+    .eq("store_id", storeId)
+    .eq("meta_template_name", name)
+    .eq("language", TEMPLATE_LANGUAGE)
+    .maybeSingle();
+  return data || null;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
   if (!["GET", "POST"].includes(req.method)) return json({ error: "Method not allowed" }, 405);
@@ -236,6 +262,12 @@ Deno.serve(async (req: Request) => {
         continue;
       }
 
+      if (String(order.payment_status || "").toLowerCase() !== "paid") {
+        await db.from("shipment_events").update({ whatsapp_status: "skipped", whatsapp_error: "payment_not_received" }).eq("id", event.id);
+        skipped++;
+        continue;
+      }
+
       if (["cancelled", "returned", "refunded"].includes(String(order.order_status || "").toLowerCase())) {
         await db.from("shipment_events").update({ whatsapp_status: "skipped", whatsapp_error: "order_not_active" }).eq("id", event.id);
         skipped++;
@@ -249,14 +281,9 @@ Deno.serve(async (req: Request) => {
         continue;
       }
 
-      const { data: template, error: templateError } = await db.from("whatsapp_template_registry")
-        .select("meta_template_name,language,status,variables")
-        .eq("store_id", order.store_id)
-        .eq("meta_template_name", event.whatsapp_template_name || TEMPLATE_NAME)
-        .eq("language", TEMPLATE_LANGUAGE)
-        .maybeSingle();
-      if (templateError || !template) {
-        await db.from("shipment_events").update({ whatsapp_error: templateError?.message || "tracking_template_missing" }).eq("id", event.id);
+      const template = await resolveTrackingTemplate(db, order.store_id, event.whatsapp_template_name || null);
+      if (!template) {
+        await db.from("shipment_events").update({ whatsapp_error: "tracking_template_missing" }).eq("id", event.id);
         deferred++;
         continue;
       }
@@ -272,7 +299,25 @@ Deno.serve(async (req: Request) => {
       const trackingTime = formatUkTime(event.event_time);
       const trackingUrl = String(shipment.tracking_url || "").trim() ||
         (shipment.tracking_number ? `https://www.dhl.com/en-gb/home/tracking.html?tracking-id=${encodeURIComponent(shipment.tracking_number)}` : "https://malluspices.com");
-      const params = [order.order_number || "Order", friendlyUpdate, location, trackingTime, trackingUrl];
+      const varMap: Record<string, string> = {
+        order_number: order.order_number || "Order",
+        tracking_update: friendlyUpdate,
+        tracking_location: location,
+        tracking_time: trackingTime,
+        tracking_url: trackingUrl,
+      };
+      const templateVars = Array.isArray(template.variables) ? template.variables : [];
+      const bodyParameters = templateVars.map((variable: string) => ({ type: "text", text: String(varMap[variable] ?? `[${variable}]`) }));
+      const components: any[] = [{ type: "body", parameters: bodyParameters }];
+
+      if (String(template.meta_template_name) === "delivery_tracking_update_v3" || versionOf(template.meta_template_name) >= 3) {
+        components.push({
+          type: "button",
+          sub_type: "url",
+          index: "0",
+          parameters: [{ type: "text", text: String(order.order_number || "Order") }],
+        });
+      }
 
       const sendPayload = {
         to: phone,
@@ -280,7 +325,7 @@ Deno.serve(async (req: Request) => {
         template: {
           name: template.meta_template_name,
           language: template.language || TEMPLATE_LANGUAGE,
-          components: [{ type: "body", parameters: params.map((value) => ({ type: "text", text: String(value) })) }],
+          components,
         },
         storeId: order.store_id,
       };
@@ -326,7 +371,8 @@ Deno.serve(async (req: Request) => {
       }
 
       const messageId = String(result.message_id || "").trim();
-      const renderedText = `*DELIVERY TRACKING UPDATE*\n\nOrder: ${params[0]}\nUpdate: ${params[1]}\nLocation: ${params[2]}\nTime: ${params[3]}\nTracking: ${params[4]}\n\nThis is the latest update from our delivery partner.`;
+      const portalUrl = `https://malluspices.com/track-order?order=${encodeURIComponent(order.order_number || "")}`;
+      const renderedText = `*DELIVERY TRACKING UPDATE*\n\nOrder: ${order.order_number || "Order"}\nUpdate: ${friendlyUpdate}\nLocation: ${location}\nTime: ${trackingTime}\nTrack: ${portalUrl}\n\nThis is the latest update from our delivery partner.`;
 
       try {
         const conversation = await ensureConversation(db, order.store_id, phone, order.customer_name || "Customer");
