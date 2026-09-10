@@ -1,0 +1,77 @@
+name: Pricing Restore Verify
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/pricing/**'
+      - 'components/ClassifiedSidebar.tsx'
+      - 'components/MobileHeader.tsx'
+      - 'supabase/migrations/**pricing**'
+      - '.github/workflows/pricing-restore-verify.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Dependency high severity security gate
+        run: npm audit --audit-level=high
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Route integrity audit
+        run: npm run audit:routes
+
+      - name: Runtime compatibility audit
+        run: npm run audit:runtime
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Production build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://icnvrpnzjjcbvgcqgiua.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: Post-build smoke audit
+        run: npm run audit:smoke
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://icnvrpnzjjcbvgcqgiua.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: Export verified source artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: centralhub-pricing-verified-source-${{ github.sha }}
+          path: |
+            .
+            !node_modules/**
+            !.next/**
+            !.git/**
+            !.env
+            !.env.*
+            !route-audit-output.txt
+          include-hidden-files: true
+          retention-days: 1
