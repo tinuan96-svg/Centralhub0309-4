@@ -6,6 +6,8 @@ import { supabase } from '@/lib/supabase';
 
 type UpdateBridge = {
   getAppId?: () => string;
+  getFcmToken?: () => string;
+  getPlatform?: () => string;
   getVersionCode?: () => number;
   getVersionName?: () => string;
   openExternalUrl?: (url: string) => boolean;
@@ -49,11 +51,11 @@ export default function AppUpdateStatus() {
     const bridge = getUpdateBridge();
     const appId = bridge?.getAppId?.() || '';
     const native = appId === 'com.centralhub.network';
+    const legacy = native && typeof bridge?.getVersionCode !== 'function';
+    const versionCode = native ? (legacy ? 0 : Number(bridge?.getVersionCode?.() || 0)) : 0;
+    const versionName = native ? (legacy ? 'Legacy shell' : String(bridge?.getVersionName?.() || 'Unknown')) : '';
 
     if (native) {
-      const legacy = typeof bridge?.getVersionCode !== 'function';
-      const versionCode = legacy ? 0 : Number(bridge?.getVersionCode?.() || 0);
-      const versionName = legacy ? 'Legacy shell' : String(bridge?.getVersionName?.() || 'Unknown');
       setNativeVersion({ legacy, versionCode, versionName });
       setMode('native');
     } else {
@@ -68,6 +70,27 @@ export default function AppUpdateStatus() {
       const { data } = await supabase.auth.getSession();
       const token = data.session?.access_token;
       if (!token) throw new Error('Sign in again to check Android updates.');
+
+      if (native) {
+        const fcmToken = String(bridge?.getFcmToken?.() || '').trim();
+        if (fcmToken) {
+          void fetch('/api/push/native', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              token: fcmToken,
+              platform: bridge?.getPlatform?.() || 'android',
+              appId: 'com.centralhub.network',
+              deviceName: navigator.userAgent.slice(0, 160),
+              appVersionCode: versionCode,
+              appVersionName: versionName,
+            }),
+          }).catch(() => undefined);
+        }
+      }
 
       const response = await fetch('/api/app-update', {
         method: 'GET',
