@@ -12,16 +12,6 @@ function reply(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), { status, headers: jsonHeaders });
 }
 
-function extractOutputText(payload: any): string {
-  if (typeof payload?.output_text === "string") return payload.output_text;
-  for (const item of Array.isArray(payload?.output) ? payload.output : []) {
-    for (const part of Array.isArray(item?.content) ? item.content : []) {
-      if (typeof part?.text === "string") return part.text;
-    }
-  }
-  return "";
-}
-
 function decodeBase64(value: string): Uint8Array {
   const clean = value.includes(",") ? value.slice(value.indexOf(",") + 1) : value;
   const binary = atob(clean);
@@ -40,6 +30,11 @@ function sum(rows: any[], keys: string[]) {
   }, 0);
 }
 
+function upstreamCode(payload: any): string | null {
+  const value = payload?.error?.code ?? payload?.error?.type ?? payload?.code ?? null;
+  return value ? String(value).slice(0, 120) : null;
+}
+
 async function getSnapshot(db: any, userId: string) {
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -49,7 +44,7 @@ async function getSnapshot(db: any, userId: string) {
     db.from("orders").select("store_id,total,total_amount,total_revenue,gross_profit,order_profit,order_status,status,payment_status,created_at").gte("created_at", since24h).limit(1000),
     db.from("orders").select("store_id,total,total_amount,total_revenue,gross_profit,order_profit,created_at").gte("created_at", since7d).limit(2000),
     db.from("security_events").select("store_id,event_type,severity,status,title,occurrence_count,last_seen_at").gte("last_seen_at", since7d).order("last_seen_at", { ascending: false }).limit(30),
-    db.from("site_health_issues").select("store_id,title,category,severity,risk_level,status,last_seen_at").in("status", ["open","queued","fixing","failed"]).order("last_seen_at", { ascending: false }).limit(40),
+    db.from("site_health_issues").select("store_id,title,category,severity,risk_level,status,last_seen_at").in("status", ["open", "queued", "fixing", "failed"]).order("last_seen_at", { ascending: false }).limit(40),
     db.from("products").select("name,brand,category,stock,reorder_level,stock_status").eq("is_active", true).order("stock", { ascending: true, nullsFirst: true }).limit(25),
     db.from("purchase_orders").select("po_number,status,order_date,expected_delivery_date,total_cost,currency,updated_at").order("updated_at", { ascending: false }).limit(20),
     db.from("competitor_prices").select("scan_status,scan_error,match_status,data_quality_state,last_scanned_at,updated_at").order("updated_at", { ascending: false }).limit(40),
@@ -60,15 +55,15 @@ async function getSnapshot(db: any, userId: string) {
   const storeMap = Object.fromEntries(stores.map((s: any) => [s.id, s.name]));
   const orders24 = orders24Res.data ?? [];
   const orders7 = orders7Res.data ?? [];
-
   const byStore: Record<string, { orders24h: number; revenue24h: number; profit24h: number }> = {};
+
   for (const store of stores) byStore[store.name] = { orders24h: 0, revenue24h: 0, profit24h: 0 };
   for (const order of orders24) {
     const name = storeMap[order.store_id] ?? "Unknown";
     byStore[name] ??= { orders24h: 0, revenue24h: 0, profit24h: 0 };
     byStore[name].orders24h += 1;
-    byStore[name].revenue24h += sum([order], ["total_revenue","total_amount","total"]);
-    byStore[name].profit24h += sum([order], ["gross_profit","order_profit"]);
+    byStore[name].revenue24h += sum([order], ["total_revenue", "total_amount", "total"]);
+    byStore[name].profit24h += sum([order], ["gross_profit", "order_profit"]);
   }
 
   const security = (securityRes.data ?? []).map((x: any) => ({ ...x, store: storeMap[x.store_id] ?? null }));
@@ -86,20 +81,20 @@ async function getSnapshot(db: any, userId: string) {
     operations: {
       last24h: {
         orders: orders24.length,
-        revenue: Number(sum(orders24, ["total_revenue","total_amount","total"]).toFixed(2)),
-        profit: Number(sum(orders24, ["gross_profit","order_profit"]).toFixed(2)),
+        revenue: Number(sum(orders24, ["total_revenue", "total_amount", "total"]).toFixed(2)),
+        profit: Number(sum(orders24, ["gross_profit", "order_profit"]).toFixed(2)),
         byStore,
       },
       last7d: {
         orders: orders7.length,
-        revenue: Number(sum(orders7, ["total_revenue","total_amount","total"]).toFixed(2)),
-        profit: Number(sum(orders7, ["gross_profit","order_profit"]).toFixed(2)),
+        revenue: Number(sum(orders7, ["total_revenue", "total_amount", "total"]).toFixed(2)),
+        profit: Number(sum(orders7, ["gross_profit", "order_profit"]).toFixed(2)),
       },
       securityOpen: security.filter((x: any) => String(x.status).toLowerCase() !== "resolved").slice(0, 12),
       siteHealthOpen: health.slice(0, 15),
       lowStock,
       recentPurchaseOrders: (poRes.data ?? []).slice(0, 10),
-      competitorScanProblems: competitorRows.filter((x: any) => x.scan_error || ["failed","error"].includes(String(x.scan_status).toLowerCase())).slice(0, 10),
+      competitorScanProblems: competitorRows.filter((x: any) => x.scan_error || ["failed", "error"].includes(String(x.scan_status).toLowerCase())).slice(0, 10),
     },
     recentConversation: (historyRes.data ?? []).reverse(),
   };
@@ -124,7 +119,11 @@ Deno.serve(async (req: Request) => {
   if (userError || !user) return reply(401, { success: false, error: "invalid_auth" });
 
   let body: any;
-  try { body = await req.json(); } catch { return reply(400, { success: false, error: "invalid_json" }); }
+  try {
+    body = await req.json();
+  } catch {
+    return reply(400, { success: false, error: "invalid_json" });
+  }
   const action = String(body?.action ?? "");
 
   if (action === "transcribe") {
@@ -138,9 +137,8 @@ Deno.serve(async (req: Request) => {
       const ext = mimeType.includes("mp4") ? "m4a" : mimeType.includes("ogg") ? "ogg" : mimeType.includes("wav") ? "wav" : "webm";
       const form = new FormData();
       form.append("file", new File([bytes], `centralhub-command.${ext}`, { type: mimeType }));
-      form.append("model", Deno.env.get("CENTRALHUB_TRANSCRIBE_MODEL") ?? "gpt-transcribe");
+      form.append("model", Deno.env.get("CENTRALHUB_TRANSCRIBE_MODEL") ?? "gpt-4o-transcribe");
       form.append("prompt", "CentralHub business command. The speaker may code-switch between Malayalam and English. Important terms include CentralHub, MalluSpices, KeralaGrocery, PocketGrocery, Supabase, GitHub, Netlify, DHL, Mollie, WhatsApp, dashboard, orders, profit, stock, competitors, board meeting, scan, deploy, notifications.");
-      form.append("response_format", "json");
 
       const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
         method: "POST",
@@ -148,7 +146,7 @@ Deno.serve(async (req: Request) => {
         body: form,
       });
       const payload = await response.json().catch(() => null);
-      if (!response.ok) return reply(502, { success: false, error: "transcription_failed", status: response.status });
+      if (!response.ok) return reply(502, { success: false, error: "transcription_failed", status: response.status, upstream_code: upstreamCode(payload) });
       const text = String(payload?.text ?? "").trim();
       if (!text) return reply(422, { success: false, error: "empty_transcript" });
       return reply(200, { success: true, transcript: text });
@@ -160,57 +158,69 @@ Deno.serve(async (req: Request) => {
   if (action === "command") {
     if (!openaiKey) return reply(503, { success: false, error: "openai_not_configured" });
     const text = String(body?.text ?? "").trim().slice(0, 6000);
-    const requestedMode = ["operations","board","developer"].includes(String(body?.mode)) ? String(body.mode) : "operations";
+    const requestedMode = ["operations", "board", "developer"].includes(String(body?.mode)) ? String(body.mode) : "operations";
     if (!text) return reply(400, { success: false, error: "missing_command" });
 
     const snapshot = await getSnapshot(db, user.id);
-    const prompt = `You are CentralHub Voice, the private business copilot inside CentralHub. The user may speak Malayalam, English, or mix both. Reply naturally in the same language mix as the user, concise enough to be spoken aloud, but include concrete numbers when available.\n\nMODES:\n- operations: orders, revenue, profit, fulfilment, stock, security, site health, competitors, finance signals.\n- board: executive briefing, risks, decisions, priorities, action items.\n- developer: diagnose CentralHub issues and explain what should be checked or changed.\n\nSAFETY / EXECUTION RULES FOR THIS FIRST VOICE RELEASE:\n- You have a live read-only operational snapshot below. Use it; never invent data.\n- Do NOT claim that code was changed, deployed, orders were edited, prices changed, messages sent, refunds issued, users changed, files deleted, or any other write action executed.\n- Any requested write/destructive/external action must set requires_confirmation=true and describe the proposed action.\n- Treat deploys, code changes, database writes, pricing/stock changes, refunds/payments, sending customer messages, account/access changes, deletes, and automation-mode changes as medium/high risk.\n- Read-only questions, summaries, scans of the supplied live snapshot, board briefings and explanations are read_only.\n- If asked to scan GitHub/Netlify/Supabase code or deployments beyond the supplied snapshot, say that a connected execution worker is the next phase; do not pretend it ran.\n- navigation_path may be one of /dashboard, /orders, /products, /competitors, /finance, /banking, /purchase, /marketing, /business-intelligence, /settings/notifications, or null.\n\nUSER MODE: ${requestedMode}\nUSER COMMAND: ${text}\nLIVE SNAPSHOT JSON:\n${JSON.stringify(snapshot)}\n\nReturn JSON only matching the schema.`;
+    const prompt = `You are CentralHub Voice, the private business copilot inside CentralHub. The user may speak Malayalam, English, or mix both. Reply naturally in the same language mix as the user and keep the spoken reply concise. Use concrete numbers only when they are present in the live snapshot.\n\nModes: operations = operational scan; board = executive briefing; developer = technical explanation.\n\nSafety rules:\n- The live snapshot is read-only. Never invent data.\n- Never claim that code, database rows, orders, prices, messages, refunds, users, files, deployments or other external systems were changed.\n- Any requested write/destructive/external action must set requires_confirmation=true and describe the proposed action.\n- Read-only questions and summaries use risk_level=read_only and requires_confirmation=false.\n- If asked to inspect GitHub/Netlify/Supabase beyond this snapshot, explain that connected execution is separate; do not pretend it ran.\n- navigation_path must be one of /dashboard, /orders, /products, /competitors, /finance, /banking, /purchase, /marketing, /business-intelligence, /settings/notifications, or null.\n\nReturn ONLY valid JSON with exactly these fields:\n{"reply":"string","intent":"string","mode":"operations|board|developer","risk_level":"read_only|low|medium|high","requires_confirmation":false,"suggested_action":null,"navigation_path":null,"speak":true}\n\nUSER MODE: ${requestedMode}\nUSER COMMAND: ${text}\nLIVE SNAPSHOT JSON:\n${JSON.stringify(snapshot)}`;
 
-    const aiResponse = await fetch("https://api.openai.com/v1/responses", {
+    const model = Deno.env.get("CENTRALHUB_VOICE_MODEL") || Deno.env.get("OPENAI_MODEL_FAST") || "gpt-4o-mini";
+    const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: Deno.env.get("CENTRALHUB_VOICE_MODEL") ?? Deno.env.get("OPENAI_MODEL_FAST") ?? "gpt-4o-mini",
-        store: false,
-        input: prompt,
-        max_output_tokens: 1200,
-        text: { format: { type: "json_schema", name: "centralhub_voice_reply", strict: true, schema: {
-          type: "object", additionalProperties: false,
-          properties: {
-            reply: { type: "string" },
-            intent: { type: "string" },
-            mode: { type: "string", enum: ["operations","board","developer"] },
-            risk_level: { type: "string", enum: ["read_only","low","medium","high"] },
-            requires_confirmation: { type: "boolean" },
-            suggested_action: { type: ["string","null"] },
-            navigation_path: { type: ["string","null"] },
-            speak: { type: "boolean" }
-          },
-          required: ["reply","intent","mode","risk_level","requires_confirmation","suggested_action","navigation_path","speak"]
-        } } }
+        model,
+        messages: [
+          { role: "system", content: "You are CentralHub Voice. Return only the requested JSON object." },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.2,
+        max_tokens: 1200,
+        response_format: { type: "json_object" },
       }),
     });
 
     const raw = await aiResponse.json().catch(() => null);
-    if (!aiResponse.ok) return reply(502, { success: false, error: "assistant_failed", status: aiResponse.status });
-    let result: any;
-    try { result = JSON.parse(extractOutputText(raw)); } catch { return reply(502, { success: false, error: "invalid_assistant_output" }); }
+    if (!aiResponse.ok) return reply(502, { success: false, error: "assistant_failed", status: aiResponse.status, upstream_code: upstreamCode(raw) });
 
-    const status = result.requires_confirmation ? "pending_confirmation" : "completed";
-    await db.from("voice_assistant_commands").insert({
+    const content = String(raw?.choices?.[0]?.message?.content ?? "").trim();
+    let result: any;
+    try {
+      result = JSON.parse(content);
+    } catch {
+      return reply(502, { success: false, error: "invalid_assistant_output" });
+    }
+
+    const safeMode = ["operations", "board", "developer"].includes(String(result?.mode)) ? String(result.mode) : requestedMode;
+    const safeRisk = ["read_only", "low", "medium", "high"].includes(String(result?.risk_level)) ? String(result.risk_level) : "read_only";
+    const requiresConfirmation = Boolean(result?.requires_confirmation);
+    const finalResult = {
+      reply: String(result?.reply ?? "CentralHub Voice is ready.").slice(0, 5000),
+      intent: String(result?.intent ?? "general").slice(0, 200),
+      mode: safeMode,
+      risk_level: safeRisk,
+      requires_confirmation: requiresConfirmation,
+      suggested_action: result?.suggested_action == null ? null : String(result.suggested_action).slice(0, 500),
+      navigation_path: typeof result?.navigation_path === "string" ? result.navigation_path : null,
+      speak: result?.speak !== false,
+    };
+
+    const status = requiresConfirmation ? "pending_confirmation" : "completed";
+    const { error: historyError } = await db.from("voice_assistant_commands").insert({
       user_id: user.id,
-      mode: result.mode ?? requestedMode,
+      mode: finalResult.mode,
       input_text: text,
-      response_text: String(result.reply ?? ""),
-      intent: String(result.intent ?? "unknown"),
-      risk_level: result.risk_level ?? "read_only",
-      requires_confirmation: Boolean(result.requires_confirmation),
-      action_name: result.suggested_action ? String(result.suggested_action).slice(0, 300) : null,
-      action_payload: { navigation_path: result.navigation_path ?? null },
+      response_text: finalResult.reply,
+      intent: finalResult.intent,
+      risk_level: finalResult.risk_level,
+      requires_confirmation: finalResult.requires_confirmation,
+      action_name: finalResult.suggested_action,
+      action_payload: { navigation_path: finalResult.navigation_path },
       status,
     });
+    if (historyError) console.error("centralhub-voice history insert failed", historyError.message);
 
-    return reply(200, { success: true, transcript: text, ...result, status });
+    return reply(200, { success: true, transcript: text, ...finalResult, status });
   }
 
   return reply(400, { success: false, error: "invalid_action" });
