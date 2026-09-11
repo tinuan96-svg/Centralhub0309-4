@@ -69,7 +69,21 @@ export default function NotificationSettingsPage() {
     setPushError(null);
     try {
       const result = await PushNotificationService.sendTestNotification();
-      setPushMessage(`Test sent to ${result.sent || 0} phone subscription(s).`);
+      const sent = Number(result.sent || 0);
+      const webSent = Number(result.web_sent || 0);
+      const nativeSent = Number(result.native_sent || 0);
+      const enabledNativeDevices = Number(result.enabled_native_devices || 0);
+      const enabledWebSubscriptions = Number(result.enabled_web_subscriptions || 0);
+      const providerNote = [
+        result.web_configured ? `web ${webSent}/${enabledWebSubscriptions}` : 'web off',
+        result.native_configured ? `Android ${nativeSent}/${enabledNativeDevices}` : 'Android Firebase off',
+      ].join(' · ');
+
+      if (sent > 0 && nativeSent === 0 && enabledNativeDevices > 0) {
+        setPushMessage(`Test sent, but not to Android yet (${providerNote}).`);
+      } else {
+        setPushMessage(`Test sent to ${sent} phone device(s) (${providerNote}).`);
+      }
       await refreshPushStatus();
     } catch (error: any) {
       setPushError(error?.message || 'Could not send test notification.');
