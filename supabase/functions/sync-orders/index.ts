@@ -198,7 +198,6 @@ function mapOrder(order: any, storeId: string) {
     }
   }
 
-  // Fail closed: never infer payment success from operational fulfilment status.
   return mapped;
 }
 
@@ -272,9 +271,7 @@ async function persistBundle(ch: any, storeSlug: string, bundle: Bundle, specifi
   const items = bundle.order_items || [];
   const products = bundle.products || [];
 
-  if (!orders.length) {
-    return specificOrderId ? { success: false, orders: 0, items: 0, error: `Order ${specificOrderId} was not found on ${storeSlug}` } : { success: true, orders: 0, items: 0 };
-  }
+  if (!orders.length) return specificOrderId ? { success: false, orders: 0, items: 0, error: `Order ${specificOrderId} was not found on ${storeSlug}` } : { success: true, orders: 0, items: 0 };
 
   const productByRemoteId = new Map(products.map((product: any) => [product.id, product]));
   const candidateIds = new Set<string>();
@@ -334,16 +331,7 @@ async function persistBundle(ch: any, storeSlug: string, bundle: Bundle, specifi
 
       const quantity = Number(item.quantity || 1);
       const unitPrice = money(item.unit_price ?? item.product_price);
-      mappedItems.push({
-        id: safeUuid(item.id, `${remoteOrder.id}-${item.product_id}-${quantity}`),
-        order_id: targetOrderId,
-        product_id: centralProductId,
-        product_name: item.product_name || item.name || product?.name || "Item",
-        quantity,
-        unit_price: unitPrice,
-        total_price: money(item.total_price ?? item.subtotal ?? unitPrice * quantity),
-        sku,
-      });
+      mappedItems.push({ id: safeUuid(item.id, `${remoteOrder.id}-${item.product_id}-${quantity}`), order_id: targetOrderId, product_id: centralProductId, product_name: item.product_name || item.name || product?.name || "Item", quantity, unit_price: unitPrice, total_price: money(item.total_price ?? item.subtotal ?? unitPrice * quantity), sku });
     }
 
     if (missing.length) {
@@ -365,7 +353,6 @@ async function persistBundle(ch: any, storeSlug: string, bundle: Bundle, specifi
       mapped.stock_deducted = true;
     }
     mapped.items = mappedItems.map((item: any) => ({ name: item.product_name, quantity: item.quantity, price: item.unit_price, product_id: item.product_id }));
-
     validOrders.push(mapped);
     validItems.push(...mappedItems);
   }
@@ -394,17 +381,12 @@ async function persistBundle(ch: any, storeSlug: string, bundle: Bundle, specifi
     }
   }
 
-  for (const order of validOrders) {
-    try {
-      await ch.rpc("recalculate_order_profitability", { p_order_id: order.id });
-    } catch {
-      // Derived profitability must never make transport fail.
-    }
+  if (validOrders.length) {
+    const { error: profitabilityError } = await ch.rpc("recalculate_order_profitability_batch", { p_order_ids: validOrders.map((order: any) => order.id) });
+    if (profitabilityError) console.warn("[sync-orders] Profitability batch refresh failed", profitabilityError.message);
   }
 
-  if (specificOrderId && mismatches.length) {
-    return { success: false, orders: 0, items: 0, mismatched_orders: mismatches, error: `Order ${specificOrderId} has unmapped product(s): ${mismatches[0].missing_skus.join(", ")}` };
-  }
+  if (specificOrderId && mismatches.length) return { success: false, orders: 0, items: 0, mismatched_orders: mismatches, error: `Order ${specificOrderId} has unmapped product(s): ${mismatches[0].missing_skus.join(", ")}` };
 
   return { success: true, orders: validOrders.length, items: validItems.length, mismatched_orders: mismatches.length ? mismatches : undefined, phone_push_events: phonePushResults.length ? phonePushResults : undefined };
 }
@@ -420,19 +402,13 @@ async function syncSource(chUrl: string, chKey: string, source: SourceConfig, or
 }
 
 async function withTimeout(promise: Promise<any>, timeoutMs = 45000) {
-  return Promise.race([
-    promise,
-    new Promise((resolve) => setTimeout(() => resolve({ success: false, error: `Sync timed out after ${timeoutMs / 1000}s` }), timeoutMs)),
-  ]);
+  return Promise.race([promise, new Promise((resolve) => setTimeout(() => resolve({ success: false, error: `Sync timed out after ${timeoutMs / 1000}s` }), timeoutMs))]);
 }
 
 async function parseRequest(req: Request): Promise<SyncRequest> {
   const url = new URL(req.url);
   const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
-  return {
-    orderId: body?.orderId || url.searchParams.get("orderId") || undefined,
-    storeSlug: normalizeSlug(body?.storeSlug || url.searchParams.get("storeSlug")),
-  };
+  return { orderId: body?.orderId || url.searchParams.get("orderId") || undefined, storeSlug: normalizeSlug(body?.storeSlug || url.searchParams.get("storeSlug")) };
 }
 
 Deno.serve(async (req: Request) => {
@@ -458,9 +434,7 @@ Deno.serve(async (req: Request) => {
 
     const results = await Promise.all(selected.map(async (source) => {
       const usesTamilGateway = source.slug === "tamilretail" && (!source.url || !source.key);
-      if ((!source.url || !source.key) && !usesTamilGateway) {
-        return { store: source.slug, configured: false, success: false, orders: 0, items: 0, error: `Source credentials are not configured for ${source.slug}` };
-      }
+      if ((!source.url || !source.key) && !usesTamilGateway) return { store: source.slug, configured: false, success: false, orders: 0, items: 0, error: `Source credentials are not configured for ${source.slug}` };
       const result: any = await withTimeout(syncSource(chUrl, chKey, source, request.orderId));
       return { store: source.slug, configured: true, transport: usesTamilGateway ? "signed_gateway" : "direct_service_role", ...result };
     }));
@@ -471,20 +445,7 @@ Deno.serve(async (req: Request) => {
     const failures = results.filter((result: any) => !result.success).map((result: any) => ({ store: result.store, error: result.error || "Unknown sync failure" }));
     const warnings = results.filter((result: any) => result.success && (result.mismatched_orders?.length || 0) > 0).map((result: any) => ({ store: result.store, warning: `${result.mismatched_orders.length} order(s) skipped because product mappings are missing` }));
 
-    return reply({
-      success: failures.length === 0,
-      partial_success: failures.length > 0 && failures.length < results.length,
-      targeted: Boolean(request.orderId || request.storeSlug),
-      order_id: request.orderId || null,
-      store_slug: request.storeSlug || null,
-      imported,
-      items_synced: itemsSynced,
-      mismatched_count: mismatches.length,
-      stores: results,
-      failures: failures.length ? failures : undefined,
-      warnings: warnings.length ? warnings : undefined,
-      message: failures.length ? `Sync completed with ${failures.length} store failure(s).` : `Sync complete: ${imported} order(s) imported or refreshed.`,
-    });
+    return reply({ success: failures.length === 0, partial_success: failures.length > 0 && failures.length < results.length, targeted: Boolean(request.orderId || request.storeSlug), order_id: request.orderId || null, store_slug: request.storeSlug || null, imported, items_synced: itemsSynced, mismatched_count: mismatches.length, stores: results, failures: failures.length ? failures : undefined, warnings: warnings.length ? warnings : undefined, message: failures.length ? `Sync completed with ${failures.length} store failure(s).` : `Sync complete: ${imported} order(s) imported or refreshed.` });
   } catch (error) {
     return reply({ success: false, error: errorMessage(error) }, 500);
   }
