@@ -135,71 +135,67 @@ export default function AppUpdateStatus() {
     if (!opened) window.open(latest.downloadUrl, '_blank', 'noopener,noreferrer');
   };
 
-  const tone = error
-    ? 'border-rose-500/40 bg-rose-500/10'
-    : updateRequired
-      ? 'border-amber-400/50 bg-amber-400/10 shadow-[0_0_24px_rgba(251,191,36,0.10)]'
-      : mode === 'native'
-        ? 'border-emerald-500/30 bg-emerald-500/10'
-        : 'border-cyan-500/30 bg-cyan-500/10';
+  const handleClick = () => {
+    if (!loading && latest && (updateRequired || mode === 'web')) {
+      openUpdate();
+      return;
+    }
+    if (!loading) void check();
+  };
 
-  const statusLabel = loading
-    ? 'checking'
+  const label = loading
+    ? 'Checking Android app…'
     : updateRequired
-      ? 'update available'
+      ? 'Update Android app'
       : error
-        ? 'check failed'
+        ? 'Check Android app'
         : mode === 'native'
-          ? 'up to date'
-          : 'android update centre';
+          ? 'Android app up to date'
+          : latest
+            ? 'Download Android app'
+            : 'Check Android app';
+
+  const title = error
+    ? error
+    : mode === 'native'
+      ? `Installed ${nativeVersion.versionName || 'unknown'}${nativeVersion.versionCode ? ` (${nativeVersion.versionCode})` : ''}${latest ? ` · Latest ${latest.versionName} (${latest.versionCode})` : ''}`
+      : latest
+        ? `Latest CentralHub Android ${latest.versionName} (${latest.versionCode})`
+        : 'Check the latest CentralHub Android version';
+
+  const tone = updateRequired
+    ? 'border-amber-300/50 bg-amber-400 text-slate-950 shadow-amber-500/10'
+    : error
+      ? 'border-rose-500/40 bg-rose-500/10 text-rose-200'
+      : mode === 'native'
+        ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-200'
+        : 'border-cyan-400/35 bg-cyan-500/10 text-cyan-200';
+
+  const Icon = loading
+    ? RefreshCw
+    : updateRequired
+      ? Download
+      : error
+        ? TriangleAlert
+        : mode === 'native'
+          ? CheckCircle2
+          : Smartphone;
 
   return (
-    <div className="px-3 pt-3 md:px-5 md:pt-4">
-      <section className={`mx-auto max-w-[1600px] rounded-2xl border ${tone} px-4 py-3`} aria-label="CentralHub Android app update status">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className={`mt-0.5 rounded-xl p-2 ${updateRequired ? 'bg-amber-400/15 text-amber-300' : error ? 'bg-rose-500/15 text-rose-300' : mode === 'native' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-cyan-500/15 text-cyan-300'}`}>
-              {updateRequired ? <TriangleAlert size={19} /> : mode === 'native' && !error ? <CheckCircle2 size={19} /> : <Smartphone size={19} />}
-            </div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-sm font-black text-slate-100">CentralHub Android</p>
-                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${updateRequired ? 'border-amber-400/40 bg-amber-400/10 text-amber-200' : error ? 'border-rose-500/40 bg-rose-500/10 text-rose-200' : mode === 'native' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' : 'border-cyan-500/30 bg-cyan-500/10 text-cyan-200'}`}>
-                  {statusLabel}
-                </span>
-              </div>
-
-              <p className="mt-1 text-xs text-slate-400">
-                {mode === 'native' ? (
-                  <>Installed: <span className="font-bold text-slate-200">{nativeVersion.versionName}{nativeVersion.versionCode ? ` · ${nativeVersion.versionCode}` : ''}</span></>
-                ) : (
-                  <>Installed version scan: <span className="font-bold text-cyan-200">open this dashboard inside the CentralHub Android app</span></>
-                )}
-                {latest && <> · Latest: <span className="font-bold text-slate-200">v{latest.versionName} · {latest.versionCode}</span></>}
-              </p>
-
-              <p className="mt-1 text-[11px] text-slate-500">
-                Website, dashboard, database and API changes arrive automatically. When a native Android change really needs a new app build, CentralHub creates it and this panel switches to Update Available.
-              </p>
-              {nativeVersion.legacy && latest && <p className="mt-1 text-[11px] font-semibold text-amber-200">This installed app is an older shell. Install the current build once to enable permanent installed-version detection and future in-dashboard update checks.</p>}
-              {error && <p className="mt-1 text-[11px] text-rose-300">{error}</p>}
-            </div>
-          </div>
-
-          <div className="flex shrink-0 flex-wrap gap-2">
-            <button type="button" onClick={() => void check()} disabled={loading} className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs font-bold text-slate-200 disabled:opacity-50">
-              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-              Check
-            </button>
-            {latest && (updateRequired || mode === 'web') && (
-              <button type="button" onClick={openUpdate} className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-xs font-black shadow-lg ${updateRequired ? 'border-amber-300/50 bg-amber-400 text-slate-950 shadow-amber-500/10' : 'border-cyan-300/40 bg-cyan-400/15 text-cyan-100 shadow-cyan-500/5'}`}>
-                <Download size={15} />
-                {updateRequired ? 'UPDATE APP' : 'DOWNLOAD LATEST APK'}
-              </button>
-            )}
-          </div>
-        </div>
-      </section>
+    <div className="px-3 pt-2 md:px-5 md:pt-3">
+      <div className="mx-auto flex max-w-[1600px] justify-end">
+        <button
+          type="button"
+          onClick={handleClick}
+          disabled={loading}
+          title={title}
+          aria-label={label}
+          className={`inline-flex min-h-10 items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-black shadow-lg transition-all active:scale-[0.98] disabled:cursor-wait disabled:opacity-70 ${tone}`}
+        >
+          <Icon size={15} className={loading ? 'animate-spin' : ''} />
+          <span>{label}</span>
+        </button>
+      </div>
     </div>
   );
 }
