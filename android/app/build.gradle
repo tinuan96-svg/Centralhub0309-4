@@ -2,10 +2,26 @@ apply plugin: 'com.android.application'
 
 def centralHubVersionCode = (System.getenv('CENTRALHUB_VERSION_CODE') ?: '4').toInteger()
 def centralHubVersionName = System.getenv('CENTRALHUB_VERSION_NAME') ?: '1.2.0'
+def centralHubSigningStorePath = System.getenv('CENTRALHUB_SIGNING_STORE_PATH')
+def centralHubSigningStorePassword = System.getenv('CENTRALHUB_SIGNING_STORE_PASSWORD') ?: ''
+def centralHubSigningKeyAlias = System.getenv('CENTRALHUB_SIGNING_KEY_ALIAS') ?: ''
+def centralHubSigningKeyPassword = System.getenv('CENTRALHUB_SIGNING_KEY_PASSWORD') ?: ''
 
 android {
     namespace = "com.centralhub.network"
     compileSdk = rootProject.ext.compileSdkVersion
+
+    if (centralHubSigningStorePath) {
+        signingConfigs {
+            centralhubUpdate {
+                storeFile file(centralHubSigningStorePath)
+                storePassword centralHubSigningStorePassword
+                keyAlias centralHubSigningKeyAlias
+                keyPassword centralHubSigningKeyPassword
+            }
+        }
+    }
+
     defaultConfig {
         applicationId "com.centralhub.network"
         minSdkVersion rootProject.ext.minSdkVersion
@@ -20,6 +36,11 @@ android {
         }
     }
     buildTypes {
+        debug {
+            if (centralHubSigningStorePath) {
+                signingConfig signingConfigs.centralhubUpdate
+            }
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
@@ -44,7 +65,7 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
-    testImplementation "junit:junit:$junitVersion"
+    testImplementation "junit:junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
