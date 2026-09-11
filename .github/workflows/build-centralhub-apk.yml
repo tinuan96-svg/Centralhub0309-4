@@ -62,13 +62,21 @@ jobs:
               -dname "CN=CentralHub, OU=Internal Android Updates, O=CentralHub, C=GB"
           fi
           IDENTITY_SHA256=$(sha256sum "$KEYSTORE" | awk '{print $1}')
+          EXPECTED_SHA256=$(tr -d '[:space:]' < .github/centralhub-android-signing.sha256)
           test -n "$IDENTITY_SHA256"
+          test -n "$EXPECTED_SHA256"
+          if [ "$IDENTITY_SHA256" != "$EXPECTED_SHA256" ]; then
+            echo "CentralHub Android signing identity mismatch. Refusing to publish an APK that cannot update the installed app." >&2
+            echo "Expected: $EXPECTED_SHA256" >&2
+            echo "Actual:   $IDENTITY_SHA256" >&2
+            exit 1
+          fi
           echo "fingerprint=$IDENTITY_SHA256" >> "$GITHUB_OUTPUT"
           echo "CENTRALHUB_SIGNING_STORE_PATH=$KEYSTORE" >> "$GITHUB_ENV"
           echo "CENTRALHUB_SIGNING_STORE_PASSWORD=centralhub" >> "$GITHUB_ENV"
           echo "CENTRALHUB_SIGNING_KEY_ALIAS=centralhub" >> "$GITHUB_ENV"
           echo "CENTRALHUB_SIGNING_KEY_PASSWORD=centralhub" >> "$GITHUB_ENV"
-          echo "CentralHub signing identity SHA-256: $IDENTITY_SHA256"
+          echo "CentralHub signing identity verified: $IDENTITY_SHA256"
 
       - name: Compute native app version
         id: version
