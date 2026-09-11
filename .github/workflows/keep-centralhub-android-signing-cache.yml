@@ -13,6 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Checkout signing identity marker
+        uses: actions/checkout@v4
+
       - name: Restore stable Android signing identity
         uses: actions/cache@v4
         with:
@@ -20,15 +23,24 @@ jobs:
           key: centralhub-android-signing-v2
           fail-on-cache-miss: true
 
-      - name: Verify cached signing identity exists
+      - name: Verify cached signing identity
         shell: bash
         run: |
           KEYSTORE="$HOME/.centralhub/centralhub-update.keystore"
           test -f "$KEYSTORE"
           IDENTITY_SHA256=$(sha256sum "$KEYSTORE" | awk '{print $1}')
+          EXPECTED_SHA256=$(tr -d '[:space:]' < .github/centralhub-android-signing.sha256)
           test -n "$IDENTITY_SHA256"
-          echo "CentralHub cached signing identity SHA-256: $IDENTITY_SHA256"
+          test -n "$EXPECTED_SHA256"
+          if [ "$IDENTITY_SHA256" != "$EXPECTED_SHA256" ]; then
+            echo "CentralHub cached Android signing identity has drifted." >&2
+            echo "Expected: $EXPECTED_SHA256" >&2
+            echo "Actual:   $IDENTITY_SHA256" >&2
+            exit 1
+          fi
+          echo "CentralHub cached signing identity verified: $IDENTITY_SHA256"
 
 # This workflow does not build or publish an APK. It only restores the private
 # Actions cache often enough to preserve the signing identity used by direct
-# CentralHub APK upgrades between native releases.
+# CentralHub APK upgrades between native releases, and fails loudly if that
+# identity no longer matches the pinned update lineage.
