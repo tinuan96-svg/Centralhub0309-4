@@ -1,0 +1,39 @@
+name: Keep CentralHub Android Signing Cache Active
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 4 */5 * *'
+
+permissions:
+  contents: read
+
+jobs:
+  keep-signing-cache-active:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Restore stable Android signing identity
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: centralhub-android-debug-signing-v1
+          fail-on-cache-miss: true
+
+      - name: Verify cached signing key exists
+        shell: bash
+        run: |
+          test -f "$HOME/.android/debug.keystore"
+          FINGERPRINT=$(keytool -list -v \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey 2>/dev/null \
+            | sed -n 's/^[[:space:]]*SHA256: //p' \
+            | head -n 1)
+          test -n "$FINGERPRINT"
+          echo "CentralHub cached signing certificate SHA-256: $FINGERPRINT"
+
+# This workflow does not build or publish an APK. It only restores the private
+# Actions cache often enough to preserve the signing identity used by direct
+# CentralHub APK upgrades between native releases.
