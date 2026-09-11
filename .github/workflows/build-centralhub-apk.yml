@@ -37,14 +37,38 @@ jobs:
           cache: gradle
 
       # Direct APK upgrades only work when every APK is signed by the same key.
-      # Keep the internal debug signing identity private in GitHub Actions cache.
-      # A separate keepalive workflow restores this cache regularly so it does not
-      # age out between native releases.
+      # Keep the internal signing keystore private in GitHub Actions cache.
       - name: Restore stable Android signing identity
         uses: actions/cache@v4
         with:
-          path: ~/.android/debug.keystore
-          key: centralhub-android-debug-signing-v1
+          path: ~/.centralhub/centralhub-update.keystore
+          key: centralhub-android-signing-v2
+
+      - name: Ensure stable Android signing identity
+        id: signing
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.centralhub"
+          KEYSTORE="$HOME/.centralhub/centralhub-update.keystore"
+          if [ ! -f "$KEYSTORE" ]; then
+            keytool -genkeypair \
+              -keystore "$KEYSTORE" \
+              -storepass centralhub \
+              -keypass centralhub \
+              -alias centralhub \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=CentralHub, OU=Internal Android Updates, O=CentralHub, C=GB"
+          fi
+          IDENTITY_SHA256=$(sha256sum "$KEYSTORE" | awk '{print $1}')
+          test -n "$IDENTITY_SHA256"
+          echo "fingerprint=$IDENTITY_SHA256" >> "$GITHUB_OUTPUT"
+          echo "CENTRALHUB_SIGNING_STORE_PATH=$KEYSTORE" >> "$GITHUB_ENV"
+          echo "CENTRALHUB_SIGNING_STORE_PASSWORD=centralhub" >> "$GITHUB_ENV"
+          echo "CENTRALHUB_SIGNING_KEY_ALIAS=centralhub" >> "$GITHUB_ENV"
+          echo "CENTRALHUB_SIGNING_KEY_PASSWORD=centralhub" >> "$GITHUB_ENV"
+          echo "CentralHub signing identity SHA-256: $IDENTITY_SHA256"
 
       - name: Compute native app version
         id: version
@@ -68,16 +92,6 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
-
-      - name: Verify stable signing identity
-        id: signing
-        shell: bash
-        run: |
-          test -f "$HOME/.android/debug.keystore"
-          IDENTITY_SHA256=$(sha256sum "$HOME/.android/debug.keystore" | awk '{print $1}')
-          test -n "$IDENTITY_SHA256"
-          echo "fingerprint=$IDENTITY_SHA256" >> "$GITHUB_OUTPUT"
-          echo "CentralHub signing identity SHA-256: $IDENTITY_SHA256"
 
       - name: Prepare dashboard update package
         shell: bash
