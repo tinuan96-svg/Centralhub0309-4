@@ -36,6 +36,16 @@ jobs:
           java-version: '21'
           cache: gradle
 
+      # Direct APK upgrades only work when every APK is signed by the same key.
+      # Keep the internal debug signing identity private in GitHub Actions cache.
+      # A separate keepalive workflow restores this cache regularly so it does not
+      # age out between native releases.
+      - name: Restore stable Android signing identity
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: centralhub-android-debug-signing-v1
+
       - name: Compute native app version
         id: version
         shell: bash
@@ -58,6 +68,21 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
+
+      - name: Verify signing certificate
+        id: signing
+        shell: bash
+        run: |
+          test -f "$HOME/.android/debug.keystore"
+          FINGERPRINT=$(keytool -list -v \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey 2>/dev/null \
+            | sed -n 's/^[[:space:]]*SHA256: //p' \
+            | head -n 1)
+          test -n "$FINGERPRINT"
+          echo "fingerprint=$FINGERPRINT" >> "$GITHUB_OUTPUT"
+          echo "CentralHub signing certificate SHA-256: $FINGERPRINT"
 
       - name: Prepare dashboard update package
         shell: bash
@@ -85,8 +110,9 @@ jobs:
           Version: ${{ steps.version.outputs.name }}
           Version code: ${{ steps.version.outputs.code }}
           Commit: ${{ github.sha }}
+          Signing certificate SHA-256: ${{ steps.signing.outputs.fingerprint }}
 
-          Normal CentralHub website/dashboard changes do not require an APK update because the installed shell loads https://centralhub.network directly. This package is published only when Android/native configuration changes.
+          Normal CentralHub website/dashboard/database/API changes arrive automatically and do not need a new APK. This package is published only when Android/native configuration changes require an installed-app update.
           EOF
           )
 
