@@ -37,7 +37,7 @@ export async function GET(req: Request) {
         'User-Agent': 'CentralHub-App-Update-Feed',
         'X-GitHub-Api-Version': '2022-11-28',
       },
-      next: { revalidate: 180 },
+      cache: 'no-store',
     });
 
     if (!response.ok) {

@@ -4,18 +4,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, Download, RefreshCw, Smartphone, TriangleAlert } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
-declare global {
-  interface Window {
-    CentralHubNative?: {
-      getFcmToken?: () => string;
-      getPlatform?: () => string;
-      getAppId?: () => string;
-      getVersionCode?: () => number;
-      getVersionName?: () => string;
-      openExternalUrl?: (url: string) => boolean;
-    };
-  }
-}
+type UpdateBridge = {
+  getAppId?: () => string;
+  getVersionCode?: () => number;
+  getVersionName?: () => string;
+  openExternalUrl?: (url: string) => boolean;
+};
 
 type LatestUpdate = {
   versionName: string;
@@ -39,6 +33,11 @@ type NativeVersion = {
   versionName: string;
 };
 
+function getUpdateBridge(): UpdateBridge | undefined {
+  if (typeof window === 'undefined') return undefined;
+  return (window as unknown as { CentralHubNative?: UpdateBridge }).CentralHubNative;
+}
+
 export default function AppUpdateStatus() {
   const [mode, setMode] = useState<'detecting' | 'web' | 'native'>('detecting');
   const [nativeVersion, setNativeVersion] = useState<NativeVersion>({ legacy: false, versionCode: 0, versionName: '' });
@@ -47,7 +46,7 @@ export default function AppUpdateStatus() {
   const [error, setError] = useState('');
 
   const check = async () => {
-    const bridge = typeof window !== 'undefined' ? window.CentralHubNative : undefined;
+    const bridge = getUpdateBridge();
     const appId = bridge?.getAppId?.() || '';
     if (appId !== 'com.centralhub.network') {
       setMode('web');
@@ -99,7 +98,7 @@ export default function AppUpdateStatus() {
 
   const openUpdate = () => {
     if (!latest?.downloadUrl) return;
-    const opened = window.CentralHubNative?.openExternalUrl?.(latest.downloadUrl);
+    const opened = getUpdateBridge()?.openExternalUrl?.(latest.downloadUrl);
     if (!opened) window.location.assign(latest.downloadUrl);
   };
 
