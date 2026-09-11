@@ -21,18 +21,13 @@ jobs:
           key: centralhub-android-debug-signing-v1
           fail-on-cache-miss: true
 
-      - name: Verify cached signing key exists
+      - name: Verify cached signing identity exists
         shell: bash
         run: |
           test -f "$HOME/.android/debug.keystore"
-          FINGERPRINT=$(keytool -list -v \
-            -keystore "$HOME/.android/debug.keystore" \
-            -storepass android \
-            -alias androiddebugkey 2>/dev/null \
-            | sed -n 's/^[[:space:]]*SHA256: //p' \
-            | head -n 1)
-          test -n "$FINGERPRINT"
-          echo "CentralHub cached signing certificate SHA-256: $FINGERPRINT"
+          IDENTITY_SHA256=$(sha256sum "$HOME/.android/debug.keystore" | awk '{print $1}')
+          test -n "$IDENTITY_SHA256"
+          echo "CentralHub cached signing identity SHA-256: $IDENTITY_SHA256"
 
 # This workflow does not build or publish an APK. It only restores the private
 # Actions cache often enough to preserve the signing identity used by direct
