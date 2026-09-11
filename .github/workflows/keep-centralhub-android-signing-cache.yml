@@ -14,18 +14,18 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Restore stable Android signing identity
-        id: cache
         uses: actions/cache@v4
         with:
-          path: ~/.android/debug.keystore
-          key: centralhub-android-debug-signing-v1
+          path: ~/.centralhub/centralhub-update.keystore
+          key: centralhub-android-signing-v2
           fail-on-cache-miss: true
 
       - name: Verify cached signing identity exists
         shell: bash
         run: |
-          test -f "$HOME/.android/debug.keystore"
-          IDENTITY_SHA256=$(sha256sum "$HOME/.android/debug.keystore" | awk '{print $1}')
+          KEYSTORE="$HOME/.centralhub/centralhub-update.keystore"
+          test -f "$KEYSTORE"
+          IDENTITY_SHA256=$(sha256sum "$KEYSTORE" | awk '{print $1}')
           test -n "$IDENTITY_SHA256"
           echo "CentralHub cached signing identity SHA-256: $IDENTITY_SHA256"
 
