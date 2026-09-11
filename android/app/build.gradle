@@ -1,5 +1,8 @@
 apply plugin: 'com.android.application'
 
+def centralHubVersionCode = (System.getenv('CENTRALHUB_VERSION_CODE') ?: '4').toInteger()
+def centralHubVersionName = System.getenv('CENTRALHUB_VERSION_NAME') ?: '1.2.0'
+
 android {
     namespace = "com.centralhub.network"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +10,8 @@ android {
         applicationId "com.centralhub.network"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 3
-        versionName "1.1.1"
+        versionCode centralHubVersionCode
+        versionName centralHubVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

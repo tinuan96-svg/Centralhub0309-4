@@ -3,6 +3,7 @@
 import dynamic from 'next/dynamic';
 
 const DashboardStoreChat = dynamic(() => import('./components/DashboardStoreChat'), { ssr: false });
+const DashboardAppUpdate = dynamic(() => import('./components/AppUpdateStatus'), { ssr: false });
 
 const DashboardClient = dynamic(() => import('./DashboardClient'), {
   ssr: false,
@@ -12,6 +13,7 @@ const DashboardClient = dynamic(() => import('./DashboardClient'), {
 export default function DashboardClientWrapper() {
   return (
     <>
+      <DashboardAppUpdate />
       <DashboardClient params={{}} searchParams={{}} />
       <DashboardStoreChat />
     </>

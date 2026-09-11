@@ -13,7 +13,7 @@ on:
       - '.github/workflows/build-centralhub-apk.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-debug-apk:
@@ -36,25 +36,67 @@ jobs:
           java-version: '21'
           cache: gradle
 
+      - name: Compute native app version
+        id: version
+        shell: bash
+        run: |
+          VERSION_CODE=$((1000 + GITHUB_RUN_NUMBER))
+          VERSION_NAME="1.2.${GITHUB_RUN_NUMBER}"
+          echo "code=${VERSION_CODE}" >> "$GITHUB_OUTPUT"
+          echo "name=${VERSION_NAME}" >> "$GITHUB_OUTPUT"
+          echo "CENTRALHUB_VERSION_CODE=${VERSION_CODE}" >> "$GITHUB_ENV"
+          echo "CENTRALHUB_VERSION_NAME=${VERSION_NAME}" >> "$GITHUB_ENV"
+
       - name: Install JavaScript dependencies
         run: npm ci
 
       - name: Sync Capacitor Android project
         run: npx cap sync android
 
-      - name: Assemble debug APK
+      - name: Assemble installable APK
         working-directory: android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      - name: Upload installable debug APK
+      - name: Prepare dashboard update package
+        shell: bash
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk "centralhub-android-v${{ steps.version.outputs.name }}.apk"
+
+      - name: Upload installable APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: centralhub-debug-apk-${{ github.sha }}
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: centralhub-android-v${{ steps.version.outputs.name }}
+          path: centralhub-android-v${{ steps.version.outputs.name }}.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
+
+      - name: Publish APK to the CentralHub update feed
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="centralhub-android-v${{ steps.version.outputs.name }}-c${{ steps.version.outputs.code }}"
+          APK="centralhub-android-v${{ steps.version.outputs.name }}.apk"
+          NOTES=$(cat <<EOF
+          CentralHub Android native shell update.
+
+          Version: ${{ steps.version.outputs.name }}
+          Version code: ${{ steps.version.outputs.code }}
+          Commit: ${{ github.sha }}
+
+          Normal CentralHub website/dashboard changes do not require an APK update because the installed shell loads https://centralhub.network directly. This package is published only when Android/native configuration changes.
+          EOF
+          )
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --clobber
+          else
+            gh release create "$TAG" "$APK" \
+              --title "CentralHub Android ${{ steps.version.outputs.name }}" \
+              --notes "$NOTES"
+          fi
 
 # CentralHub's installed Android shell loads https://centralhub.network directly.
 # Normal UI, dashboard, database and API changes therefore arrive through the
