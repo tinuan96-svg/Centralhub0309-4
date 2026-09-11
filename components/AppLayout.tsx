@@ -3,7 +3,6 @@
 import { ReactNode, useState, useEffect } from 'react';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
-import { syncOrders } from '@/lib/services/orderSyncClient';
 import { supabase } from '@/lib/supabase';
 
 interface AppLayoutProps {
@@ -14,11 +13,8 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
-    // 1. Trigger background sync from MalluSpices on load
-    console.log('AppLayout: Starting background sync...');
-    void syncOrders().catch(err => console.error('Auto-sync failed:', err));
-
-    // 2. Listen for order changes in CentralHub
+    // Topbar owns the single page-load order sync. AppLayout only maintains the
+    // realtime listener so mounting both components cannot start duplicate pulls.
     const channelId = Math.random().toString(36).substring(2, 11);
     const channel = supabase.channel(`app_layout_orders_${channelId}`)
       .on('postgres_changes', {
