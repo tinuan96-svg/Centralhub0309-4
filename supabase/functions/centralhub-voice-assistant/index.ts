@@ -12,6 +12,16 @@ function reply(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), { status, headers: jsonHeaders });
 }
 
+function extractOutputText(payload: any): string {
+  if (typeof payload?.output_text === "string") return payload.output_text;
+  for (const item of Array.isArray(payload?.output) ? payload.output : []) {
+    for (const part of Array.isArray(item?.content) ? item.content : []) {
+      if (typeof part?.text === "string") return part.text;
+    }
+  }
+  return "";
+}
+
 function decodeBase64(value: string): Uint8Array {
   const clean = value.includes(",") ? value.slice(value.indexOf(",") + 1) : value;
   const binary = atob(clean);
@@ -164,31 +174,71 @@ Deno.serve(async (req: Request) => {
     const snapshot = await getSnapshot(db, user.id);
     const prompt = `You are CentralHub Voice, the private business copilot inside CentralHub. The user may speak Malayalam, English, or mix both. Reply naturally in the same language mix as the user and keep the spoken reply concise. Use concrete numbers only when they are present in the live snapshot.\n\nModes: operations = operational scan; board = executive briefing; developer = technical explanation.\n\nSafety rules:\n- The live snapshot is read-only. Never invent data.\n- Never claim that code, database rows, orders, prices, messages, refunds, users, files, deployments or other external systems were changed.\n- Any requested write/destructive/external action must set requires_confirmation=true and describe the proposed action.\n- Read-only questions and summaries use risk_level=read_only and requires_confirmation=false.\n- If asked to inspect GitHub/Netlify/Supabase beyond this snapshot, explain that connected execution is separate; do not pretend it ran.\n- navigation_path must be one of /dashboard, /orders, /products, /competitors, /finance, /banking, /purchase, /marketing, /business-intelligence, /settings/notifications, or null.\n\nReturn ONLY valid JSON with exactly these fields:\n{"reply":"string","intent":"string","mode":"operations|board|developer","risk_level":"read_only|low|medium|high","requires_confirmation":false,"suggested_action":null,"navigation_path":null,"speak":true}\n\nUSER MODE: ${requestedMode}\nUSER COMMAND: ${text}\nLIVE SNAPSHOT JSON:\n${JSON.stringify(snapshot)}`;
 
-    const model = Deno.env.get("CENTRALHUB_VOICE_MODEL") || Deno.env.get("OPENAI_MODEL_FAST") || "gpt-4o-mini";
-    const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: "You are CentralHub Voice. Return only the requested JSON object." },
-          { role: "user", content: prompt },
-        ],
-        temperature: 0.2,
-        max_tokens: 1200,
-        response_format: { type: "json_object" },
-      }),
-    });
+    const configuredModel = String(Deno.env.get("CENTRALHUB_VOICE_MODEL") || Deno.env.get("OPENAI_MODEL_FAST") || "").trim();
+    const candidateModels = Array.from(new Set(["gpt-5.6-luna", configuredModel, "gpt-5.6-terra"].filter(Boolean)));
+    let raw: any = null;
+    let aiResponse: Response | null = null;
+    let usedModel = "";
 
-    const raw = await aiResponse.json().catch(() => null);
-    if (!aiResponse.ok) return reply(502, { success: false, error: "assistant_failed", status: aiResponse.status, upstream_code: upstreamCode(raw) });
+    for (const model of candidateModels) {
+      usedModel = model;
+      aiResponse = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          store: false,
+          input: prompt,
+          max_output_tokens: 1200,
+          text: {
+            format: {
+              type: "json_schema",
+              name: "centralhub_voice_reply",
+              strict: true,
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  reply: { type: "string" },
+                  intent: { type: "string" },
+                  mode: { type: "string", enum: ["operations", "board", "developer"] },
+                  risk_level: { type: "string", enum: ["read_only", "low", "medium", "high"] },
+                  requires_confirmation: { type: "boolean" },
+                  suggested_action: { type: ["string", "null"] },
+                  navigation_path: { type: ["string", "null"] },
+                  speak: { type: "boolean" }
+                },
+                required: ["reply", "intent", "mode", "risk_level", "requires_confirmation", "suggested_action", "navigation_path", "speak"]
+              }
+            }
+          }
+        }),
+      });
 
-    const content = String(raw?.choices?.[0]?.message?.content ?? "").trim();
+      raw = await aiResponse.json().catch(() => null);
+      if (aiResponse.ok) break;
+
+      const code = upstreamCode(raw);
+      const retryableModelError = aiResponse.status === 404 && (code === "model_not_found" || code === "not_found_error");
+      if (!retryableModelError) break;
+    }
+
+    if (!aiResponse?.ok) {
+      return reply(502, {
+        success: false,
+        error: "assistant_failed",
+        status: aiResponse?.status ?? 502,
+        upstream_code: upstreamCode(raw),
+        attempted_model: usedModel || null,
+      });
+    }
+
+    const content = extractOutputText(raw).trim();
     let result: any;
     try {
       result = JSON.parse(content);
     } catch {
-      return reply(502, { success: false, error: "invalid_assistant_output" });
+      return reply(502, { success: false, error: "invalid_assistant_output", attempted_model: usedModel || null });
     }
 
     const safeMode = ["operations", "board", "developer"].includes(String(result?.mode)) ? String(result.mode) : requestedMode;
@@ -215,7 +265,7 @@ Deno.serve(async (req: Request) => {
       risk_level: finalResult.risk_level,
       requires_confirmation: finalResult.requires_confirmation,
       action_name: finalResult.suggested_action,
-      action_payload: { navigation_path: finalResult.navigation_path },
+      action_payload: { navigation_path: finalResult.navigation_path, model: usedModel },
       status,
     });
     if (historyError) console.error("centralhub-voice history insert failed", historyError.message);
