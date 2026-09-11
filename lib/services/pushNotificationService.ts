@@ -6,6 +6,8 @@ declare global {
       getFcmToken: () => string;
       getPlatform: () => string;
       getAppId: () => string;
+      getVersionCode?: () => number;
+      getVersionName?: () => string;
     };
   }
 }
@@ -137,6 +139,13 @@ export const PushNotificationService = {
     if (!nativeToken) return { supported: false, registered: false };
 
     const accessToken = await getAccessToken();
+    const versionCode = typeof window.CentralHubNative?.getVersionCode === 'function'
+      ? Number(window.CentralHubNative.getVersionCode() || 0)
+      : 0;
+    const versionName = typeof window.CentralHubNative?.getVersionName === 'function'
+      ? String(window.CentralHubNative.getVersionName() || 'Unknown')
+      : 'Legacy shell';
+
     const response = await fetch(NATIVE_API_BASE + '/api/push/native', {
       method: 'POST',
       headers: {
@@ -148,6 +157,8 @@ export const PushNotificationService = {
         platform: window.CentralHubNative?.getPlatform?.() || 'android',
         appId: window.CentralHubNative?.getAppId?.() || 'com.centralhub.network',
         deviceName: navigator.userAgent.slice(0, 160),
+        appVersionCode: versionCode,
+        appVersionName: versionName,
       }),
     });
 
@@ -156,7 +167,13 @@ export const PushNotificationService = {
       throw new Error(json?.error || 'Could not register this Android device.');
     }
 
-    return { supported: true, registered: true, id: json.id };
+    return {
+      supported: true,
+      registered: true,
+      id: json.id,
+      appVersionCode: json.appVersionCode ?? versionCode,
+      appVersionName: json.appVersionName ?? versionName,
+    };
   },
 
   async getStatus(): Promise<PushBrowserStatus> {
