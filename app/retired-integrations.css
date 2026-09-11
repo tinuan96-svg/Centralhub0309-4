@@ -1,0 +1,4 @@
+/* Retired integrations must not appear in active CentralHub navigation. */
+a[href="/finance/mollie"] {
+  display: none !important;
+}

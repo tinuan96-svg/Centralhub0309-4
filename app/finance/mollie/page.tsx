@@ -1,5 +1,5 @@
-import MollieAuditClient from "./MollieAuditClient";
+import { redirect } from 'next/navigation';
 
-export default function MollieAuditPage() {
-  return <MollieAuditClient />;
+export default function RetiredPaymentAuditPage() {
+  redirect('/finance');
 }
