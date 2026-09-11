@@ -17,6 +17,13 @@ export interface PushBrowserStatus {
   serviceWorkerReady: boolean;
   subscribed: boolean;
   serverSubscriptions: number;
+  webSupported: boolean;
+  webSubscribed: boolean;
+  webServerSubscriptions: number;
+  nativeSupported: boolean;
+  nativeSubscribed: boolean;
+  nativeServerSubscriptions: number;
+  provider: 'web' | 'native' | 'hybrid' | 'none';
   endpoint?: string;
   error?: string;
 }
@@ -42,6 +49,11 @@ function isSupportedBrowser(): boolean {
     'PushManager' in window &&
     'Notification' in window
   );
+}
+
+function getPermissionStatus(): NotificationPermission | 'unsupported' {
+  if (typeof window === 'undefined' || !('Notification' in window)) return 'unsupported';
+  return Notification.permission;
 }
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
@@ -92,18 +104,30 @@ async function getRegistration(): Promise<ServiceWorkerRegistration> {
   return navigator.serviceWorker.ready;
 }
 
-async function readServerSubscriptionCount(): Promise<number> {
+async function readServerSubscriptionCounts(): Promise<{ web: number; native: number }> {
+  const token = await getAccessToken();
+  const headers = { Authorization: 'Bearer ' + token };
+  const [webResponse, nativeResponse] = await Promise.all([
+    fetch('/api/push/subscribe', { headers }).catch(() => null),
+    fetch('/api/push/native', { headers }).catch(() => null),
+  ]);
+
+  const [webJson, nativeJson] = await Promise.all([
+    webResponse?.json().catch(() => null) || null,
+    nativeResponse?.json().catch(() => null) || null,
+  ]);
+
+  return {
+    web: Number(webJson?.count ?? 0),
+    native: Number(nativeJson?.count ?? 0),
+  };
+}
+
+async function readServerSubscriptionCountsSafely(): Promise<{ web: number; native: number }> {
   try {
-    const token = await getAccessToken();
-    const response = await fetch('/api/push/subscribe', {
-      headers: {
-        Authorization: 'Bearer ' + token,
-      },
-    });
-    const json = await response.json().catch(() => null);
-    return Number(json?.count ?? 0);
+    return await readServerSubscriptionCounts();
   } catch {
-    return 0;
+    return { web: 0, native: 0 };
   }
 }
 
@@ -136,46 +160,88 @@ export const PushNotificationService = {
   },
 
   async getStatus(): Promise<PushBrowserStatus> {
-    if (!isSupportedBrowser()) {
+    const webSupported = isSupportedBrowser();
+    const nativeSupported = isNativeAndroid();
+    const permission = getPermissionStatus();
+
+    if (!webSupported && !nativeSupported) {
       return {
         supported: false,
-        permission: 'unsupported',
+        permission,
         hasPublicKey: Boolean(VAPID_PUBLIC_KEY),
         serviceWorkerReady: false,
         subscribed: false,
         serverSubscriptions: 0,
+        webSupported: false,
+        webSubscribed: false,
+        webServerSubscriptions: 0,
+        nativeSupported: false,
+        nativeSubscribed: false,
+        nativeServerSubscriptions: 0,
+        provider: 'none',
       };
     }
 
     try {
-      const registration = await navigator.serviceWorker.getRegistration('/sw.js');
+      const registration = webSupported ? await navigator.serviceWorker.getRegistration('/sw.js') : null;
       const subscription = await registration?.pushManager.getSubscription();
-      const serverSubscriptions = await readServerSubscriptionCount();
+      const serverCounts = await readServerSubscriptionCountsSafely();
+      const nativeSubscribed = nativeSupported && serverCounts.native > 0;
+      const webSubscribed = Boolean(subscription);
+      const provider = webSubscribed && nativeSubscribed
+        ? 'hybrid'
+        : nativeSubscribed ? 'native' : webSubscribed ? 'web' : nativeSupported ? 'native' : 'web';
 
       return {
         supported: true,
-        permission: Notification.permission,
+        permission,
         hasPublicKey: Boolean(VAPID_PUBLIC_KEY),
         serviceWorkerReady: Boolean(registration),
-        subscribed: Boolean(subscription),
-        serverSubscriptions,
+        subscribed: webSubscribed || nativeSubscribed,
+        serverSubscriptions: serverCounts.web + serverCounts.native,
+        webSupported,
+        webSubscribed,
+        webServerSubscriptions: serverCounts.web,
+        nativeSupported,
+        nativeSubscribed,
+        nativeServerSubscriptions: serverCounts.native,
+        provider,
         endpoint: subscription?.endpoint,
       };
     } catch (error: any) {
       return {
         supported: true,
-        permission: Notification.permission,
+        permission,
         hasPublicKey: Boolean(VAPID_PUBLIC_KEY),
         serviceWorkerReady: false,
         subscribed: false,
         serverSubscriptions: 0,
+        webSupported,
+        webSubscribed: false,
+        webServerSubscriptions: 0,
+        nativeSupported,
+        nativeSubscribed: false,
+        nativeServerSubscriptions: 0,
+        provider: nativeSupported ? 'native' : webSupported ? 'web' : 'none',
         error: error?.message || 'Could not read push status.',
       };
     }
   },
 
   async enable(): Promise<PushBrowserStatus> {
+    let nativeRegistered = false;
+    if (isNativeAndroid()) {
+      const nativeResult = await this.registerNativeDevice();
+      nativeRegistered = Boolean(nativeResult.registered);
+    }
+
+    if (!isSupportedBrowser()) {
+      if (nativeRegistered) return this.getStatus();
+      throw new Error('This device does not expose a supported phone notification provider yet.');
+    }
+
     if (!VAPID_PUBLIC_KEY) {
+      if (nativeRegistered) return this.getStatus();
       throw new Error('CentralHub VAPID public key is missing from the deployment environment.');
     }
 

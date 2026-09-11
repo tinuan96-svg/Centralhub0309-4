@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { sendWebPush, getWebPushConfigStatus, StoredPushSubscription } from '@/lib/server/webPush';
+import { getFirebaseMessagingConfigStatus, sendFirebasePush } from '@/lib/server/firebaseMessaging';
 import { getServiceClient, getUserFromRequest, jsonError } from '../_utils';
 import { getStoreNotificationBrand } from '@/lib/notifications/storeNotificationBrand';
 
@@ -7,6 +8,10 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 type PushEventType = 'ORDER_RECEIVED' | 'PAYMENT_CONFIRMED';
+
+function isInvalidFirebaseToken(result: { status?: number; error?: string }) {
+  return result.status === 404 || /UNREGISTERED|registration-token-not-registered|not a valid FCM registration token/i.test(result.error || '');
+}
 
 function buildNotification(eventType: PushEventType, body: any) {
   const orderNumber = String(body.orderNumber || body.order_number || 'new order').trim();
@@ -39,9 +44,13 @@ export async function POST(req: Request) {
     return new Response('Not available in static export', { status: 404 });
   }
 
-  const config = getWebPushConfigStatus();
-  if (!config.configured) {
-    return jsonError('Web Push keys are missing from the deployment environment.', 500, config.missing);
+  const webConfig = getWebPushConfigStatus();
+  const firebaseConfig = getFirebaseMessagingConfigStatus();
+  if (!webConfig.configured && !firebaseConfig.configured) {
+    return jsonError('No push provider is configured for CentralHub.', 500, {
+      web_missing: webConfig.missing,
+      native_missing: firebaseConfig.missing,
+    });
   }
 
   const { user, error } = await getUserFromRequest(req);
@@ -172,7 +181,15 @@ export async function POST(req: Request) {
 
   if (subscriptionError) return jsonError(subscriptionError.message, 500);
 
-  if (!subscriptions?.length) {
+  const { data: nativeDevices, error: nativeError } = await supabase
+    .from('native_push_devices')
+    .select('id, token')
+    .eq('user_id', user.id)
+    .eq('is_enabled', true);
+
+  if (nativeError) return jsonError(nativeError.message, 500);
+
+  if (!subscriptions?.length && !nativeDevices?.length) {
     return NextResponse.json({
       success: true,
       notification_id: notification.id,
@@ -182,40 +199,77 @@ export async function POST(req: Request) {
     });
   }
 
-  const results = [];
-  for (const subscription of subscriptions as StoredPushSubscription[]) {
-    const result = await sendWebPush(subscription, {
-      title: notification.title,
-      body: notification.message,
-      url: notification.action_url || '/orders',
-      notificationId: notification.id,
-      tag: `centralhub-${notification.id}`,
-      severity: notification.severity,
-      category: notification.category,
-      icon: storeBrand.webIcon,
-      badge: storeBrand.webIcon,
-      storeId: notification.store_id,
-      storeName: storeBrand.name,
-      storeSlug: storeBrand.slug,
-      renotify: true,
-    }, { ttl: 60 * 60, urgency: 'high' });
+  const webResults = [];
+  if (webConfig.configured) {
+    for (const subscription of (subscriptions || []) as StoredPushSubscription[]) {
+      const result = await sendWebPush(subscription, {
+        title: notification.title,
+        body: notification.message,
+        url: notification.action_url || '/orders',
+        notificationId: notification.id,
+        tag: `centralhub-${notification.id}`,
+        severity: notification.severity,
+        category: notification.category,
+        icon: storeBrand.webIcon,
+        badge: storeBrand.webIcon,
+        storeId: notification.store_id,
+        storeName: storeBrand.name,
+        storeSlug: storeBrand.slug,
+        renotify: true,
+      }, { ttl: 60 * 60, urgency: 'high' });
 
-    results.push({ id: subscription.id, ...result });
+      webResults.push({ id: subscription.id, ...result });
 
-    if (result.status === 404 || result.status === 410) {
-      await supabase
-        .from('push_subscriptions')
-        .update({ is_enabled: false })
-        .eq('id', subscription.id);
+      if (result.status === 404 || result.status === 410) {
+        await supabase
+          .from('push_subscriptions')
+          .update({ is_enabled: false })
+          .eq('id', subscription.id);
+      }
     }
   }
 
-  const sent = results.filter((result) => result.ok).length;
+  const nativeResults = [];
+  if (firebaseConfig.configured) {
+    for (const device of nativeDevices || []) {
+      const result = await sendFirebasePush(device.token, {
+        title: notification.title,
+        body: notification.message,
+        url: notification.action_url || '/orders',
+        notificationId: notification.id,
+        category: notification.category,
+        severity: notification.severity,
+        dedupeKey,
+        storeId: notification.store_id,
+        storeSlug: storeBrand.slug,
+      });
+
+      nativeResults.push({ id: device.id, ...result });
+
+      if (isInvalidFirebaseToken(result)) {
+        await supabase
+          .from('native_push_devices')
+          .update({ is_enabled: false, updated_at: new Date().toISOString() })
+          .eq('id', device.id);
+      }
+    }
+  }
+
+  const sent = webResults.filter((result) => result.ok).length
+    + nativeResults.filter((result) => result.ok).length;
+  const attempted = (webConfig.configured ? webResults.length : 0) + (firebaseConfig.configured ? nativeResults.length : 0);
   return NextResponse.json({
     success: sent > 0,
     notification_id: notification.id,
     sent,
-    attempted: results.length,
-    results,
+    attempted,
+    web_sent: webResults.filter((result) => result.ok).length,
+    native_sent: nativeResults.filter((result) => result.ok).length,
+    web_configured: webConfig.configured,
+    native_configured: firebaseConfig.configured,
+    enabled_web_subscriptions: subscriptions?.length || 0,
+    enabled_native_devices: nativeDevices?.length || 0,
+    web_results: webResults,
+    native_results: nativeResults,
   }, { status: sent > 0 ? 200 : 502 });
 }

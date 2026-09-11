@@ -36,6 +36,12 @@ export default function NotificationSettingsPage() {
   }, [refreshPushStatus]);
 
   const unread = notifications.filter(n => !n.is_read).length;
+  const canEnablePhoneAlerts = Boolean(pushStatus?.supported && (pushStatus.nativeSupported || pushStatus.hasPublicKey));
+  const supportLabel = pushStatus?.supported
+    ? pushStatus.provider === 'hybrid' ? 'Web + Android'
+      : pushStatus.provider === 'native' ? 'Android native'
+      : 'Web push'
+    : 'Unsupported';
 
   const markAll = async () => {
     await NotificationService.markAllAsRead();
@@ -90,7 +96,7 @@ export default function NotificationSettingsPage() {
         <div className="flex flex-col xs:flex-row gap-2">
           <button
             onClick={enablePhoneNotifications}
-            disabled={pushLoading || !pushStatus?.supported || !pushStatus?.hasPublicKey}
+            disabled={pushLoading || !canEnablePhoneAlerts}
             className="px-4 py-3 rounded-xl bg-cyan-600 text-white text-xs font-black uppercase tracking-widest disabled:opacity-40 active:scale-95 transition-all"
           >
             {pushLoading ? 'Working…' : pushStatus?.subscribed ? 'Refresh phone setup' : 'Enable phone alerts'}
@@ -106,13 +112,15 @@ export default function NotificationSettingsPage() {
       </div>
 
       <div className="grid md:grid-cols-4 gap-3">
-        <Metric label="Browser support" value={pushStatus?.supported ? 'Ready' : 'Unsupported'} />
+        <Metric label="Phone support" value={supportLabel} />
         <Metric label="Permission" value={pushStatus?.permission || 'Checking'} />
         <Metric label="Device saved" value={pushStatus?.subscribed ? 'Yes' : 'No'} />
         <Metric label="Server devices" value={pushStatus?.serverSubscriptions ?? '—'} />
       </div>
 
-      {!pushStatus?.hasPublicKey && <Notice type="warning" message="Deployment is missing NEXT_PUBLIC_CENTRALHUB_VAPID_PUBLIC_KEY, so Android phone push cannot be enabled yet." />}
+      {pushStatus?.nativeSupported && <Notice type="success" message={`Android native push detected. Saved native devices: ${pushStatus.nativeServerSubscriptions}.`} />}
+      {pushStatus && !pushStatus.nativeSupported && !pushStatus.hasPublicKey && <Notice type="warning" message="Deployment is missing NEXT_PUBLIC_CENTRALHUB_VAPID_PUBLIC_KEY, so browser phone push cannot be enabled yet." />}
+      {pushStatus?.nativeSupported && !pushStatus.hasPublicKey && <Notice type="warning" message="Browser Web Push keys are missing, but Android native push can still be enabled from this app." />}
       {pushStatus?.error && <Notice type="warning" message={pushStatus.error} />}
       {pushMessage && <Notice type="success" message={pushMessage} />}
       {pushError && <Notice type="error" message={pushError} />}

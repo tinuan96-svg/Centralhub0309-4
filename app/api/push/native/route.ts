@@ -6,6 +6,30 @@ export const runtime = 'nodejs';
 
 const APP_ID = 'com.centralhub.network';
 
+export async function GET(req: Request) {
+  if (process.env.NEXT_OUTPUT?.trim() === 'export') {
+    return new Response('Not available in static export', { status: 404 });
+  }
+
+  const { user, error } = await getUserFromRequest(req);
+  if (error || !user) return jsonError(error || 'Unauthorized', 401);
+
+  const { data, count, error: dbError } = await getServiceClient()
+    .from('native_push_devices')
+    .select('id, platform, app_id, device_name, is_enabled, last_seen_at', { count: 'exact' })
+    .eq('user_id', user.id)
+    .eq('is_enabled', true)
+    .order('last_seen_at', { ascending: false });
+
+  if (dbError) return jsonError(dbError.message, 500);
+
+  return NextResponse.json({
+    success: true,
+    count: count ?? data?.length ?? 0,
+    devices: data || [],
+  });
+}
+
 export async function POST(req: Request) {
   if (process.env.NEXT_OUTPUT?.trim() === 'export') {
     return new Response('Not available in static export', { status: 404 });
