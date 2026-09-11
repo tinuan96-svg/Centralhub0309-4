@@ -19,6 +19,7 @@ type AssistantReply = {
   speak?: boolean;
   status?: string;
   error?: string;
+  upstream_code?: string | null;
 };
 
 const QUICK_PROMPTS: Record<AssistantMode, string[]> = {
@@ -36,6 +37,36 @@ function blobToBase64(blob: Blob): Promise<string> {
     }
     return btoa(binary);
   });
+}
+
+async function getVoiceAuthHeaders() {
+  let session = (await supabase.auth.getSession()).data.session;
+  const expiresSoon = session?.expires_at ? session.expires_at * 1000 - Date.now() < 60_000 : false;
+  if (expiresSoon) {
+    const refreshed = await supabase.auth.refreshSession();
+    if (refreshed.data.session) session = refreshed.data.session;
+  }
+  if (!session?.access_token) throw new Error('Your CentralHub session has expired. Please sign in again.');
+  return { Authorization: `Bearer ${session.access_token}` };
+}
+
+async function invokeVoice(body: Record<string, unknown>): Promise<AssistantReply> {
+  const headers = await getVoiceAuthHeaders();
+  const { data, error } = await supabase.functions.invoke('centralhub-voice-assistant', { body, headers });
+  if (error) {
+    let detail = '';
+    const context = (error as any)?.context;
+    try {
+      if (context?.clone) {
+        const payload = await context.clone().json();
+        detail = [payload?.error, payload?.upstream_code, payload?.status ? `HTTP ${payload.status}` : ''].filter(Boolean).join(' · ');
+      }
+    } catch {
+      // Keep the original Functions error when the response body is not JSON.
+    }
+    throw new Error(detail || error.message || 'CentralHub Voice request failed.');
+  }
+  return (data || {}) as AssistantReply;
 }
 
 export default function CentralHubVoiceAssistant() {
@@ -93,11 +124,7 @@ export default function CentralHubVoiceAssistant() {
     setTranscript(clean);
     setResponse(null);
     try {
-      const { data, error: invokeError } = await supabase.functions.invoke('centralhub-voice-assistant', {
-        body: { action: 'command', text: clean, mode },
-      });
-      if (invokeError) throw invokeError;
-      const result = (data || {}) as AssistantReply;
+      const result = await invokeVoice({ action: 'command', text: clean, mode });
       if (!result.success || !result.reply) throw new Error(result.error || 'CentralHub Voice could not answer.');
       setResponse(result);
       if (result.speak !== false) speak(result.reply);
@@ -113,10 +140,7 @@ export default function CentralHubVoiceAssistant() {
     setError('');
     try {
       const audioBase64 = await blobToBase64(blob);
-      const { data, error: invokeError } = await supabase.functions.invoke('centralhub-voice-assistant', {
-        body: { action: 'transcribe', audioBase64, mimeType: blob.type || 'audio/webm' },
-      });
-      if (invokeError) throw invokeError;
+      const data = await invokeVoice({ action: 'transcribe', audioBase64, mimeType: blob.type || 'audio/webm' });
       const text = String(data?.transcript || '').trim();
       if (!data?.success || !text) throw new Error(data?.error || 'I could not hear that clearly.');
       setInput('');
