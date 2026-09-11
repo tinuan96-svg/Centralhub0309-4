@@ -42,6 +42,9 @@ export default function NotificationSettingsPage() {
       : pushStatus.provider === 'native' ? 'Android native'
       : 'Web push'
     : 'Unsupported';
+  const permissionLabel = pushStatus?.nativeSupported && pushStatus.permission === 'unsupported'
+    ? 'Android managed'
+    : pushStatus?.permission || 'Checking';
 
   const markAll = async () => {
     await NotificationService.markAllAsRead();
@@ -55,7 +58,7 @@ export default function NotificationSettingsPage() {
     try {
       const status = await PushNotificationService.enable();
       setPushStatus(status);
-      setPushMessage('Phone notifications are enabled for this installed CentralHub web app.');
+      setPushMessage('Phone notifications are enabled for this CentralHub installation.');
     } catch (error: any) {
       setPushError(error?.message || 'Could not enable phone notifications.');
     } finally {
@@ -76,11 +79,11 @@ export default function NotificationSettingsPage() {
       const enabledWebSubscriptions = Number(result.enabled_web_subscriptions || 0);
       const providerNote = [
         result.web_configured ? `web ${webSent}/${enabledWebSubscriptions}` : 'web off',
-        result.native_configured ? `Android ${nativeSent}/${enabledNativeDevices}` : 'Android Firebase off',
+        result.native_configured ? `Android ${nativeSent}/${enabledNativeDevices}` : 'Android Firebase server not configured',
       ].join(' · ');
 
       if (sent > 0 && nativeSent === 0 && enabledNativeDevices > 0) {
-        setPushMessage(`Test sent, but not to Android yet (${providerNote}).`);
+        setPushMessage(`Test sent, but Android native delivery is not active yet (${providerNote}).`);
       } else {
         setPushMessage(`Test sent to ${sent} phone device(s) (${providerNote}).`);
       }
@@ -105,7 +108,7 @@ export default function NotificationSettingsPage() {
       <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
         <div className="space-y-1">
           <h2 className="text-lg font-black text-white uppercase">Phone push notifications</h2>
-          <p className="text-sm text-slate-400 max-w-2xl">Enable this on your Samsung Fold after installing CentralHub from Chrome. New pushed alerts can open the correct CentralHub page directly from the Android notification tray.</p>
+          <p className="text-sm text-slate-400 max-w-2xl">CentralHub can use Android native push in the installed app and Web Push in supported browsers. New alerts can open the correct CentralHub page directly from the notification tray.</p>
         </div>
         <div className="flex flex-col xs:flex-row gap-2">
           <button
@@ -127,12 +130,12 @@ export default function NotificationSettingsPage() {
 
       <div className="grid md:grid-cols-4 gap-3">
         <Metric label="Phone support" value={supportLabel} />
-        <Metric label="Permission" value={pushStatus?.permission || 'Checking'} />
+        <Metric label="Permission" value={permissionLabel} />
         <Metric label="Device saved" value={pushStatus?.subscribed ? 'Yes' : 'No'} />
         <Metric label="Server devices" value={pushStatus?.serverSubscriptions ?? '—'} />
       </div>
 
-      {pushStatus?.nativeSupported && <Notice type="success" message={`Android native push detected. Saved native devices: ${pushStatus.nativeServerSubscriptions}.`} />}
+      {pushStatus?.nativeSupported && <Notice type="success" message={`Android native push detected. Saved native devices: ${pushStatus.nativeServerSubscriptions}. Android notification permission is managed by the installed app, not the browser Notification API.`} />}
       {pushStatus && !pushStatus.nativeSupported && !pushStatus.hasPublicKey && <Notice type="warning" message="Deployment is missing NEXT_PUBLIC_CENTRALHUB_VAPID_PUBLIC_KEY, so browser phone push cannot be enabled yet." />}
       {pushStatus?.nativeSupported && !pushStatus.hasPublicKey && <Notice type="warning" message="Browser Web Push keys are missing, but Android native push can still be enabled from this app." />}
       {pushStatus?.error && <Notice type="warning" message={pushStatus.error} />}
