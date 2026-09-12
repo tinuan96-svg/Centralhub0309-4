@@ -174,6 +174,41 @@ public final class CentralHubNativeBridge {
         });
     }
 
+    /**
+     * Launch NORA's visible browser-computer mode. Credentials stay in memory
+     * only for the lifetime of the Activity; NORA never stores passwords/OTP.
+     */
+    @JavascriptInterface
+    public boolean openNoraComputerMode(
+            String sessionId,
+            String targetUrl,
+            String accessToken,
+            String supabaseUrl
+    ) {
+        if (sessionId == null || sessionId.trim().isEmpty()
+                || targetUrl == null || targetUrl.trim().isEmpty()
+                || accessToken == null || accessToken.trim().isEmpty()
+                || supabaseUrl == null || supabaseUrl.trim().isEmpty()) return false;
+        try {
+            Uri target = Uri.parse(targetUrl.trim());
+            Uri backend = Uri.parse(supabaseUrl.trim());
+            if (!"https".equalsIgnoreCase(target.getScheme())
+                    || !"https".equalsIgnoreCase(backend.getScheme())
+                    || backend.getHost() == null
+                    || !backend.getHost().toLowerCase(Locale.ROOT).endsWith(".supabase.co")) return false;
+
+            Intent intent = new Intent(activity, NoraComputerActivity.class);
+            intent.putExtra("nora_session_id", sessionId.trim());
+            intent.putExtra("nora_target_url", targetUrl.trim());
+            intent.putExtra("nora_access_token", accessToken.trim());
+            intent.putExtra("nora_supabase_url", supabaseUrl.trim());
+            activity.runOnUiThread(() -> activity.startActivity(intent));
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
     private Locale resolveLocale(String languageTag) {
         if (languageTag == null || languageTag.trim().isEmpty()) return Locale.UK;
         try {
