@@ -174,11 +174,11 @@ public class MainActivity extends BridgeActivity {
             taraRecognizerIntent.putStringArrayListExtra(
                     RecognizerIntent.EXTRA_BIASING_STRINGS,
                     new ArrayList<>(Arrays.asList(
+                            "Shruthi", "Sruthi", "Shruti", "Hey Shruthi", "Hey Sruthi", "Hey Shruti",
+                            "ശ്രുതി", "ஸ்ருதி",
+                            // NORA remains a narrow legacy alias only.
                             "NORA", "Nora", "Norah", "Noora", "Noura", "Hey NORA", "Hey Nora",
-                            "നോറ", "നോറാ", "நோரா",
-                            // Narrow legacy compatibility only; broad aliases such as
-                            // Sarah/Terra caused false background wakes.
-                            "Tara", "Thara", "താര", "താരാ", "தாரா"
+                            "നോറ", "നോറാ", "நோரா"
                     ))
             );
             taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_ENABLE_BIASING_DEVICE_CONTEXT, true);
@@ -278,7 +278,7 @@ public class MainActivity extends BridgeActivity {
             if (match == null || match.trim().isEmpty()) continue;
             String canonical = canonicalizeNoraTranscript(match);
             String lower = canonical.trim().toLowerCase(Locale.ROOT);
-            boolean explicitWake = lower.equals("nora") || lower.startsWith("nora ");
+            boolean explicitWake = lower.equals("shruthi") || lower.startsWith("shruthi ");
 
             if (explicitWake) {
                 noraConversationActive = true;
@@ -288,7 +288,7 @@ public class MainActivity extends BridgeActivity {
             } else {
                 // During an active conversation there is no timeout. Prefix each
                 // follow-up so the web assistant treats it as the current NORA turn.
-                canonical = "NORA " + canonical;
+                canonical = "SHRUTHI " + canonical;
             }
 
             dispatchTaraTranscriptDebounced(canonical);
@@ -307,24 +307,27 @@ public class MainActivity extends BridgeActivity {
         if (clean.isEmpty()) return clean;
 
         String normalized = clean.toLowerCase(Locale.ROOT);
+        String[] shruthiVariants = new String[]{"shruthi", "sruthi", "shruti"};
+        for (String variant : shruthiVariants) {
+            if (normalized.equals(variant) || normalized.equals("hey " + variant)) return "SHRUTHI";
+            if (normalized.startsWith(variant + " ")) return "SHRUTHI " + clean.substring(variant.length()).trim();
+            String heyVariant = "hey " + variant + " ";
+            if (normalized.startsWith(heyVariant)) return "SHRUTHI " + clean.substring(heyVariant.length()).trim();
+        }
+        if (normalized.equals("ശ്രുതി") || normalized.equals("ஸ்ருதி")) return "SHRUTHI";
+        if (normalized.startsWith("ശ്രുതി ")) return "SHRUTHI " + clean.substring("ശ്രുതി".length()).trim();
+        if (normalized.startsWith("ஸ்ருதி ")) return "SHRUTHI " + clean.substring("ஸ்ருதி".length()).trim();
+
+        // NORA remains a narrow legacy alias. Tara/Thara are intentionally not
+        // wake aliases because unrelated speech can resemble those words.
         String[] noraVariants = new String[]{"nora", "norah", "noora", "noura", "norra", "nora's"};
         for (String variant : noraVariants) {
-            if (normalized.equals(variant) || normalized.equals("hey " + variant)) return "NORA";
-            if (normalized.startsWith(variant + " ")) return "NORA " + clean.substring(variant.length()).trim();
+            if (normalized.equals(variant) || normalized.equals("hey " + variant)) return "SHRUTHI";
+            if (normalized.startsWith(variant + " ")) return "SHRUTHI " + clean.substring(variant.length()).trim();
             String heyVariant = "hey " + variant + " ";
-            if (normalized.startsWith(heyVariant)) return "NORA " + clean.substring(heyVariant.length()).trim();
+            if (normalized.startsWith(heyVariant)) return "SHRUTHI " + clean.substring(heyVariant.length()).trim();
         }
-
-        if (normalized.equals("നോറ") || normalized.equals("നോറാ") || normalized.equals("நோரா")) return "NORA";
-
-        // Minimal migration aliases only. Removing broad sound-alikes avoids false wakes.
-        String[] legacyVariants = new String[]{"tara", "thara"};
-        for (String variant : legacyVariants) {
-            if (normalized.equals(variant) || normalized.equals("hey " + variant)) return "NORA";
-            if (normalized.startsWith(variant + " ")) return "NORA " + clean.substring(variant.length()).trim();
-            String heyVariant = "hey " + variant + " ";
-            if (normalized.startsWith(heyVariant)) return "NORA " + clean.substring(heyVariant.length()).trim();
-        }
+        if (normalized.equals("നോറ") || normalized.equals("നോറാ") || normalized.equals("நோரா")) return "SHRUTHI";
         return clean;
     }
 
@@ -333,7 +336,7 @@ public class MainActivity extends BridgeActivity {
         String canonical = canonicalizeNoraTranscript(raw);
         String normalized = canonical.trim().toLowerCase(Locale.ROOT).replaceAll("[\\p{Punct}\\s]+", " ").trim();
         if (normalized.length() > 18) return false;
-        return normalized.equals("nora") || normalized.equals("നോറ") || normalized.equals("നോറാ") || normalized.equals("நோரா");
+        return normalized.equals("shruthi");
     }
 
     public boolean isTaraVoiceAvailable() {

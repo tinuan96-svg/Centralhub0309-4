@@ -71,7 +71,7 @@ const THEMES: NoraTheme[] = [
   { id: 'earth', name: 'Earth View', subtitle: 'Inspiring · Bold · Next Level', accent: '#57aaff', secondary: '#b2e4ff', background: 'radial-gradient(circle at 50% 72%, rgba(22,91,190,.22), transparent 30%), #01040a', orb: 'earth' },
 ];
 
-const WAKE_WORD = /(?:^|[\s,.:!?])(shruthi|sruthi|shruti|nora|norah|noora|noura|norra|tara|thara)(?=$|[\s,.:!?])|ശ്രുതി|ஸ்ருதி|നോറാ?|நோரா?|താരാ?|தாரா?/iu;
+const WAKE_WORD = /(?:^|[\s,.:!?])(shruthi|sruthi|shruti|nora|norah|noora|noura|norra)(?=$|[\s,.:!?])|ശ്രുതി|ஸ்ருதி|നോറാ?|நோரா?/iu;
 const STOP_WORDS = /\b(?:(?:shruthi|sruthi|shruti|nora|norah|noora)\s+stop|stop\s+(?:shruthi|sruthi|shruti|nora|norah|noora)|that(?:'s| is) all|thank you shruthi|thanks shruthi|thank you nora|thanks nora|go to sleep|sleep shruthi|sleep nora)\b|ശ്രുതി\s*(?:സ്റ്റോപ്പ്|മതി|നിർത്തു)|നോറാ?\s*(?:സ്റ്റോപ്പ്|മതി|നിർത്തു)|(?:മതി|നിർത്തു)\s*(?:ശ്രുതി|നോറാ?)|ஸ்ருதி\s*(?:ஸ்டாப்|போதும்)|நோரா?\s*(?:ஸ்டாப்|போதும்)/iu;
 const ASSISTANT_CUES = /(?:\?|\b(?:what|how|when|where|which|why|check|show|tell|give|find|look|open|scan|compare|calculate|order|orders|sale|sales|profit|stock|product|products|price|revenue|dashboard|store|today|yesterday|week|month|status|issue|risk|customer|competitor|finance|security|payment|marketing)\b|എന്ത|എത്ര|എങ്ങനെ|എപ്പോൾ|എവിടെ|ഏത്|നോക്ക്|പറ|കാണി|ചെക്ക്|ഓർഡർ|സെയിൽ|ലാഭം|സ്റ്റോക്ക്|പ്രോഡക്ട്|വില|റവന്യൂ|ഡാഷ്ബോർഡ്|സ്റ്റോർ|കസ്റ്റമർ|കോമ്പറ്റിറ്റർ|என்ன|எவ்வளவு|எப்படி|பார்|சொல்|ஆர்டர்|சேல்ஸ்|ஸ்டாக்|ப்ராடக்ட்|விலை)/iu;
 const FOLLOW_UP_CUES = /\b(?:that|this|it|same|those|these|and then|what about|how about|also|next)\b|അത്|അതിന്റെ|ഇത്|ഇതിന്റെ|അപ്പോ|പിന്നെ|അതേ|കൂടാതെ|அது|இது|அப்புறம்/iu;
@@ -101,7 +101,7 @@ function pickExecutiveVoice(voices: SpeechSynthesisVoice[], language: string) {
   const prefix = language.toLowerCase().startsWith('ml') ? 'ml' : 'en-gb';
   const languageMatches = voices.filter((voice) => voice.lang.toLowerCase().startsWith(prefix));
   const pool = languageMatches.length ? languageMatches : voices.filter((voice) => voice.lang.toLowerCase().startsWith('en'));
-  return pool.find((voice) => FEMALE_VOICE_HINTS.some((hint) => voice.name.toLowerCase().includes(hint))) || pool[0] || voices[0];
+  return pool.find((voice) => FEMALE_VOICE_HINTS.some((hint) => voice.name.toLowerCase().includes(hint))) || voices.find((voice) => FEMALE_VOICE_HINTS.some((hint) => voice.name.toLowerCase().includes(hint)));
 }
 
 function blobToBase64(blob: Blob): Promise<string> {
@@ -300,7 +300,14 @@ export default function CentralHubVoiceAssistant() {
     utterance.pitch = 1.04;
     utterance.volume = 1;
     const preferred = pickExecutiveVoice(window.speechSynthesis.getVoices(), language);
-    if (preferred) utterance.voice = preferred;
+    if (!preferred) {
+      bridge?.setTaraSpeaking?.(false);
+      if (speechVisualTimerRef.current) window.clearTimeout(speechVisualTimerRef.current);
+      speechVisualTimerRef.current = null;
+      setSpeaking(false);
+      return;
+    }
+    utterance.voice = preferred;
 
     const finish = () => {
       bridge?.setTaraSpeaking?.(false);
@@ -500,7 +507,7 @@ export default function CentralHubVoiceAssistant() {
     voiceState === 'processing' ? 'Processing…' :
     voiceState === 'speaking' ? 'Speaking…' :
     voiceState === 'listening' ? 'Listening…' :
-    nativeWakeAvailable ? 'Say “NORA” · legacy wake' : 'Ready';
+    nativeWakeAvailable ? 'Say “SHRUTHI”' : 'Ready';
 
   const rootStyle = {
     '--nora-accent': theme.accent,
@@ -564,7 +571,7 @@ export default function CentralHubVoiceAssistant() {
                         {response.navigation_path && (
                           <button
                             type="button"
-                            onClick={() => { router.push(response.navigation_path!); setOpen(false); }}
+                            onClick={() => { setSession(false); router.push(response.navigation_path!); setOpen(false); }}
                             className="mt-3 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--nora-accent)]"
                           >
                             Open related page <ChevronRight size={13} />

@@ -173,6 +173,13 @@ public final class CentralHubNativeBridge {
         }
 
         final Locale locale = resolveLocale(requestedLanguage);
+        TextToSpeech currentTts = taraTts;
+        if (currentTts == null || !taraTtsReady) return false;
+        final Locale selectedLocale = selectSupportedLocale(currentTts, locale);
+        if (findExecutiveVoice(currentTts, selectedLocale) == null) {
+            activity.runOnUiThread(() -> activity.setTaraSpeaking(false));
+            return false;
+        }
         activity.runOnUiThread(() -> {
             TextToSpeech tts = taraTts;
             if (tts == null || !taraTtsReady) {
@@ -182,11 +189,13 @@ public final class CentralHubNativeBridge {
             }
 
             activity.setTaraSpeaking(true);
-            Locale selected = selectSupportedLocale(tts, locale);
-            tts.setLanguage(selected);
+            tts.setLanguage(selectedLocale);
             tts.setSpeechRate(0.93f);
             tts.setPitch(1.04f);
-            selectExecutiveVoice(tts, selected);
+            if (!selectExecutiveVoice(tts, selectedLocale)) {
+                activity.setTaraSpeaking(false);
+                return;
+            }
             int result = tts.speak(
                     speech,
                     TextToSpeech.QUEUE_FLUSH,
@@ -261,17 +270,14 @@ public final class CentralHubNativeBridge {
         return Locale.US;
     }
 
-    private void selectExecutiveVoice(TextToSpeech tts, Locale locale) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return;
+    private Voice findExecutiveVoice(TextToSpeech tts, Locale locale) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return null;
         try {
             Set<Voice> voices = tts.getVoices();
-            if (voices == null || voices.isEmpty()) return;
-            Voice firstMatch = null;
-            Voice preferred = null;
+            if (voices == null || voices.isEmpty()) return null;
             for (Voice voice : voices) {
                 if (voice == null || voice.getLocale() == null) continue;
                 if (!voice.getLocale().getLanguage().equalsIgnoreCase(locale.getLanguage())) continue;
-                if (firstMatch == null) firstMatch = voice;
                 String name = voice.getName() == null ? "" : voice.getName().toLowerCase(Locale.ROOT);
                 if (name.contains("female")
                         || name.contains("sonia")
@@ -280,14 +286,19 @@ public final class CentralHubNativeBridge {
                         || name.contains("aria")
                         || name.contains("ava")
                         || name.contains("veena")
-                        || name.contains("heera")) {
-                    preferred = voice;
-                    break;
-                }
+                        || name.contains("heera")
+                        || name.contains("hazel")
+                        || name.contains("susan")) return voice;
             }
-            if (preferred != null) tts.setVoice(preferred);
-            else if (firstMatch != null) tts.setVoice(firstMatch);
         } catch (Exception ignored) { }
+        return null;
+    }
+
+    private boolean selectExecutiveVoice(TextToSpeech tts, Locale locale) {
+        Voice preferred = findExecutiveVoice(tts, locale);
+        if (preferred == null) return false;
+        try { return tts.setVoice(preferred) == TextToSpeech.SUCCESS; }
+        catch (Exception ignored) { return false; }
     }
 
     public void shutdown() {
