@@ -11,10 +11,12 @@ public final class CentralHubNativeBridge {
     private static final String PREFS = "centralhub_native_push";
     private static final String FCM_TOKEN = "fcm_token";
 
+    private final MainActivity activity;
     private final Context context;
 
-    public CentralHubNativeBridge(Context context) {
-        this.context = context.getApplicationContext();
+    public CentralHubNativeBridge(MainActivity activity) {
+        this.activity = activity;
+        this.context = activity.getApplicationContext();
     }
 
     public static void saveFcmToken(Context context, String token) {
@@ -62,6 +64,21 @@ public final class CentralHubNativeBridge {
         } catch (Exception ignored) {
             return "";
         }
+    }
+
+    @JavascriptInterface
+    public boolean isTaraVoiceAvailable() {
+        return activity.isTaraVoiceAvailable();
+    }
+
+    @JavascriptInterface
+    public void setTaraEnabled(boolean enabled) {
+        activity.runOnUiThread(() -> activity.setTaraEnabled(enabled));
+    }
+
+    @JavascriptInterface
+    public void setTaraSpeaking(boolean speaking) {
+        activity.runOnUiThread(() -> activity.setTaraSpeaking(speaking));
     }
 
     /**

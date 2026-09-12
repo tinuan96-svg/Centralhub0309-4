@@ -7,6 +7,11 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.speech.RecognitionListener;
+import android.speech.RecognizerIntent;
+import android.speech.SpeechRecognizer;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
@@ -14,10 +19,23 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import com.getcapacitor.BridgeActivity;
 import com.google.firebase.messaging.FirebaseMessaging;
+import java.util.ArrayList;
+import org.json.JSONObject;
 
 public class MainActivity extends BridgeActivity {
     private static final String CENTRALHUB_ORIGIN = "https://centralhub.network";
     private static final String EXTRA_ACTION_URL = "centralhub_action_url";
+    private static final int REQUEST_POST_NOTIFICATIONS = 4101;
+    private static final int REQUEST_RECORD_AUDIO = 4102;
+
+    private final Handler taraHandler = new Handler(Looper.getMainLooper());
+    private final Runnable taraRestartRunnable = this::startTaraRecognizerIfReady;
+    private SpeechRecognizer taraRecognizer;
+    private Intent taraRecognizerIntent;
+    private boolean taraEnabled = false;
+    private boolean taraSpeaking = false;
+    private boolean taraResumed = false;
+    private boolean taraListening = false;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -41,6 +59,8 @@ public class MainActivity extends BridgeActivity {
                 "CentralHubNative"
         );
 
+        setupTaraRecognizer();
+
         FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
             if (task.isSuccessful() && task.getResult() != null) {
                 CentralHubNativeBridge.saveFcmToken(this, task.getResult());
@@ -52,7 +72,7 @@ public class MainActivity extends BridgeActivity {
                 != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(
                     new String[]{Manifest.permission.POST_NOTIFICATIONS},
-                    4101
+                    REQUEST_POST_NOTIFICATIONS
             );
         }
 
@@ -138,6 +158,186 @@ public class MainActivity extends BridgeActivity {
         });
 
         handleNotificationIntent(getIntent());
+    }
+
+    private void setupTaraRecognizer() {
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) return;
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                    && SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
+                taraRecognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(this);
+            } else {
+                taraRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
+            }
+        } catch (Exception ignored) {
+            taraRecognizer = null;
+        }
+        if (taraRecognizer == null) return;
+
+        taraRecognizerIntent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false);
+        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3);
+
+        taraRecognizer.setRecognitionListener(new RecognitionListener() {
+            @Override
+            public void onReadyForSpeech(Bundle params) {
+                taraListening = true;
+            }
+
+            @Override
+            public void onBeginningOfSpeech() {
+            }
+
+            @Override
+            public void onRmsChanged(float rmsdB) {
+            }
+
+            @Override
+            public void onBufferReceived(byte[] buffer) {
+            }
+
+            @Override
+            public void onEndOfSpeech() {
+            }
+
+            @Override
+            public void onError(int error) {
+                taraListening = false;
+                if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) return;
+                scheduleTaraRestart(error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY ? 1200L : 550L);
+            }
+
+            @Override
+            public void onResults(Bundle results) {
+                taraListening = false;
+                ArrayList<String> matches = results == null
+                        ? null
+                        : results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                if (!taraSpeaking && matches != null) {
+                    for (String match : matches) {
+                        if (match != null && !match.trim().isEmpty()) {
+                            dispatchTaraTranscript(match.trim());
+                            break;
+                        }
+                    }
+                }
+                scheduleTaraRestart(450L);
+            }
+
+            @Override
+            public void onPartialResults(Bundle partialResults) {
+            }
+
+            @Override
+            public void onEvent(int eventType, Bundle params) {
+            }
+        });
+    }
+
+    public boolean isTaraVoiceAvailable() {
+        return SpeechRecognizer.isRecognitionAvailable(this);
+    }
+
+    public void setTaraEnabled(boolean enabled) {
+        taraEnabled = enabled;
+        if (!enabled) {
+            stopTaraRecognizer();
+            return;
+        }
+
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_RECORD_AUDIO);
+            return;
+        }
+        startTaraRecognizerIfReady();
+    }
+
+    public void setTaraSpeaking(boolean speaking) {
+        taraSpeaking = speaking;
+        if (speaking) {
+            stopTaraRecognizer();
+        } else {
+            scheduleTaraRestart(350L);
+        }
+    }
+
+    private void startTaraRecognizerIfReady() {
+        if (!taraEnabled || !taraResumed || taraSpeaking || taraListening) return;
+        if (taraRecognizer == null) setupTaraRecognizer();
+        if (taraRecognizer == null || taraRecognizerIntent == null) return;
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
+
+        try {
+            taraHandler.removeCallbacks(taraRestartRunnable);
+            taraRecognizer.startListening(taraRecognizerIntent);
+            taraListening = true;
+        } catch (Exception ignored) {
+            taraListening = false;
+            scheduleTaraRestart(1000L);
+        }
+    }
+
+    private void scheduleTaraRestart(long delayMs) {
+        taraHandler.removeCallbacks(taraRestartRunnable);
+        if (!taraEnabled || !taraResumed || taraSpeaking) return;
+        taraHandler.postDelayed(taraRestartRunnable, Math.max(250L, delayMs));
+    }
+
+    private void stopTaraRecognizer() {
+        taraHandler.removeCallbacks(taraRestartRunnable);
+        taraListening = false;
+        if (taraRecognizer != null) {
+            try {
+                taraRecognizer.cancel();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private void dispatchTaraTranscript(String text) {
+        WebView webView = bridge == null ? null : bridge.getWebView();
+        if (webView == null || text == null || text.trim().isEmpty()) return;
+        String quoted = JSONObject.quote(text.trim());
+        String script = "window.dispatchEvent(new CustomEvent('centralhub:tara-transcript',{detail:{text:" + quoted + "}}));";
+        webView.post(() -> webView.evaluateJavascript(script, null));
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        taraResumed = true;
+        scheduleTaraRestart(300L);
+    }
+
+    @Override
+    protected void onPause() {
+        taraResumed = false;
+        stopTaraRecognizer();
+        super.onPause();
+    }
+
+    @Override
+    protected void onDestroy() {
+        taraHandler.removeCallbacksAndMessages(null);
+        if (taraRecognizer != null) {
+            try {
+                taraRecognizer.destroy();
+            } catch (Exception ignored) {
+            }
+            taraRecognizer = null;
+        }
+        super.onDestroy();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_RECORD_AUDIO
+                && grantResults.length > 0
+                && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            scheduleTaraRestart(250L);
+        }
     }
 
     @Override
