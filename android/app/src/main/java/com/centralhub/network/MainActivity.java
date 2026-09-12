@@ -243,9 +243,12 @@ public class MainActivity extends BridgeActivity {
                 if (matches == null) return;
                 for (String match : matches) {
                     if (isSimpleNoraWakePhrase(match)) {
+                        // Mark the wake early so subsequent words remain in the active
+                        // conversation window, but do not notify the web UI yet. If the
+                        // user is saying "NORA, <command>", speaking "Yes?" on this
+                        // partial result would mask the final command recognition.
                         taraPartialWakeDispatched = true;
                         noraConversationUntil = System.currentTimeMillis() + NORA_FOLLOWUP_WINDOW_MS;
-                        dispatchTaraTranscriptDebounced("NORA");
                         break;
                     }
                 }
@@ -282,8 +285,9 @@ public class MainActivity extends BridgeActivity {
             String lower = canonical.trim().toLowerCase(Locale.ROOT);
             boolean explicitWake = lower.equals("nora") || lower.startsWith("nora ");
 
-            if (taraPartialWakeDispatched && lower.equals("nora")) return;
-
+            // Final recognition owns the user-visible wake. This ensures an exact
+            // "NORA" gets a spoken acknowledgement while "NORA <command>" reaches
+            // the command handler intact instead of being interrupted by TTS.
             if (explicitWake) {
                 noraConversationUntil = now + NORA_FOLLOWUP_WINDOW_MS;
             } else if (now > noraConversationUntil) {
