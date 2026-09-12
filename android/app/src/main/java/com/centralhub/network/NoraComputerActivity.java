@@ -551,7 +551,10 @@ public final class NoraComputerActivity extends android.app.Activity {
             String host = uri.getHost();
             if (host == null) return false;
             host = host.toLowerCase(Locale.ROOT);
-            String[] roots = new String[]{"facebook.com", "meta.com", "google.com", "google.co.uk", "centralhub.network"};
+            String[] roots = new String[]{
+                    "facebook.com", "meta.com", "google.com", "google.co.uk",
+                    "github.com", "netlify.com", "supabase.com", "centralhub.network"
+            };
             for (String root : roots) if (host.equals(root) || host.endsWith("." + root)) return true;
             return false;
         } catch (Exception ignored) {

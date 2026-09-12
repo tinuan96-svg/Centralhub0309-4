@@ -9,6 +9,16 @@ const CORS = {
 const JSON_HEADERS = { ...CORS, "Content-Type": "application/json", "Cache-Control": "no-store" };
 const MODEL = Deno.env.get("NORA_COMPUTER_MODEL")?.trim() || "gpt-5.6-sol";
 const ALLOWED_ACTIONS = new Set(["click", "double_click", "drag", "move", "scroll", "keypress", "type", "wait", "screenshot"]);
+const ALLOWED_ROOTS = [
+  "facebook.com",
+  "meta.com",
+  "google.com",
+  "google.co.uk",
+  "github.com",
+  "netlify.com",
+  "supabase.com",
+  "centralhub.network",
+];
 const MAX_TURNS = 40;
 
 function json(status: number, body: Record<string, unknown>) {
@@ -62,8 +72,7 @@ function allowedTarget(value: string) {
     const u = new URL(value);
     if (u.protocol !== "https:") return false;
     const host = u.hostname.toLowerCase();
-    const roots = ["facebook.com", "meta.com", "google.com", "google.co.uk", "centralhub.network"];
-    return roots.some((root) => host === root || host.endsWith(`.${root}`));
+    return ALLOWED_ROOTS.some((root) => host === root || host.endsWith(`.${root}`));
   } catch {
     return false;
   }
@@ -145,8 +154,12 @@ Deno.serve(async (req) => {
     return json(200, { success: true, kind: "paused" });
   }
   if (action === "cancel") {
-    await db.from("nora_action_sessions").update({ status: "cancelled", current_step: "Cancelled by admin", completed_at: new Date().toISOString() }).eq("id", sessionId);
-    await db.from("nora_action_steps").update({ status: "skipped", completed_at: new Date().toISOString() }).eq("session_id", sessionId).in("status", ["planned", "running", "waiting_input", "waiting_approval"]);
+    const { data: cancelled, error: cancelError } = await db.rpc("nora_cancel_action_session", {
+      p_session_id: sessionId,
+      p_user_id: user.id,
+    });
+    if (cancelError) return json(500, { success: false, error: `cancel_failed:${cancelError.message}` });
+    if (cancelled !== true) return json(409, { success: false, error: "session_not_cancellable" });
     return json(200, { success: true, kind: "cancelled" });
   }
 
