@@ -2,3 +2,4 @@ Shruthi native wake/voice safety release marker.
 
 This release includes explicit Shruthi/Sruthi/Shruti wake recognition, NORA as a narrow legacy alias, removal of Tara/Thara wake aliases, session-close protection against ambient reopening, and male TTS fallback blocking.
 Shruthi cloud speech playback enabled; build native release.
+Cloud speech source commit: 161985742178e4594d4031e0a91d49e394e71252. Trigger verified Android rebuild.
