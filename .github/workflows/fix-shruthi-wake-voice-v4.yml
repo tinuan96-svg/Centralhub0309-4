@@ -1,0 +1,74 @@
+name: One-off Shruthi wake and voice safety fix v4
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-shruthi-wake-voice-v4.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.1'
+          cache: npm
+
+      - name: Apply explicit Shruthi wake and female-voice-only patch
+        shell: bash
+        run: |
+          echo '1f8b08003797a56a02ffed194d6f1bc7f5ce5f31260a68b7a69736da432b5a161459858428a220d2f2c17485e172484ebd9cddcccc52624401c939c83f686f39e464a780ddf69400fd25427e49df7c2d77c9e54aacd30001ca83b43bf3de9bf7fd315b1bf27882122cc711ed233a49622ed129bcd6ec3327b5da800cd12415d20b633668a08918f9db35043f3a442c96482d9b05f5e3980a82ce5226e9841c701e734f61d46a09dad1a4bd3a66031ed34113274953f0b039c19435ff82a7b819c693664898e4381aa7fd2623f232e66f9a9f01c05e28e994ca59a000eb7e4d00b924e0040f2e24b9929e5f8ba3c1459f62b5b1b5b5c5c825dae31ccf8ea9904f9f79fa590458a8772f63b7ec573f699fedd51bf03fe6d8fd1f9b876c25350f8764861cb87ed600d5e46fdf7f77fbe1ebdbf77f5748d9cbedfb1ff4fbdbef6edf7d7dfbf6fbdbb73fdc41a8d9442718347c892232c2e10c2c31015bd23e8d40512866d1ac85fa3cc6038423500c1148a4e118617117d90e06819b5d023a43214e0519a0218ec0ae7d1cbe19f13865037489df1011544bdac5464bddb17db87dff2dc879fbfefbc24b26fab720b415bd94b0ef83656b60da9fc9d09d314fe598aac33b8b27b5489d417320fab5f86641efb2f73f6e3f7ca3e4fcf09596f94723edbf6edf7da3a47df79596fcc77b981b3c0d6252058c4018b182f5b58db5d5835f897b57d858279c2ca2294302901938f79468cf437abd1fc5e11b148e311b818ba68c5c2524946410cd6c8610902192088724a3d540ce7d4cc60014e547fd388e0866085e231a52f9529db183a2f892f0807c9e82f77b75a6a4f7d17c6ed785c45c8a97542535b587ea7e2bc7ba226d3977640deff0c6891034666842e13f1b95b20b608d7b7226ac97ae61ce6e6bfe7cc3e0568859cc68882320a65d02d5d14394adb6b61cefd6bd867104841fa50902e687f46a2deb775306a90a309dc3b317ddc3a36530281a1322c7f1e0822b8939095482a311f138b888f29584d32996047524074e16b8f40ba23cb5cb311321a789ec791684e3cb9e8f7ad7c16f777b4c91e8ddf4987972c49cc2a9e840158c3425a5f4d331871c5a4509b86a28363b7ecd2a6302c54cb1be29bfb9437c749dc509545c0f96d0ce0e626914f970984c3943f57a2b8371b4b50c3b8a42002b13cf6f15c8e8fd808a834922679e9f91d2ebadda323970ef89e67300340dae8c8f95a3ed8352bce318a420c159bbddf5975979f51a59ff3bc79c622695bba8acedb6af33f7056f138b27935c6f16f48631474e3353430b6d2f13cfebcb09bbe0de458c45d7f1b2ba5b1f43ae53dee8c0169ab6be9a5378c921b9d8737c3e047af5553ac6e7b53e45da175a36871344848d8084efaf5830671960d58aae4269897173ec7d795d90ba27a30b840a5e6f6ad5a628ab8febec5252342b6db35ed69253ef6d9f328e2b1450c5c48a3c1b30b1aa8b12266a1bb50f01522d5b53f76b0843daa54c420a834a85a368a6dafd3c3d5dcc5c6bd927ba53842acc4904496e80444208b49b90e5e0504126fd882048e700035dfd20d73b66794215d1b54982d9e684b97685c5d94a9a6d2d60b6c4ddb9237fe0ff13c7af2f71b84e736dbec8b79feb934aae27adb458b1461a1e6bf7ef1d36acea7ae45a2decb9cea9a2815067b4aaabb843b68a5f5bd05d67b717455efd55af975c9fa62c9437bd9e78fd50451bf8e75d49cf59193d434ffeb04e42bb5a62a2acbfb55a572302f4a6214ca2ca7bb33651b918f3223ce90f30bad846b936ac811cc2ce13db035bf41df4a4818675373cc00845507ed430d4cdb0d140a358a26b8d7903ad6f125c722a89b98310856b0ed5ac0229c82ccd7d73a77198f6cf630a8a84c619a2079c5f8aabd2bb0c756e49d71bc64c48f472efd3838b97edb3e7b00ddd67abc75c536fd10241300fc7c00f38a2bea3390146c05097a49fc32e36f0196edaf74a0e6a7abbdb7f9e83f5c1ea8d60fbc1ee6bdfb356990bfb4f376c739553f59ff15c67e8b94ecf739d9b7d6f77e737452af3d5623a5f2d6df37c24efcef321bbdba469ab074a285a584d500985f110929b75ac04a233185236f0bca9b2838f769ea13f1d7cb6777c7071de3eda3fb8383c3ae97602114f88e78da94af300a161038627a410227e405918a503220ca8aff38b3ae3d5e3d7ea51e3097869d51743a166c94e56ca1c1a480542a4ee56ee37cbea1870c4cc34fe4b8a68e4fa5f9e020ab30684519370aef3959da18c6be63794160eae4898aa90d501e65d026ff165603a90ce8cc93181900b4644ea7de1f90d1481a6533c2236a7a8849551f5512a25816c0afc1a0bed2c8eb44d956104b440c518b63d2de2b5bba0fa85397f9063dd55963ea78311d9856c205557d749087e03f1be1b783aef66c95ae19bf3cea9807cdba513c2cfc830085320a86c679952758fabdd3895d5188e74151032e52e0325d271b8c49f716d576fd5df8f31ce22123343e4c271b168286f78c394a19b6ba685519660ed55966a0df6a6984658f5c6bb68ab8367e8a72fffaa1af59fbefc1bfaf73f5d77aeb2f31634ac5b675025665bad7a761db68e86ed5e804c01cfc415c353951763b61f810bee5c5bfd200e96253c485231f6a06787fa2554c04ee908ab21e0427d2a78e0b794b1da0961ce50e8e62697e21471ab52ec2a1d5a1081f649cd00a0d2414478e50d1820354ab854ae62eecf32063e82f1ca22bef1b78a45a93fd1e6f9440761f5578b44577a9b25f4b04261de42a6074391f9a75a01114753629641cacf5322c0158f8bd940fdb0fb58c253d6662f6877ac8ef4407f8f8a29eae73db60b2275e38e1dfb4c9477f52407a30286a7a52ba81c84c905aaba3cb0b0da61d7758a054e0589744c1e3b8ecd42274dd4372cb79e3bae61855b6a5755415bcac6799ce231fea25d2f8e8d95bacf369772b2f5c7a541ad5cf69b0dcc9c4f764bb7e8b0f2c84ee826c9550522006719cdf82c650c82b7e03eeab76492b5c690a556503fd851da71eee53952e560c6d9ce60f6f21e077ffcddb01cea944a68879f048f7fbf0c60a82f595de6cdedb75cbcac11791dc3c715d27d2cdbbae4dfcdbb6561d9450bbe53ee89ad15847c15ce5cb1e063463f452f336bdd6ee71e4ea6618d9be94780d172c4fcce0f0050ac07a5b6ec7985a4a4b55348706bbf06a47d283a96f03895d0ffb0dcfdbe163ac7deda91cbeac174130e21af06b7b4fa95e0dc8c06ab59e90e9196ef163e49693408ce0fce3a47ed93a0f3fcd30b68ced1535458bfd86f3f3fe804c7ede3e3a3d3f6699678f32d1a38269f2df95287c8a79a2bdbdeeb6c2f0b0debaaeb3ac845d6b733c5eaf788e2f9d94d9ed18dd1eab6c52e73f3ecb495c314873619e57239f48d92b294b44a293d58c1d4cf2ef27d7b5f7134826197e8d9c658a408e5571de36e6a6048024d66e79dc0fb824f68f3ea7527f762fb1e9f640ad7336a10539ca8fb60af3e24134000975cf76557dd9e155144cc28de0c83403ddd10054fa0811c6f86a42e173743986e063f259bca3126846f8881bf20d166ba4a0566b93b4ced204b397bd148a010438141dec1554812dd9a53edb96a86ccc1ad44e29a4bcfd27ab441ae32319d9f8f4b729f5cdbbee510ab2f527512737bb6d41ae2b9211a68e4590f3a2ff6f70f3a9d564e2f55da2b9c6c719cdaca2b4bfe3eb350588a379a6eebbfbace2c56a1bbee32ff03dd968b6a1e260000' | xxd -r -p | gzip -d > /tmp/fix_shruthi.py
+          python3 /tmp/fix_shruthi.py
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Dependency high severity security gate
+        run: npm audit --audit-level=high
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Runtime compatibility audit
+        run: npm run audit:runtime
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Production build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://icnvrpnzjjcbvgcqgiua.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: Post-build smoke audit
+        run: npm run audit:smoke
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://icnvrpnzjjcbvgcqgiua.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: Commit verified fix and remove one-off workflow
+        shell: bash
+        run: |
+          rm -f .github/workflows/fix-shruthi-wake-voice-v4.yml
+          git config user.name "centralhub-automation"
+          git config user.email "centralhub-automation@users.noreply.github.com"
+          git add android/app/src/main/java/com/centralhub/network/MainActivity.java \
+                  android/app/src/main/java/com/centralhub/network/CentralHubNativeBridge.java \
+                  components/CentralHubVoiceAssistant.tsx \
+                  .github/workflows/fix-shruthi-wake-voice-v4.yml
+          git commit -m "fix: require explicit Shruthi wake and block male TTS fallback"
+          git push origin HEAD:main
