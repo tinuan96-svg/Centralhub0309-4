@@ -145,7 +145,7 @@ export default function NoraLiveActionOverlay() {
         className="fixed right-4 bottom-24 z-[95] flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-full border border-cyan-400/30 bg-slate-950/95 px-4 py-3 text-left text-white shadow-2xl backdrop-blur-xl"
       >
         <span className="relative flex h-3 w-3"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-50" /><span className="relative inline-flex h-3 w-3 rounded-full bg-cyan-300" /></span>
-        <span className="min-w-0"><span className="block text-xs font-semibold tracking-[0.16em] text-cyan-300">NORA LIVE ACTION</span><span className="block max-w-[260px] truncate text-sm text-slate-200">{session.current_step || session.title}</span></span>
+        <span className="min-w-0"><span className="block text-xs font-semibold tracking-[0.16em] text-cyan-300">Shruthi LIVE ACTION</span><span className="block max-w-[260px] truncate text-sm text-slate-200">{session.current_step || session.title}</span></span>
       </button>
     );
   }
@@ -158,10 +158,10 @@ export default function NoraLiveActionOverlay() {
       <header className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-cyan-400/30 bg-cyan-400/10"><MousePointer2 className="h-5 w-5 text-cyan-300" /></div>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold">NORA · Live Action</h2><span className="rounded-full border border-cyan-400/25 bg-cyan-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-cyan-200">{statusText(session.status)}</span></div>
+          <div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold">Shruthi · Live Action</h2><span className="rounded-full border border-cyan-400/25 bg-cyan-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-cyan-200">{statusText(session.status)}</span></div>
           <p className="truncate text-xs text-slate-400">{session.title} · {session.target_system || 'External task'}</p>
         </div>
-        <button type="button" onClick={() => setCollapsed(true)} className="rounded-xl p-2 text-slate-300 hover:bg-white/10" aria-label="Collapse NORA live action"><X className="h-5 w-5" /></button>
+        <button type="button" onClick={() => setCollapsed(true)} className="rounded-xl p-2 text-slate-300 hover:bg-white/10" aria-label="Collapse Shruthi live action"><X className="h-5 w-5" /></button>
       </header>
 
       <div className="grid gap-0 md:grid-cols-[1.35fr_.9fr]">
@@ -173,18 +173,18 @@ export default function NoraLiveActionOverlay() {
           <div className="relative flex min-h-[180px] items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-black/60">
             {screenshot ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={screenshot} alt="Latest NORA browser action" className="max-h-[320px] w-full object-contain" />
+              <img src={screenshot} alt="Latest Shruthi browser action" className="max-h-[320px] w-full object-contain" />
             ) : (
-              <div className="px-8 py-10 text-center"><div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-400/10"><Hand className="h-7 w-7 text-cyan-300" /></div><p className="font-medium text-slate-200">NORA is preparing the browser view</p><p className="mt-2 text-sm text-slate-500">Screenshots from the computer-use runtime will appear here while she clicks, types and selects.</p></div>
+              <div className="px-8 py-10 text-center"><div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-400/10"><Hand className="h-7 w-7 text-cyan-300" /></div><p className="font-medium text-slate-200">Shruthi is preparing the browser view</p><p className="mt-2 text-sm text-slate-500">Screenshots from the computer-use runtime will appear here while she clicks, types and selects.</p></div>
             )}
             {session.current_step && <div className="absolute inset-x-3 bottom-3 rounded-xl border border-white/10 bg-slate-950/90 px-3 py-2 text-sm text-slate-200 backdrop-blur"><span className="mr-2 text-cyan-300">Now</span>{session.current_step}</div>}
           </div>
 
           {pendingQuestion && (
             <div className="mt-3 rounded-2xl border border-amber-400/25 bg-amber-400/10 p-3">
-              <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-100"><MessageCircleQuestion className="h-4 w-4" />NORA needs your input</div>
+              <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-100"><MessageCircleQuestion className="h-4 w-4" />Shruthi needs your input</div>
               <p className="text-sm text-slate-200">{pendingQuestion.question}</p>
-              <div className="mt-3 flex gap-2"><input type={pendingQuestion.is_sensitive ? 'password' : 'text'} value={answer} onChange={(event) => setAnswer(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submitAnswer(); }} placeholder="Answer NORA…" className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-base outline-none focus:border-cyan-400/50" /><button type="button" disabled={busy || !answer.trim()} onClick={() => void submitAnswer()} className="rounded-xl bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-40">Continue</button></div>
+              <div className="mt-3 flex gap-2"><input type={pendingQuestion.is_sensitive ? 'password' : 'text'} value={answer} onChange={(event) => setAnswer(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submitAnswer(); }} placeholder="Answer Shruthi…" className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-base outline-none focus:border-cyan-400/50" /><button type="button" disabled={busy || !answer.trim()} onClick={() => void submitAnswer()} className="rounded-xl bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-40">Continue</button></div>
             </div>
           )}
 

@@ -30,8 +30,8 @@ type SettledTurn = {
 const EVENT_NAME = 'centralhub:tara-transcript';
 const PROFILE_KEY = 'centralhub:nora-voice-profile-v1';
 const DEFAULT_PROFILE: VoiceProfile = { version: 1, avgGapMs: 900, avgWords: 8, samples: 0 };
-const WAKE_START = /^(?:(?:hey\s+)?(?:nora|norah|noora|noura|norra|tara|thara))\b[\s,:.!?-]*/iu;
-const STOP_WORDS = /\b(?:(?:nora|norah|noora)\s+stop|stop\s+(?:nora|norah|noora)|that(?:'s| is) all|thank you nora|thanks nora|go to sleep|sleep nora|end conversation|stop listening)\b|നോറാ?\s*(?:സ്റ്റോപ്പ്|മതി|നിർത്തു)|(?:മതി|നിർത്തു)\s*നോറാ?|நோரா?\s*(?:ஸ்டாப்|போதும்)/iu;
+const WAKE_START = /^(?:(?:hey\s+)?(?:shruthi|sruthi|shruti|nora|norah|noora|noura|norra|tara|thara))\b[\s,:.!?-]*/iu;
+const STOP_WORDS = /\b(?:(?:shruthi|sruthi|shruti|nora|norah|noora)\s+stop|stop\s+(?:shruthi|sruthi|shruti|nora|norah|noora)|that(?:'s| is) all|thank you shruthi|thanks shruthi|thank you nora|thanks nora|go to sleep|sleep shruthi|sleep nora|end conversation|stop listening)\b|നോറാ?\s*(?:സ്റ്റോപ്പ്|മതി|നിർത്തു)|(?:മതി|നിർത്തു)\s*നോറാ?|நோரா?\s*(?:ஸ்டாப்|போதும்)/iu;
 const CONTINUATION_END = /(?:\b(?:and|but|or|so|because|then|also|plus|like|actually|means|if|when|with|for|to|about|from|on|in|the|a|an|my|our|your|this|that)\b|അപ്പോ|പിന്നെ|എന്നിട്ട്|അതുപോലെ|അല്ലെങ്കിൽ|കാരണം|ഒക്കെ|കൂടാതെ|അതിന്റെ|ഇതിന്റെ|എന്ന്|ஆனா|அப்புறம்|மேலும்|அது|இது)\s*[,.:;-]*$/iu;
 const COMPLETE_HINT = /[?.!]$|\b(?:today|now|first|please|account|status|issue|issues|done|finish|finished|complete|completed|okay|ok)\s*[?.!]*$/iu;
 const NON_SEMANTIC = /^(?:uh+|um+|hmm+|mm+|er+|ah+|ഹ്+|മ്മ്+|ം+|ம்+)$/iu;
@@ -110,7 +110,7 @@ function mergeTranscript(previous: string, incoming: string) {
     else body = overlapMerge(a, b);
   }
 
-  return woke ? `NORA${body ? ` ${body}` : ''}` : body;
+  return woke ? `SHRUTHI${body ? ` ${body}` : ''}` : body;
 }
 
 function wordCount(value: string) {
@@ -120,7 +120,7 @@ function wordCount(value: string) {
 function settleDelay(text: string, profile: VoiceProfile, segmentCount: number) {
   const clean = text.trim();
   const words = wordCount(clean);
-  const exactWake = /^NORA$/iu.test(clean);
+  const exactWake = /^(?:SHRUTHI|NORA)$/iu.test(clean);
   const body = splitWake(clean).body;
   let delay = clamp(profile.avgGapMs + 430, 800, 1750);
 
@@ -258,7 +258,7 @@ export default function NoraAdaptiveVoiceNormalizer() {
       const incoming = String(custom.detail?.text || '').trim();
       if (!incoming) return;
 
-      // NORA should hear one natural turn, not every Android segmented fragment.
+      // SHRUTHI should hear one natural turn, not every Android segmented fragment.
       event.stopImmediatePropagation();
 
       const body = splitWake(incoming).body;
@@ -268,7 +268,7 @@ export default function NoraAdaptiveVoiceNormalizer() {
       const gap = lastRawAt ? now - lastRawAt : 0;
 
       // A long silence closes the previous turn. It is queued instead of being glued
-      // to the next sentence, even when NORA is still processing/speaking.
+      // to the next sentence, even when SHRUTHI is still processing/speaking.
       if (pending && gap > 2800) flush();
       else if (pending && gap) updateGapProfile(gap);
 

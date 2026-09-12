@@ -71,8 +71,8 @@ const THEMES: NoraTheme[] = [
   { id: 'earth', name: 'Earth View', subtitle: 'Inspiring · Bold · Next Level', accent: '#57aaff', secondary: '#b2e4ff', background: 'radial-gradient(circle at 50% 72%, rgba(22,91,190,.22), transparent 30%), #01040a', orb: 'earth' },
 ];
 
-const WAKE_WORD = /(?:^|[\s,.:!?])(nora|norah|noora|noura|norra|tara|thara)(?=$|[\s,.:!?])|നോറാ?|நோரா?|താരാ?|தாரா?/iu;
-const STOP_WORDS = /\b(?:(?:nora|norah|noora)\s+stop|stop\s+(?:nora|norah|noora)|that(?:'s| is) all|thank you nora|thanks nora|go to sleep|sleep nora)\b|നോറാ?\s*(?:സ്റ്റോപ്പ്|മതി|നിർത്തു)|(?:മതി|നിർത്തു)\s*നോറാ?|நோரா?\s*(?:ஸ்டாப்|போதும்)/iu;
+const WAKE_WORD = /(?:^|[\s,.:!?])(shruthi|sruthi|shruti|nora|norah|noora|noura|norra|tara|thara)(?=$|[\s,.:!?])|ശ്രുതി|ஸ்ருதி|നോറാ?|நோரா?|താരാ?|தாரா?/iu;
+const STOP_WORDS = /\b(?:(?:shruthi|sruthi|shruti|nora|norah|noora)\s+stop|stop\s+(?:shruthi|sruthi|shruti|nora|norah|noora)|that(?:'s| is) all|thank you shruthi|thanks shruthi|thank you nora|thanks nora|go to sleep|sleep shruthi|sleep nora)\b|ശ്രുതി\s*(?:സ്റ്റോപ്പ്|മതി|നിർത്തു)|നോറാ?\s*(?:സ്റ്റോപ്പ്|മതി|നിർത്തു)|(?:മതി|നിർത്തു)\s*(?:ശ്രുതി|നോറാ?)|ஸ்ருதி\s*(?:ஸ்டாப்|போதும்)|நோரா?\s*(?:ஸ்டாப்|போதும்)/iu;
 const ASSISTANT_CUES = /(?:\?|\b(?:what|how|when|where|which|why|check|show|tell|give|find|look|open|scan|compare|calculate|order|orders|sale|sales|profit|stock|product|products|price|revenue|dashboard|store|today|yesterday|week|month|status|issue|risk|customer|competitor|finance|security|payment|marketing)\b|എന്ത|എത്ര|എങ്ങനെ|എപ്പോൾ|എവിടെ|ഏത്|നോക്ക്|പറ|കാണി|ചെക്ക്|ഓർഡർ|സെയിൽ|ലാഭം|സ്റ്റോക്ക്|പ്രോഡക്ട്|വില|റവന്യൂ|ഡാഷ്ബോർഡ്|സ്റ്റോർ|കസ്റ്റമർ|കോമ്പറ്റിറ്റർ|என்ன|எவ்வளவு|எப்படி|பார்|சொல்|ஆர்டர்|சேல்ஸ்|ஸ்டாக்|ப்ராடக்ட்|விலை)/iu;
 const FOLLOW_UP_CUES = /\b(?:that|this|it|same|those|these|and then|what about|how about|also|next)\b|അത്|അതിന്റെ|ഇത്|ഇതിന്റെ|അപ്പോ|പിന്നെ|അതേ|കൂടാതെ|அது|இது|அப்புறம்/iu;
 const FEMALE_VOICE_HINTS = ['female', 'sonia', 'serena', 'samantha', 'karen', 'moira', 'fiona', 'victoria', 'aria', 'ava', 'veena', 'heera', 'susan', 'hazel'];
@@ -140,7 +140,7 @@ async function invokeVoice(body: Record<string, unknown>): Promise<AssistantRepl
     } catch {
       // Keep the original Functions error when the response body is not JSON.
     }
-    throw new Error(detail || error.message || 'NORA request failed.');
+    throw new Error(detail || error.message || 'Shruthi request failed.');
   }
   return (data || {}) as AssistantReply;
 }
@@ -330,16 +330,16 @@ export default function CentralHubVoiceAssistant() {
         text: clean,
         mode,
         page_context: pathname,
-        assistant_name: 'NORA',
+        assistant_name: 'SHRUTHI',
         adaptive_behavior: true,
       });
-      if (!result.success || !result.reply) throw new Error(result.error || 'NORA could not answer.');
+      if (!result.success || !result.reply) throw new Error(result.error || 'Shruthi could not answer.');
       setResponse(result);
       responseRef.current = result;
       if (result.speak !== false) speak(result.reply);
       else stopSpeech();
     } catch (e: any) {
-      setError(e?.message || 'NORA failed.');
+      setError(e?.message || 'Shruthi failed.');
       stopSpeech();
     } finally {
       processingRef.current = false;
@@ -358,7 +358,7 @@ export default function CentralHubVoiceAssistant() {
       setOpen(false);
       setTranscript('');
       setResponse(null);
-      speak('Of course. I’ll stay quiet until you call NORA again.');
+      speak('Of course. I’ll stay quiet until you call me again.');
       return;
     }
 
@@ -369,7 +369,7 @@ export default function CentralHubVoiceAssistant() {
       setOpen(true);
       const command = stripWakeWord(heard);
       if (!command) {
-        setTranscript('NORA');
+        setTranscript('SHRUTHI');
         setResponse(null);
         speak('Yes?');
         return;
@@ -500,7 +500,7 @@ export default function CentralHubVoiceAssistant() {
     voiceState === 'processing' ? 'Processing…' :
     voiceState === 'speaking' ? 'Speaking…' :
     voiceState === 'listening' ? 'Listening…' :
-    nativeWakeAvailable ? 'Say “NORA”' : 'Ready';
+    nativeWakeAvailable ? 'Say “NORA” · legacy wake' : 'Ready';
 
   const rootStyle = {
     '--nora-accent': theme.accent,
@@ -511,7 +511,7 @@ export default function CentralHubVoiceAssistant() {
   return (
     <>
       {open && (
-        <section className="nora-screen fixed inset-0 z-[120] overflow-hidden text-white" style={rootStyle} aria-label="NORA AI Executive Assistant">
+        <section className="nora-screen fixed inset-0 z-[120] overflow-hidden text-white" style={rootStyle} aria-label="SHRUTHI AI Executive Assistant">
           <div className="absolute inset-0 nora-ambient pointer-events-none" />
           <div className="relative z-10 flex h-full min-h-0 flex-col px-4 pb-[max(18px,env(safe-area-inset-bottom))] pt-[max(14px,env(safe-area-inset-top))] sm:px-7">
             <header className="flex items-center justify-between gap-3">
@@ -522,7 +522,7 @@ export default function CentralHubVoiceAssistant() {
                 <div className="text-[22px] font-light tracking-tight sm:text-[26px]">Central<span className="font-semibold text-[var(--nora-accent)]">Hub</span></div>
                 <div className="mt-0.5 text-[8px] uppercase tracking-[0.42em] text-slate-500">Business · Insights · Action</div>
               </div>
-              <button type="button" onClick={() => chooseTheme()} className="nora-icon-button" aria-label="Change NORA appearance">
+              <button type="button" onClick={() => chooseTheme()} className="nora-icon-button" aria-label="Change SHRUTHI appearance">
                 <Settings size={20} />
               </button>
             </header>
@@ -532,7 +532,7 @@ export default function CentralHubVoiceAssistant() {
                 <Orb theme={theme} state={voiceState} />
 
                 <div className="mt-4 text-center sm:mt-6">
-                  <h2 className="text-4xl font-light tracking-tight sm:text-5xl">NORA</h2>
+                  <h2 className="text-4xl font-light tracking-tight sm:text-5xl">SHRUTHI</h2>
                   <p className="mt-1 text-[9px] font-semibold uppercase tracking-[0.42em] text-slate-400">Your AI Executive Assistant</p>
                   <div className="mx-auto mt-4 flex h-8 items-center justify-center gap-[3px]">
                     {Array.from({ length: 17 }).map((_, index) => (
@@ -550,12 +550,12 @@ export default function CentralHubVoiceAssistant() {
                 {(transcript || processing || response?.reply || error) && (
                   <div className="mt-5 w-full max-w-2xl space-y-2">
                     {transcript && <div className="nora-glass-card"><span className="nora-card-label">You</span><p>{transcript}</p></div>}
-                    {processing && <div className="nora-glass-card nora-processing-card">NORA is analysing live CentralHub data…</div>}
+                    {processing && <div className="nora-glass-card nora-processing-card">SHRUTHI is analysing live CentralHub data…</div>}
                     {error && <div className="nora-glass-card border-rose-400/30 text-rose-100">{error}</div>}
                     {response?.reply && (
                       <div className="nora-glass-card">
                         <div className="mb-1 flex items-center justify-between gap-2">
-                          <span className="nora-card-label text-[var(--nora-accent)]">NORA</span>
+                          <span className="nora-card-label text-[var(--nora-accent)]">SHRUTHI</span>
                           <span className="rounded-full border border-white/10 px-2 py-0.5 text-[8px] uppercase tracking-wider text-slate-400">
                             {response.requires_confirmation ? 'Approval required' : response.risk_level || 'read only'}
                           </span>
@@ -609,10 +609,10 @@ export default function CentralHubVoiceAssistant() {
                   value={input}
                   onChange={(event) => setInput(event.target.value)}
                   disabled={processing || recording}
-                  placeholder="Ask NORA"
+                  placeholder="Ask SHRUTHI"
                   className="min-w-0 flex-1 bg-transparent px-3 py-3.5 text-sm text-white outline-none placeholder:text-slate-500"
                 />
-                <button type="submit" disabled={!input.trim() || processing || recording} className="mr-2 rounded-full p-2 text-slate-300 disabled:opacity-30" aria-label="Send to NORA">
+                <button type="submit" disabled={!input.trim() || processing || recording} className="mr-2 rounded-full p-2 text-slate-300 disabled:opacity-30" aria-label="Send to SHRUTHI">
                   <Send size={18} />
                 </button>
               </form>
@@ -622,7 +622,7 @@ export default function CentralHubVoiceAssistant() {
                 onClick={recording ? stopRecording : startRecording}
                 disabled={processing}
                 className={`nora-action-button ${recording ? 'nora-mic-active' : ''}`}
-                aria-label={recording ? 'Stop listening' : 'Talk to NORA'}
+                aria-label={recording ? 'Stop listening' : 'Talk to SHRUTHI'}
               >
                 {recording ? <Square size={19} fill="currentColor" /> : <Mic size={21} />}
                 <span className="hidden sm:block">{recording ? 'Stop' : 'Talk'}</span>
@@ -632,13 +632,13 @@ export default function CentralHubVoiceAssistant() {
                 type="button"
                 onClick={() => { setAutoSpeak((value) => !value); if (autoSpeak) stopSpeech(); }}
                 className="nora-action-button"
-                aria-label={autoSpeak ? 'Mute NORA' : 'Enable NORA voice'}
+                aria-label={autoSpeak ? 'Mute SHRUTHI' : 'Enable SHRUTHI voice'}
               >
                 {autoSpeak ? <Volume2 size={20} /> : <VolumeX size={20} />}
                 <span className="hidden sm:block">{autoSpeak ? 'Mute' : 'Voice'}</span>
               </button>
 
-              <button type="button" onClick={endConversation} className="nora-action-button nora-end-button" aria-label="End NORA conversation">
+              <button type="button" onClick={endConversation} className="nora-action-button nora-end-button" aria-label="End SHRUTHI conversation">
                 <X size={22} />
                 <span className="hidden sm:block">End</span>
               </button>
@@ -652,7 +652,7 @@ export default function CentralHubVoiceAssistant() {
           type="button"
           onClick={nativeWakeAvailable ? openNora : startRecording}
           className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] right-4 z-[80] flex h-14 w-14 items-center justify-center rounded-full border border-cyan-200/30 bg-cyan-500 text-slate-950 shadow-2xl shadow-cyan-950/50 active:scale-95 sm:bottom-6 sm:right-6"
-          aria-label={nativeWakeAvailable ? 'Open NORA' : 'Talk to NORA'}
+          aria-label={nativeWakeAvailable ? 'Open SHRUTHI' : 'Talk to SHRUTHI'}
         >
           {recording ? <MicOff size={22} /> : <Mic size={22} />}
         </button>

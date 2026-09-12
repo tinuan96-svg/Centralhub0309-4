@@ -15,19 +15,6 @@ export default function ShruthiIdentitySkin() {
         contain: layout paint;
       }
 
-      .nora-screen h2 {
-        font-size: 0 !important;
-      }
-
-      .nora-screen h2::after {
-        content: 'SHRUTHI · ശ്രുതി';
-        display: inline-block;
-        font-size: 2.25rem;
-        line-height: 1;
-        font-weight: 300;
-        letter-spacing: -0.02em;
-      }
-
       .nora-orb-core {
         isolation: isolate;
         contain: paint;
@@ -71,10 +58,6 @@ export default function ShruthiIdentitySkin() {
       @keyframes shruthi-soft-glow {
         0%, 100% { box-shadow: inset 0 0 16px rgba(117,205,255,.12); }
         50% { box-shadow: inset 0 0 26px rgba(117,205,255,.24); }
-      }
-
-      @media (min-width: 640px) {
-        .nora-screen h2::after { font-size: 3rem; }
       }
 
       @media (prefers-reduced-motion: reduce) {

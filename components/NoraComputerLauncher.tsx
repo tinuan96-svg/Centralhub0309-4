@@ -157,7 +157,7 @@ export default function NoraComputerLauncher() {
 
       const native = bridge();
       if (native?.getPlatform?.() !== 'android' || !native.openNoraComputerMode) {
-        throw new Error('NORA Live Action currently requires the CentralHub Android app.');
+        throw new Error('Shruthi Live Action currently requires the CentralHub Android app.');
       }
 
       const goal = String(command.action_payload?.computer_goal || command.input_text || command.action_name || `Work in ${target.system}`);
@@ -165,7 +165,7 @@ export default function NoraComputerLauncher() {
         .from('nora_action_sessions')
         .insert({
           user_id: authSession.user.id,
-          title: `NORA · ${target.system}`,
+          title: `Shruthi · ${target.system}`,
           goal,
           target_system: target.system,
           target_url: target.url,
@@ -181,7 +181,7 @@ export default function NoraComputerLauncher() {
         })
         .select('id')
         .single();
-      if (insertError || !actionSession?.id) throw new Error(insertError?.message || 'Could not create NORA action session.');
+      if (insertError || !actionSession?.id) throw new Error(insertError?.message || 'Could not create Shruthi action session.');
 
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
       announceHandoff(target);
@@ -204,7 +204,7 @@ export default function NoraComputerLauncher() {
       setCommand(null);
     } catch (e: any) {
       autoStartedRef.current = null;
-      setError(e?.message || 'Could not start NORA Live Action.');
+      setError(e?.message || 'Could not start Shruthi Live Action.');
     } finally {
       setBusy(false);
     }
@@ -226,8 +226,8 @@ export default function NoraComputerLauncher() {
       <div className="flex items-start gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-cyan-400/25 bg-cyan-400/10"><MonitorUp className="h-5 w-5 text-cyan-300" /></div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-semibold">NORA Live Action</h3><button type="button" onClick={() => setDismissed(command.id)} className="rounded-lg p-1 text-slate-400 hover:bg-white/10" aria-label="Dismiss"><X className="h-4 w-4" /></button></div>
-          <p className="mt-1 text-xs leading-relaxed text-slate-400">NORA resolved this task to <strong className="text-slate-200">{target.system}</strong>. She will work visibly and pause for login, OTP, CAPTCHA, missing business details or consequential approval.</p>
+          <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-semibold">Shruthi Live Action</h3><button type="button" onClick={() => setDismissed(command.id)} className="rounded-lg p-1 text-slate-400 hover:bg-white/10" aria-label="Dismiss"><X className="h-4 w-4" /></button></div>
+          <p className="mt-1 text-xs leading-relaxed text-slate-400">Shruthi resolved this task to <strong className="text-slate-200">{target.system}</strong>. She will work visibly and pause for login, OTP, CAPTCHA, missing business details or consequential approval.</p>
           <div className="mt-3 flex items-center gap-2 text-[10px] text-emerald-300"><ShieldCheck className="h-3.5 w-3.5" />No task defaults to Facebook. The requested system is resolved per instruction.</div>
           {error && <p className="mt-2 text-xs text-rose-300">{error}</p>}
           <button type="button" disabled={busy} onClick={() => void start()} className="mt-3 w-full rounded-xl bg-cyan-400 px-3 py-2.5 text-sm font-semibold text-slate-950 disabled:opacity-50">{busy ? 'Starting…' : `Open ${target.system} & continue`}</button>
