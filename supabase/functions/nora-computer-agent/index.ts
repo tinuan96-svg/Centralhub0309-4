@@ -7,7 +7,7 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 const JSON_HEADERS = { ...CORS, "Content-Type": "application/json", "Cache-Control": "no-store" };
-const MODEL = Deno.env.get("Shruthi_COMPUTER_MODEL")?.trim() || "gpt-5.6-sol";
+const MODEL = Deno.env.get("NORA_COMPUTER_MODEL")?.trim() || "gpt-5.6-sol";
 const ALLOWED_ACTIONS = new Set(["click", "double_click", "drag", "move", "scroll", "keypress", "type", "wait", "screenshot"]);
 const ALLOWED_ROOTS = [
   "facebook.com",
