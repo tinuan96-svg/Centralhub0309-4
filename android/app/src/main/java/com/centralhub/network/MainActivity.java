@@ -29,7 +29,6 @@ public class MainActivity extends BridgeActivity {
     private static final String EXTRA_ACTION_URL = "centralhub_action_url";
     private static final int REQUEST_POST_NOTIFICATIONS = 4101;
     private static final int REQUEST_RECORD_AUDIO = 4102;
-    private static final long NORA_FOLLOWUP_WINDOW_MS = 35_000L;
 
     // Bridge method names remain Tara-compatible so installed web/native versions can
     // overlap during rollout. NORA is now the primary product name and wake phrase.
@@ -44,10 +43,10 @@ public class MainActivity extends BridgeActivity {
     private boolean taraListening = false;
     private boolean taraPartialWakeDispatched = false;
     private boolean taraSegmentedSession = false;
+    private boolean noraConversationActive = false;
     private int taraConsecutiveErrors = 0;
     private long taraLastTranscriptAt = 0L;
     private String taraLastTranscriptText = "";
-    private long noraConversationUntil = 0L;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -147,8 +146,9 @@ public class MainActivity extends BridgeActivity {
     /**
      * Passive wake listening uses Android's on-device recognizer. Android 13+
      * uses one long segmented session so Samsung does not continuously play the
-     * recognizer start/stop beeps. Non-wake speech is only forwarded for a short
-     * follow-up window after NORA was explicitly called.
+     * recognizer start/stop beeps. Once NORA is explicitly activated, the
+     * conversation remains active until the web UI or an explicit stop command
+     * ends it; there is no follow-up timeout.
      */
     private void setupTaraRecognizer() {
         destroyTaraRecognizer();
@@ -230,10 +230,7 @@ public class MainActivity extends BridgeActivity {
                 taraListening = false;
                 taraConsecutiveErrors = 0;
                 taraPartialWakeDispatched = false;
-                long delay = System.currentTimeMillis() < noraConversationUntil
-                        ? 900L
-                        : (taraSegmentedSession ? 2600L : 1800L);
-                scheduleTaraRestart(delay);
+                scheduleTaraRestart(noraConversationActive ? 900L : (taraSegmentedSession ? 2600L : 1800L));
             }
 
             @Override
@@ -243,12 +240,11 @@ public class MainActivity extends BridgeActivity {
                 if (matches == null) return;
                 for (String match : matches) {
                     if (isSimpleNoraWakePhrase(match)) {
-                        // Mark the wake early so subsequent words remain in the active
-                        // conversation window, but do not notify the web UI yet. If the
-                        // user is saying "NORA, <command>", speaking "Yes?" on this
-                        // partial result would mask the final command recognition.
+                        // Mark NORA active immediately, but let final recognition own
+                        // the user-visible acknowledgement so "NORA, <command>" is not
+                        // interrupted by TTS before the command has finished arriving.
                         taraPartialWakeDispatched = true;
-                        noraConversationUntil = System.currentTimeMillis() + NORA_FOLLOWUP_WINDOW_MS;
+                        noraConversationActive = true;
                         break;
                     }
                 }
@@ -267,7 +263,7 @@ public class MainActivity extends BridgeActivity {
                 taraListening = false;
                 taraConsecutiveErrors = 0;
                 taraPartialWakeDispatched = false;
-                scheduleTaraRestart(System.currentTimeMillis() < noraConversationUntil ? 900L : 2600L);
+                scheduleTaraRestart(noraConversationActive ? 900L : 2600L);
             }
 
             @Override public void onEvent(int eventType, Bundle params) { }
@@ -278,26 +274,20 @@ public class MainActivity extends BridgeActivity {
         ArrayList<String> matches = results == null ? null : results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
         if (taraSpeaking || matches == null || matches.isEmpty()) return;
 
-        long now = System.currentTimeMillis();
         for (String match : matches) {
             if (match == null || match.trim().isEmpty()) continue;
             String canonical = canonicalizeNoraTranscript(match);
             String lower = canonical.trim().toLowerCase(Locale.ROOT);
             boolean explicitWake = lower.equals("nora") || lower.startsWith("nora ");
 
-            // Final recognition owns the user-visible wake. This ensures an exact
-            // "NORA" gets a spoken acknowledgement while "NORA <command>" reaches
-            // the command handler intact instead of being interrupted by TTS.
             if (explicitWake) {
-                noraConversationUntil = now + NORA_FOLLOWUP_WINDOW_MS;
-            } else if (now > noraConversationUntil) {
-                // Ambient/background speech outside an active conversation is ignored.
+                noraConversationActive = true;
+            } else if (!noraConversationActive) {
+                // Ambient/background speech is ignored until NORA is explicitly active.
                 return;
             } else {
-                noraConversationUntil = now + NORA_FOLLOWUP_WINDOW_MS;
-                // The web assistant already knows how to handle an explicitly-addressed
-                // NORA turn. Prefix active-conversation follow-ups so natural replies
-                // do not get rejected by the stricter ambient-speech heuristic there.
+                // During an active conversation there is no timeout. Prefix each
+                // follow-up so the web assistant treats it as the current NORA turn.
                 canonical = "NORA " + canonical;
             }
 
@@ -355,7 +345,7 @@ public class MainActivity extends BridgeActivity {
     public void setTaraEnabled(boolean enabled) {
         taraEnabled = enabled;
         if (!enabled) {
-            noraConversationUntil = 0L;
+            noraConversationActive = false;
             stopTaraRecognizer();
             return;
         }
@@ -366,13 +356,16 @@ public class MainActivity extends BridgeActivity {
         startTaraRecognizerIfReady();
     }
 
+    public void setNoraConversationActive(boolean active) {
+        noraConversationActive = active;
+        if (!active) taraPartialWakeDispatched = false;
+        if (taraEnabled && taraResumed && !taraSpeaking && !taraListening) {
+            scheduleTaraRestart(active ? 600L : 1600L);
+        }
+    }
+
     public void setTaraSpeaking(boolean speaking) {
         taraSpeaking = speaking;
-
-        if (!speaking && noraConversationUntil > 0L) {
-            // Give the user a fresh follow-up turn after NORA finishes speaking.
-            noraConversationUntil = System.currentTimeMillis() + NORA_FOLLOWUP_WINDOW_MS;
-        }
 
         // On Android 13+ keep the long on-device segmented recognizer alive while
         // NORA speaks and simply ignore recognition callbacks. Cancelling and
@@ -380,7 +373,7 @@ public class MainActivity extends BridgeActivity {
         if (taraSegmentedSession && taraListening) return;
 
         if (speaking) stopTaraRecognizer();
-        else if (!taraListening) scheduleTaraRestart(noraConversationUntil > System.currentTimeMillis() ? 900L : 1800L);
+        else if (!taraListening) scheduleTaraRestart(noraConversationActive ? 900L : 1800L);
     }
 
     private void startTaraRecognizerIfReady() {
@@ -404,7 +397,7 @@ public class MainActivity extends BridgeActivity {
     private void scheduleTaraRestart(long delayMs) {
         taraHandler.removeCallbacks(taraRestartRunnable);
         if (!taraEnabled || !taraResumed || taraSpeaking || taraListening) return;
-        long minimumDelay = System.currentTimeMillis() < noraConversationUntil ? 600L : 1600L;
+        long minimumDelay = noraConversationActive ? 600L : 1600L;
         taraHandler.postDelayed(taraRestartRunnable, Math.max(minimumDelay, delayMs));
     }
 
@@ -461,13 +454,14 @@ public class MainActivity extends BridgeActivity {
     public void onResume() {
         super.onResume();
         taraResumed = true;
-        scheduleTaraRestart(1800L);
+        scheduleTaraRestart(noraConversationActive ? 600L : 1800L);
     }
 
     @Override
     public void onPause() {
         taraResumed = false;
-        noraConversationUntil = 0L;
+        // Keep the conversation state while the app is backgrounded or temporarily
+        // covered by NORA Computer Mode. The microphone itself is always paused.
         stopTaraRecognizer();
         super.onPause();
     }

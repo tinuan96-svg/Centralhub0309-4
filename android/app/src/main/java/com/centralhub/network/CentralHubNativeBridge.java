@@ -133,6 +133,11 @@ public final class CentralHubNativeBridge {
     }
 
     @JavascriptInterface
+    public void setNoraConversationActive(boolean active) {
+        activity.runOnUiThread(() -> activity.setNoraConversationActive(active));
+    }
+
+    @JavascriptInterface
     public void setTaraSpeaking(boolean speaking) {
         activity.runOnUiThread(() -> activity.setTaraSpeaking(speaking));
     }
