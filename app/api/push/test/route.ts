@@ -48,12 +48,13 @@ export async function POST(req: Request) {
       message,
       severity: 'info',
       category: 'phone_push_test',
-      action_url: '/settings/notifications',
+      action_url: '/dashboard',
       is_read: false,
       metadata: {
         source: 'centralhub-push-test',
         created_at: createdAt,
         delivery_state: 'attempting',
+        tap_target: '/dashboard',
       },
     })
     .select('id, title, message, action_url, severity, category')
@@ -83,7 +84,7 @@ export async function POST(req: Request) {
       const result = await sendWebPush(subscription, {
         title: notification.title,
         body: notification.message,
-        url: notification.action_url || '/settings/notifications',
+        url: notification.action_url || '/dashboard',
         notificationId: notification.id,
         tag: 'centralhub-test-' + notification.id,
         renotify: true,
@@ -149,6 +150,7 @@ export async function POST(req: Request) {
         web_sent: webSent,
         native_attempted: nativeResults.length,
         native_sent: nativeSent,
+        tap_target: '/dashboard',
         web_results: webResults.map(summarizePushResult),
         native_results: nativeResults.map(summarizePushResult),
       },
