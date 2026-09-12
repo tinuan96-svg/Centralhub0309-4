@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Bot, Mic, MicOff, Send, Square, Volume2, VolumeX, X } from 'lucide-react';
+import { ChevronRight, Menu, Mic, MicOff, Send, Settings, Square, Volume2, VolumeX, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 type AssistantMode = 'operations' | 'board' | 'developer';
@@ -22,7 +23,7 @@ type AssistantReply = {
   upstream_code?: string | null;
 };
 
-type TaraNativeBridge = {
+type NativeBridge = {
   getAppId?: () => string;
   getPlatform?: () => string;
   isTaraVoiceAvailable?: () => boolean;
@@ -33,23 +34,52 @@ type TaraNativeBridge = {
   stopTaraTts?: () => void;
 };
 
-type TaraTranscriptEvent = CustomEvent<{ text?: string }>;
+type NativeTranscriptEvent = CustomEvent<{ text?: string }>;
+type VoiceState = 'waiting' | 'listening' | 'processing' | 'speaking';
+type NoraThemeId =
+  | 'signature'
+  | 'waveform'
+  | 'holographic'
+  | 'minimal'
+  | 'executive'
+  | 'galaxy'
+  | 'ripple'
+  | 'aurora'
+  | 'glass'
+  | 'earth';
 
-const QUICK_PROMPTS: Record<AssistantMode, string[]> = {
-  operations: ['What needs attention now?', 'Give me a full operations scan', 'How are sales and profit doing?'],
-  board: ['Start a board briefing', 'What are the main risks?', 'Give me decisions and priorities'],
-  developer: ['Check current CentralHub health', 'What technical issues need attention?', 'Explain the safest next fix'],
+type NoraTheme = {
+  id: NoraThemeId;
+  name: string;
+  subtitle: string;
+  accent: string;
+  secondary: string;
+  background: string;
+  orb: NoraThemeId;
 };
 
-const WAKE_WORD = /(?:^|[\s,.:!?])(tara|thara)(?=$|[\s,.:!?])|താരാ?|தாரா?/iu;
-const STOP_WORDS = /\b(?:tara\s+stop|stop\s+tara|that(?:'s| is) all|thank you tara|thanks tara|go to sleep|sleep tara)\b|താരാ?\s*(?:സ്റ്റോപ്പ്|മതി|നിർത്തു)|(?:മതി|നിർത്തു)\s*താരാ?|தாரா?\s*(?:ஸ்டாப்|போதும்)/iu;
-const ASSISTANT_CUES = /(?:\?|\b(?:what|how|when|where|which|why|check|show|tell|give|find|look|open|scan|compare|calculate|order|orders|sale|sales|profit|stock|product|products|price|revenue|dashboard|store|today|yesterday|week|month|status|issue|risk|customer|competitor)\b|എന്ത|എത്ര|എങ്ങനെ|എപ്പോൾ|എവിടെ|ഏത്|നോക്ക്|പറ|കാണി|ചെക്ക്|ഓർഡർ|സെയിൽ|ലാഭം|സ്റ്റോക്ക്|പ്രോഡക്ട്|വില|റവന്യൂ|ഡാഷ്ബോർഡ്|സ്റ്റോർ|കസ്റ്റമർ|കോമ്പറ്റിറ്റർ|என்ன|எவ்வளவு|எப்படி|பார்|சொல்|ஆர்டர்|சேல்ஸ்|ஸ்டாக்|ப்ராடக்ட்|விலை)/iu;
-const FOLLOW_UP_CUES = /\b(?:that|this|it|same|those|these|and then|what about|how about)\b|അത്|അതിന്റെ|ഇത്|ഇതിന്റെ|അപ്പോ|പിന്നെ|അതേ|அது|இது|அப்புறம்/iu;
+const THEMES: NoraTheme[] = [
+  { id: 'signature', name: 'Signature Orb', subtitle: 'Clean · Elegant · Professional', accent: '#55b8ff', secondary: '#b9dcff', background: 'radial-gradient(circle at 50% 32%, rgba(26,111,255,.18), transparent 35%), #02050a', orb: 'signature' },
+  { id: 'waveform', name: 'Waveform Flow', subtitle: 'Modern · Dynamic · Minimal', accent: '#58aaff', secondary: '#9d6cff', background: 'radial-gradient(circle at 50% 22%, rgba(87,67,255,.14), transparent 34%), #02050a', orb: 'waveform' },
+  { id: 'holographic', name: 'Holographic Core', subtitle: 'High-Tech · Intelligent · Futuristic', accent: '#5ac8ff', secondary: '#315dff', background: 'radial-gradient(circle at 50% 32%, rgba(18,121,255,.18), transparent 38%), #01040a', orb: 'holographic' },
+  { id: 'minimal', name: 'Minimal Circle', subtitle: 'Simple · Calm · Beautiful', accent: '#b3dcff', secondary: '#5a9cff', background: 'linear-gradient(180deg, #010204, #03070d 70%, #010204)', orb: 'minimal' },
+  { id: 'executive', name: 'Executive Mode', subtitle: 'Stylish · Professional · Powerful', accent: '#67c7ff', secondary: '#345dff', background: 'radial-gradient(circle at 75% 24%, rgba(23,102,255,.20), transparent 30%), #02050b', orb: 'executive' },
+  { id: 'galaxy', name: 'Particle Galaxy', subtitle: 'Creative · Premium · Immersive', accent: '#48a8ff', secondary: '#93d4ff', background: 'radial-gradient(circle at 50% 34%, rgba(20,117,255,.16), transparent 34%), #01030a', orb: 'galaxy' },
+  { id: 'ripple', name: 'Voice Ripple', subtitle: 'Bold · Interactive · Intuitive', accent: '#6ec7ff', secondary: '#4578ff', background: 'radial-gradient(circle at 50% 42%, rgba(32,111,255,.14), transparent 30%), #02050a', orb: 'ripple' },
+  { id: 'aurora', name: 'Aurora Blend', subtitle: 'Vibrant · Modern · Premium', accent: '#57c7ff', secondary: '#945cff', background: 'radial-gradient(circle at 58% 28%, rgba(103,72,255,.19), transparent 33%), #02040a', orb: 'aurora' },
+  { id: 'glass', name: 'Glass UI', subtitle: 'Refined · Elegant · Productive', accent: '#70cfff', secondary: '#8fe6ff', background: 'linear-gradient(160deg, #030813, #010205 65%)', orb: 'glass' },
+  { id: 'earth', name: 'Earth View', subtitle: 'Inspiring · Bold · Next Level', accent: '#57aaff', secondary: '#b2e4ff', background: 'radial-gradient(circle at 50% 72%, rgba(22,91,190,.22), transparent 30%), #01040a', orb: 'earth' },
+];
+
+const WAKE_WORD = /(?:^|[\s,.:!?])(nora|norah|noora|noura|norra|tara|thara)(?=$|[\s,.:!?])|നോറാ?|நோரா?|താരാ?|தாரா?/iu;
+const STOP_WORDS = /\b(?:(?:nora|norah|noora)\s+stop|stop\s+(?:nora|norah|noora)|that(?:'s| is) all|thank you nora|thanks nora|go to sleep|sleep nora)\b|നോറാ?\s*(?:സ്റ്റോപ്പ്|മതി|നിർത്തു)|(?:മതി|നിർത്തു)\s*നോറാ?|நோரா?\s*(?:ஸ்டாப்|போதும்)/iu;
+const ASSISTANT_CUES = /(?:\?|\b(?:what|how|when|where|which|why|check|show|tell|give|find|look|open|scan|compare|calculate|order|orders|sale|sales|profit|stock|product|products|price|revenue|dashboard|store|today|yesterday|week|month|status|issue|risk|customer|competitor|finance|security|payment|marketing)\b|എന്ത|എത്ര|എങ്ങനെ|എപ്പോൾ|എവിടെ|ഏത്|നോക്ക്|പറ|കാണി|ചെക്ക്|ഓർഡർ|സെയിൽ|ലാഭം|സ്റ്റോക്ക്|പ്രോഡക്ട്|വില|റവന്യൂ|ഡാഷ്ബോർഡ്|സ്റ്റോർ|കസ്റ്റമർ|കോമ്പറ്റിറ്റർ|என்ன|எவ்வளவு|எப்படி|பார்|சொல்|ஆர்டர்|சேல்ஸ்|ஸ்டாக்|ப்ராடக்ட்|விலை)/iu;
+const FOLLOW_UP_CUES = /\b(?:that|this|it|same|those|these|and then|what about|how about|also|next)\b|അത്|അതിന്റെ|ഇത്|ഇതിന്റെ|അപ്പോ|പിന്നെ|അതേ|കൂടാതെ|அது|இது|அப்புறம்/iu;
 const FEMALE_VOICE_HINTS = ['female', 'sonia', 'serena', 'samantha', 'karen', 'moira', 'fiona', 'victoria', 'aria', 'ava', 'veena', 'heera', 'susan', 'hazel'];
 
-function getTaraBridge(): TaraNativeBridge | undefined {
+function getNativeBridge(): NativeBridge | undefined {
   if (typeof window === 'undefined') return undefined;
-  return (window as unknown as { CentralHubNative?: TaraNativeBridge }).CentralHubNative;
+  return (window as unknown as { CentralHubNative?: NativeBridge }).CentralHubNative;
 }
 
 function hasWakeWord(text: string) {
@@ -60,9 +90,9 @@ function stripWakeWord(text: string) {
   return text.replace(WAKE_WORD, ' ').replace(/^[\s,.:!?-]+|[\s,.:!?-]+$/g, '').trim();
 }
 
-function looksAddressedToTara(text: string, hasConversationContext: boolean) {
+function looksAddressedToNora(text: string, hasConversationContext: boolean) {
   const clean = text.trim();
-  if (!clean || clean.length > 220) return false;
+  if (!clean || clean.length > 260) return false;
   if (ASSISTANT_CUES.test(clean)) return true;
   return hasConversationContext && FOLLOW_UP_CUES.test(clean);
 }
@@ -110,42 +140,92 @@ async function invokeVoice(body: Record<string, unknown>): Promise<AssistantRepl
     } catch {
       // Keep the original Functions error when the response body is not JSON.
     }
-    throw new Error(detail || error.message || 'Tara request failed.');
+    throw new Error(detail || error.message || 'NORA request failed.');
   }
   return (data || {}) as AssistantReply;
+}
+
+function inferMode(pathname: string, text: string): AssistantMode {
+  const value = `${pathname} ${text}`.toLowerCase();
+  if (/developer|github|supabase|netlify|deploy|code|schema|api|webhook|integration/.test(value)) return 'developer';
+  if (/board|strategy|executive|finance|financial|profit|revenue|forecast|planning|risk/.test(value)) return 'board';
+  return 'operations';
+}
+
+function themePoolForContext(pathname: string, text = ''): NoraThemeId[] {
+  const value = `${pathname} ${text}`.toLowerCase();
+  if (/finance|bank|payment|security|legal|risk/.test(value)) return ['executive', 'minimal', 'glass', 'holographic'];
+  if (/marketing|campaign|creative|whatsapp/.test(value)) return ['aurora', 'waveform', 'galaxy', 'signature'];
+  if (/analytics|business-intelligence|report|strategy|executive/.test(value)) return ['earth', 'holographic', 'signature', 'glass'];
+  if (/product|stock|purchase|procurement|order|fulfil/.test(value)) return ['signature', 'ripple', 'glass', 'holographic'];
+  return THEMES.map((theme) => theme.id);
+}
+
+function quickPrompts(pathname: string) {
+  const value = pathname.toLowerCase();
+  if (/finance|bank/.test(value)) return ['Summarize finance today', 'Check reconciliation', 'Show cash risks', 'Explain unusual movements'];
+  if (/product|stock|purchase/.test(value)) return ['Check stock risks', 'What needs ordering?', 'Show product trends', 'Review procurement'];
+  if (/marketing/.test(value)) return ['Summarize marketing', 'Check campaign health', 'Show growth signals', 'Draft next steps'];
+  if (/security/.test(value)) return ['Check security now', 'Explain active risks', 'Show affected stores', 'Recommend safe action'];
+  return ['Summarize today', 'What needs attention?', 'Show sales insights', 'Plan next steps'];
+}
+
+function Orb({ theme, state }: { theme: NoraTheme; state: VoiceState }) {
+  return (
+    <div className={`nora-orb-shell nora-${theme.orb} nora-${state}`} aria-hidden="true">
+      <div className="nora-orb-ring nora-ring-a" />
+      <div className="nora-orb-ring nora-ring-b" />
+      <div className="nora-orb-core">
+        <div className="nora-orb-flow nora-flow-a" />
+        <div className="nora-orb-flow nora-flow-b" />
+        <div className="nora-orb-stars" />
+      </div>
+    </div>
+  );
 }
 
 export default function CentralHubVoiceAssistant() {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState<AssistantMode>('operations');
   const [recording, setRecording] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
   const [input, setInput] = useState('');
   const [transcript, setTranscript] = useState('');
   const [response, setResponse] = useState<AssistantReply | null>(null);
   const [error, setError] = useState('');
   const [autoSpeak, setAutoSpeak] = useState(true);
-  const [taraSession, setTaraSession] = useState(false);
+  const [noraSession, setNoraSession] = useState(false);
   const [nativeWakeAvailable, setNativeWakeAvailable] = useState(false);
+  const [themeId, setThemeId] = useState<NoraThemeId>('signature');
+
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const stopTimerRef = useRef<number | null>(null);
+  const speechVisualTimerRef = useRef<number | null>(null);
   const processingRef = useRef(false);
   const recordingRef = useRef(false);
-  const taraSessionRef = useRef(false);
+  const noraSessionRef = useRef(false);
   const responseRef = useRef<AssistantReply | null>(null);
+  const themeRef = useRef<NoraThemeId>('signature');
 
-  const isDashboard = pathname === '/dashboard';
-  const fabPosition = isDashboard
-    ? 'right-[5rem] sm:right-[5.5rem] bottom-[calc(5.5rem+env(safe-area-inset-bottom))] sm:bottom-6'
-    : 'right-4 sm:right-6 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] sm:bottom-6';
+  const theme = useMemo(() => THEMES.find((item) => item.id === themeId) || THEMES[0], [themeId]);
+  const prompts = useMemo(() => quickPrompts(pathname), [pathname]);
+
+  const chooseTheme = useCallback((text = '') => {
+    const pool = themePoolForContext(pathname, text);
+    const candidates = pool.filter((id) => id !== themeRef.current);
+    const list = candidates.length ? candidates : pool;
+    const next = list[Math.floor(Math.random() * list.length)] || 'signature';
+    themeRef.current = next;
+    setThemeId(next);
+  }, [pathname]);
 
   const setSession = useCallback((active: boolean) => {
-    taraSessionRef.current = active;
-    setTaraSession(active);
+    noraSessionRef.current = active;
+    setNoraSession(active);
   }, []);
 
   useEffect(() => {
@@ -160,81 +240,78 @@ export default function CentralHubVoiceAssistant() {
     responseRef.current = response;
   }, [response]);
 
-  const stopTracks = () => {
+  const stopTracks = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     if (stopTimerRef.current) window.clearTimeout(stopTimerRef.current);
     stopTimerRef.current = null;
-  };
+  }, []);
+
+  const stopSpeech = useCallback(() => {
+    if (speechVisualTimerRef.current) window.clearTimeout(speechVisualTimerRef.current);
+    speechVisualTimerRef.current = null;
+    setSpeaking(false);
+    window.speechSynthesis?.cancel();
+    const bridge = getNativeBridge();
+    bridge?.stopTaraTts?.();
+    bridge?.setTaraSpeaking?.(false);
+  }, []);
 
   useEffect(() => () => {
     stopTracks();
-    window.speechSynthesis?.cancel();
-    getTaraBridge()?.stopTaraTts?.();
-    getTaraBridge()?.setTaraSpeaking?.(false);
-  }, []);
+    stopSpeech();
+  }, [stopSpeech, stopTracks]);
 
-  const speak = useCallback((text: string, onDone?: () => void) => {
+  const speak = useCallback((text: string) => {
     if (!text || typeof window === 'undefined' || !autoSpeak) {
-      const bridge = getTaraBridge();
-      bridge?.stopTaraTts?.();
-      bridge?.setTaraSpeaking?.(false);
-      onDone?.();
+      stopSpeech();
       return;
     }
 
-    const bridge = getTaraBridge();
+    const bridge = getNativeBridge();
     const hasMalayalam = /[\u0D00-\u0D7F]/.test(text);
     const language = hasMalayalam ? 'ml-IN' : 'en-GB';
+    setSpeaking(true);
+
+    if (speechVisualTimerRef.current) window.clearTimeout(speechVisualTimerRef.current);
+    const estimatedMs = Math.min(22_000, Math.max(1800, text.length * 58));
+    speechVisualTimerRef.current = window.setTimeout(() => setSpeaking(false), estimatedMs);
 
     if (bridge?.getPlatform?.() === 'android' && bridge?.speakTara) {
       window.speechSynthesis?.cancel();
       try {
-        if (bridge.speakTara(text, language)) {
-          onDone?.();
-          return;
-        }
+        if (bridge.speakTara(text, language)) return;
       } catch {
-        // Fall through to Web Speech when the native bridge is not ready yet.
+        // Fall through to Web Speech when native TTS is not ready.
       }
     }
 
     if (!('speechSynthesis' in window)) {
       bridge?.setTaraSpeaking?.(false);
-      onDone?.();
+      setSpeaking(false);
       return;
     }
 
     bridge?.setTaraSpeaking?.(true);
     window.speechSynthesis.cancel();
-
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = language;
     utterance.rate = 0.93;
     utterance.pitch = 1.04;
     utterance.volume = 1;
-    const voices = window.speechSynthesis.getVoices();
-    const preferred = pickExecutiveVoice(voices, utterance.lang);
+    const preferred = pickExecutiveVoice(window.speechSynthesis.getVoices(), language);
     if (preferred) utterance.voice = preferred;
 
-    let finished = false;
     const finish = () => {
-      if (finished) return;
-      finished = true;
       bridge?.setTaraSpeaking?.(false);
-      onDone?.();
+      if (speechVisualTimerRef.current) window.clearTimeout(speechVisualTimerRef.current);
+      speechVisualTimerRef.current = null;
+      setSpeaking(false);
     };
     utterance.onend = finish;
     utterance.onerror = finish;
     window.speechSynthesis.speak(utterance);
-  }, [autoSpeak]);
-
-  const stopSpeech = useCallback(() => {
-    window.speechSynthesis?.cancel();
-    const bridge = getTaraBridge();
-    bridge?.stopTaraTts?.();
-    bridge?.setTaraSpeaking?.(false);
-  }, []);
+  }, [autoSpeak, stopSpeech]);
 
   const runCommand = useCallback(async (text: string) => {
     const clean = text.trim();
@@ -245,21 +322,30 @@ export default function CentralHubVoiceAssistant() {
     setError('');
     setTranscript(clean);
     setResponse(null);
+
     try {
-      const result = await invokeVoice({ action: 'command', text: clean, mode });
-      if (!result.success || !result.reply) throw new Error(result.error || 'Tara could not answer.');
+      const mode = inferMode(pathname, clean);
+      const result = await invokeVoice({
+        action: 'command',
+        text: clean,
+        mode,
+        page_context: pathname,
+        assistant_name: 'NORA',
+        adaptive_behavior: true,
+      });
+      if (!result.success || !result.reply) throw new Error(result.error || 'NORA could not answer.');
       setResponse(result);
       responseRef.current = result;
       if (result.speak !== false) speak(result.reply);
       else stopSpeech();
     } catch (e: any) {
-      setError(e?.message || 'Tara failed.');
+      setError(e?.message || 'NORA failed.');
       stopSpeech();
     } finally {
       processingRef.current = false;
       setProcessing(false);
     }
-  }, [mode, speak, stopSpeech]);
+  }, [pathname, speak, stopSpeech]);
 
   const handleNativeTranscript = useCallback((rawText: string) => {
     if (processingRef.current || recordingRef.current) return;
@@ -267,22 +353,23 @@ export default function CentralHubVoiceAssistant() {
     if (!heard) return;
 
     const woke = hasWakeWord(heard);
-    if (STOP_WORDS.test(heard) && (taraSessionRef.current || woke)) {
+    if (STOP_WORDS.test(heard) && (noraSessionRef.current || woke)) {
       setSession(false);
       setOpen(false);
       setTranscript('');
       setResponse(null);
-      speak('Of course. I’ll stay quiet until you call Tara again.');
+      speak('Of course. I’ll stay quiet until you call NORA again.');
       return;
     }
 
-    if (!taraSessionRef.current) {
+    if (!noraSessionRef.current) {
       if (!woke) return;
+      chooseTheme(heard);
       setSession(true);
       setOpen(true);
       const command = stripWakeWord(heard);
       if (!command) {
-        setTranscript('Tara');
+        setTranscript('NORA');
         setResponse(null);
         speak('Yes?');
         return;
@@ -294,13 +381,11 @@ export default function CentralHubVoiceAssistant() {
     const command = woke ? stripWakeWord(heard) : heard;
     if (!command) return;
     const hasContext = Boolean(responseRef.current?.reply);
-    if (woke || looksAddressedToTara(command, hasContext)) {
-      void runCommand(command);
-    }
-  }, [runCommand, setSession, speak]);
+    if (woke || looksAddressedToNora(command, hasContext)) void runCommand(command);
+  }, [chooseTheme, runCommand, setSession, speak]);
 
   useEffect(() => {
-    const bridge = getTaraBridge();
+    const bridge = getNativeBridge();
     let available = false;
     try {
       available = bridge?.getPlatform?.() === 'android' && bridge?.isTaraVoiceAvailable?.() === true;
@@ -311,18 +396,17 @@ export default function CentralHubVoiceAssistant() {
     if (available) bridge?.setTaraEnabled?.(true);
 
     const onTranscript = (event: Event) => {
-      const text = String((event as TaraTranscriptEvent).detail?.text || '').trim();
+      const text = String((event as NativeTranscriptEvent).detail?.text || '').trim();
       if (text) handleNativeTranscript(text);
     };
     window.addEventListener('centralhub:tara-transcript', onTranscript as EventListener);
-
     return () => {
       window.removeEventListener('centralhub:tara-transcript', onTranscript as EventListener);
       bridge?.setTaraEnabled?.(false);
     };
   }, [handleNativeTranscript]);
 
-  const transcribeAndRun = async (blob: Blob) => {
+  const transcribeAndRun = useCallback(async (blob: Blob) => {
     setProcessing(true);
     processingRef.current = true;
     setError('');
@@ -342,21 +426,24 @@ export default function CentralHubVoiceAssistant() {
       stopSpeech();
       setError(e?.message || 'Voice transcription failed.');
     }
-  };
+  }, [runCommand, setSession, stopSpeech]);
 
-  const startRecording = async () => {
+  const startRecording = useCallback(async () => {
     if (processingRef.current || recordingRef.current) return;
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       setError('Microphone recording is not supported on this device. You can still type a command.');
+      chooseTheme();
       setOpen(true);
       return;
     }
+
+    chooseTheme();
     setOpen(true);
     setSession(true);
     setError('');
     setResponse(null);
-    stopSpeech();
-    getTaraBridge()?.setTaraSpeaking?.(true);
+    getNativeBridge()?.setTaraSpeaking?.(true);
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
       streamRef.current = stream;
@@ -370,11 +457,9 @@ export default function CentralHubVoiceAssistant() {
         setRecording(false);
         recordingRef.current = false;
         stopTracks();
+        getNativeBridge()?.setTaraSpeaking?.(false);
         if (blob.size > 100) void transcribeAndRun(blob);
-        else {
-          getTaraBridge()?.setTaraSpeaking?.(false);
-          setError('No voice was captured. Try again.');
-        }
+        else setError('No voice was captured. Try again.');
       };
       recorder.start(250);
       recordingRef.current = true;
@@ -384,89 +469,268 @@ export default function CentralHubVoiceAssistant() {
       stopTracks();
       recordingRef.current = false;
       setRecording(false);
-      getTaraBridge()?.setTaraSpeaking?.(false);
+      getNativeBridge()?.setTaraSpeaking?.(false);
       setError(e?.name === 'NotAllowedError' ? 'Microphone permission was not granted.' : (e?.message || 'Could not start the microphone.'));
     }
-  };
+  }, [chooseTheme, setSession, stopTracks, transcribeAndRun]);
 
-  const stopRecording = () => {
+  const stopRecording = useCallback(() => {
     const recorder = recorderRef.current;
     if (recorder?.state === 'recording') recorder.stop();
-  };
+  }, []);
 
-  const close = () => {
-    if (recording) stopRecording();
+  const endConversation = useCallback(() => {
+    if (recordingRef.current) stopRecording();
+    stopTracks();
     stopSpeech();
+    setSession(false);
     setOpen(false);
-  };
+    setTranscript('');
+    setResponse(null);
+    setError('');
+  }, [setSession, stopRecording, stopSpeech, stopTracks]);
 
-  const statusText = useMemo(() => {
-    if (recording) return 'Listening… tap stop when finished';
-    if (processing) return 'Tara is working…';
-    if (nativeWakeAvailable && taraSession) return 'Conversation mode is active. Tara will answer command-like follow-ups and ignore casual background talk.';
-    if (nativeWakeAvailable) return 'Say “Tara” to wake your executive assistant. No button is required.';
-    return 'Tap the mic and speak naturally in Malayalam, English, or both.';
-  }, [nativeWakeAvailable, processing, recording, taraSession]);
+  const openNora = useCallback(() => {
+    chooseTheme();
+    setOpen(true);
+  }, [chooseTheme]);
+
+  const voiceState: VoiceState = processing ? 'processing' : speaking ? 'speaking' : recording ? 'listening' : (noraSession ? 'listening' : 'waiting');
+  const statusLabel =
+    voiceState === 'processing' ? 'Processing…' :
+    voiceState === 'speaking' ? 'Speaking…' :
+    voiceState === 'listening' ? 'Listening…' :
+    nativeWakeAvailable ? 'Say “NORA”' : 'Ready';
+
+  const rootStyle = {
+    '--nora-accent': theme.accent,
+    '--nora-secondary': theme.secondary,
+    background: theme.background,
+  } as CSSProperties;
 
   return (
     <>
       {open && (
-        <section className="fixed z-[85] right-3 left-3 bottom-[calc(10rem+env(safe-area-inset-bottom))] sm:left-auto sm:right-6 sm:bottom-24 sm:w-[min(92vw,460px)] rounded-3xl border border-cyan-500/25 bg-slate-950/95 shadow-2xl shadow-black/60 backdrop-blur-xl overflow-hidden" aria-label="Tara Executive Assistant">
-          <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="h-9 w-9 rounded-xl bg-cyan-500/15 text-cyan-300 flex items-center justify-center"><Bot size={19} /></div>
-              <div className="min-w-0">
-                <p className="text-sm font-black text-white">Tara</p>
-                <p className="text-[10px] text-slate-400 truncate">CentralHub executive assistant · private · read-first safety</p>
+        <section className="nora-screen fixed inset-0 z-[120] overflow-hidden text-white" style={rootStyle} aria-label="NORA AI Executive Assistant">
+          <div className="absolute inset-0 nora-ambient pointer-events-none" />
+          <div className="relative z-10 flex h-full min-h-0 flex-col px-4 pb-[max(18px,env(safe-area-inset-bottom))] pt-[max(14px,env(safe-area-inset-top))] sm:px-7">
+            <header className="flex items-center justify-between gap-3">
+              <button type="button" onClick={endConversation} className="nora-icon-button" aria-label="Return to CentralHub">
+                <Menu size={21} />
+              </button>
+              <div className="text-center">
+                <div className="text-[22px] font-light tracking-tight sm:text-[26px]">Central<span className="font-semibold text-[var(--nora-accent)]">Hub</span></div>
+                <div className="mt-0.5 text-[8px] uppercase tracking-[0.42em] text-slate-500">Business · Insights · Action</div>
               </div>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className={`hidden sm:inline-flex rounded-full border px-2 py-1 text-[9px] font-black uppercase tracking-wide ${taraSession ? 'border-emerald-500/30 text-emerald-200' : 'border-slate-700 text-slate-500'}`}>{taraSession ? 'conversation active' : 'waiting for Tara'}</span>
-              <button type="button" onClick={() => { setAutoSpeak((v) => !v); stopSpeech(); }} className="h-9 w-9 rounded-xl border border-slate-800 bg-slate-900 text-slate-300 flex items-center justify-center" aria-label={autoSpeak ? 'Mute Tara voice replies' : 'Enable Tara voice replies'}>{autoSpeak ? <Volume2 size={16} /> : <VolumeX size={16} />}</button>
-              <button type="button" onClick={close} className="h-9 w-9 rounded-xl border border-slate-800 bg-slate-900 text-slate-300 flex items-center justify-center" aria-label="Hide Tara"><X size={17} /></button>
-            </div>
-          </div>
+              <button type="button" onClick={() => chooseTheme()} className="nora-icon-button" aria-label="Change NORA appearance">
+                <Settings size={20} />
+              </button>
+            </header>
 
-          <div className="px-4 pt-3 flex gap-2">
-            {(['operations','board','developer'] as AssistantMode[]).map((item) => (
-              <button key={item} type="button" onClick={() => setMode(item)} className={`flex-1 rounded-xl border px-2 py-2 text-[10px] font-black uppercase tracking-wide ${mode === item ? 'border-cyan-400/50 bg-cyan-400/15 text-cyan-200' : 'border-slate-800 bg-slate-900/70 text-slate-500'}`}>{item}</button>
-            ))}
-          </div>
+            <main className="flex min-h-0 flex-1 flex-col items-center justify-center py-3 sm:py-6">
+              <div className="flex w-full max-w-5xl min-h-0 flex-1 flex-col items-center justify-center">
+                <Orb theme={theme} state={voiceState} />
 
-          <div className="p-4 space-y-3 max-h-[58vh] overflow-y-auto overscroll-contain">
-            <div className={`rounded-2xl border p-3 ${recording ? 'border-rose-400/40 bg-rose-500/10' : taraSession ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-slate-800 bg-slate-900/60'}`}>
-              <div className="flex items-center gap-3">
-                <button type="button" disabled={processing} onClick={recording ? stopRecording : startRecording} className={`h-12 w-12 shrink-0 rounded-full border-2 flex items-center justify-center transition-all disabled:opacity-50 ${recording ? 'border-rose-300 bg-rose-500 text-white animate-pulse' : 'border-cyan-300/40 bg-cyan-500 text-slate-950'}`} aria-label={recording ? 'Stop recording' : 'Talk to Tara manually'}>{recording ? <Square size={18} fill="currentColor" /> : <Mic size={20} />}</button>
-                <div className="min-w-0"><p className="text-xs font-bold text-slate-100">{statusText}</p><p className="mt-1 text-[10px] text-slate-500">Say “Tara stop” or “that’s all” to end the conversation. Wake listening only runs while CentralHub is in the foreground.</p></div>
+                <div className="mt-4 text-center sm:mt-6">
+                  <h2 className="text-4xl font-light tracking-tight sm:text-5xl">NORA</h2>
+                  <p className="mt-1 text-[9px] font-semibold uppercase tracking-[0.42em] text-slate-400">Your AI Executive Assistant</p>
+                  <div className="mx-auto mt-4 flex h-8 items-center justify-center gap-[3px]">
+                    {Array.from({ length: 17 }).map((_, index) => (
+                      <span
+                        key={index}
+                        className={`nora-wavebar ${voiceState === 'listening' || voiceState === 'speaking' ? 'nora-wavebar-live' : ''}`}
+                        style={{ animationDelay: `${index * 45}ms` }}
+                      />
+                    ))}
+                  </div>
+                  <p className="mt-1 text-sm font-medium tracking-[0.18em] text-[var(--nora-accent)]">{statusLabel}</p>
+                  <p className="mt-2 text-[10px] text-slate-500">{theme.name} · {theme.subtitle}</p>
+                </div>
+
+                {(transcript || processing || response?.reply || error) && (
+                  <div className="mt-5 w-full max-w-2xl space-y-2">
+                    {transcript && <div className="nora-glass-card"><span className="nora-card-label">You</span><p>{transcript}</p></div>}
+                    {processing && <div className="nora-glass-card nora-processing-card">NORA is analysing live CentralHub data…</div>}
+                    {error && <div className="nora-glass-card border-rose-400/30 text-rose-100">{error}</div>}
+                    {response?.reply && (
+                      <div className="nora-glass-card">
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <span className="nora-card-label text-[var(--nora-accent)]">NORA</span>
+                          <span className="rounded-full border border-white/10 px-2 py-0.5 text-[8px] uppercase tracking-wider text-slate-400">
+                            {response.requires_confirmation ? 'Approval required' : response.risk_level || 'read only'}
+                          </span>
+                        </div>
+                        <p className="leading-relaxed">{response.reply}</p>
+                        {response.navigation_path && (
+                          <button
+                            type="button"
+                            onClick={() => { router.push(response.navigation_path!); setOpen(false); }}
+                            className="mt-3 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--nora-accent)]"
+                          >
+                            Open related page <ChevronRight size={13} />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {!processing && !response?.reply && !error && (
+                  <div className="mt-5 flex max-w-2xl flex-wrap justify-center gap-2">
+                    {prompts.map((prompt) => (
+                      <button
+                        key={prompt}
+                        type="button"
+                        onClick={() => { setSession(true); void runCommand(prompt); }}
+                        className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-2 text-[10px] text-slate-300 backdrop-blur-md transition hover:border-[var(--nora-accent)]/50"
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
+            </main>
 
-            {!transcript && !response && !processing && (
-              <div className="flex flex-wrap gap-2">{QUICK_PROMPTS[mode].map((prompt) => <button key={prompt} type="button" onClick={() => { setSession(true); void runCommand(prompt); }} className="rounded-full border border-slate-800 bg-slate-900 px-3 py-1.5 text-[10px] font-bold text-slate-300 hover:border-cyan-500/40">{prompt}</button>)}</div>
-            )}
+            <footer className="mx-auto flex w-full max-w-3xl items-center gap-2 sm:gap-3">
+              <form
+                className="nora-input flex min-w-0 flex-1 items-center"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const value = input.trim();
+                  if (!value) return;
+                  setInput('');
+                  setSession(true);
+                  void runCommand(value);
+                }}
+              >
+                <span className="pl-4 text-lg text-[var(--nora-accent)]">✦</span>
+                <input
+                  value={input}
+                  onChange={(event) => setInput(event.target.value)}
+                  disabled={processing || recording}
+                  placeholder="Ask NORA"
+                  className="min-w-0 flex-1 bg-transparent px-3 py-3.5 text-sm text-white outline-none placeholder:text-slate-500"
+                />
+                <button type="submit" disabled={!input.trim() || processing || recording} className="mr-2 rounded-full p-2 text-slate-300 disabled:opacity-30" aria-label="Send to NORA">
+                  <Send size={18} />
+                </button>
+              </form>
 
-            {transcript && <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3"><p className="text-[9px] font-black uppercase tracking-widest text-slate-500">You said</p><p className="mt-1 text-xs text-slate-200">{transcript}</p></div>}
-            {processing && <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-3 text-xs text-cyan-200">Tara is analysing live CentralHub data…</div>}
-            {error && <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-200">{error}</div>}
+              <button
+                type="button"
+                onClick={recording ? stopRecording : startRecording}
+                disabled={processing}
+                className={`nora-action-button ${recording ? 'nora-mic-active' : ''}`}
+                aria-label={recording ? 'Stop listening' : 'Talk to NORA'}
+              >
+                {recording ? <Square size={19} fill="currentColor" /> : <Mic size={21} />}
+                <span className="hidden sm:block">{recording ? 'Stop' : 'Talk'}</span>
+              </button>
 
-            {response?.reply && (
-              <div className="rounded-2xl border border-cyan-500/25 bg-cyan-500/8 p-3">
-                <div className="flex items-center justify-between gap-2"><p className="text-[9px] font-black uppercase tracking-widest text-cyan-300">Tara</p><span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase ${response.requires_confirmation ? 'border-amber-400/40 text-amber-200' : 'border-emerald-500/30 text-emerald-200'}`}>{response.requires_confirmation ? 'confirmation required' : response.risk_level || 'read only'}</span></div>
-                <p className="mt-2 text-sm leading-relaxed text-slate-100">{response.reply}</p>
-                {response.requires_confirmation && <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-2 text-[10px] text-amber-100">No write action was executed. Tara deliberately gates deploys, code/database changes, pricing, refunds, messages and other external actions.</div>}
-                {response.navigation_path && <button type="button" onClick={() => { router.push(response.navigation_path!); setOpen(false); }} className="mt-3 rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-cyan-200">Open related page</button>}
-              </div>
-            )}
+              <button
+                type="button"
+                onClick={() => { setAutoSpeak((value) => !value); if (autoSpeak) stopSpeech(); }}
+                className="nora-action-button"
+                aria-label={autoSpeak ? 'Mute NORA' : 'Enable NORA voice'}
+              >
+                {autoSpeak ? <Volume2 size={20} /> : <VolumeX size={20} />}
+                <span className="hidden sm:block">{autoSpeak ? 'Mute' : 'Voice'}</span>
+              </button>
 
-            <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); const value = input.trim(); if (!value) return; setInput(''); setSession(true); void runCommand(value); }}>
-              <input value={input} onChange={(event) => setInput(event.target.value)} disabled={processing || recording} placeholder="Or type a command to Tara…" className="min-w-0 flex-1 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs text-white outline-none placeholder:text-slate-600 focus:border-cyan-500/40" />
-              <button type="submit" disabled={!input.trim() || processing || recording} className="h-10 w-10 rounded-xl border border-cyan-400/30 bg-cyan-500 text-slate-950 flex items-center justify-center disabled:opacity-40" aria-label="Send command to Tara"><Send size={16} /></button>
-            </form>
+              <button type="button" onClick={endConversation} className="nora-action-button nora-end-button" aria-label="End NORA conversation">
+                <X size={22} />
+                <span className="hidden sm:block">End</span>
+              </button>
+            </footer>
           </div>
         </section>
       )}
 
-      <button type="button" onClick={() => { if (open) close(); else if (nativeWakeAvailable) setOpen(true); else void startRecording(); }} className={`fixed z-[80] ${fabPosition} h-14 w-14 rounded-full border-2 flex items-center justify-center shadow-2xl transition-all active:scale-95 touch-manipulation ${recording ? 'border-rose-200 bg-rose-500 text-white shadow-rose-950/40 animate-pulse' : taraSession ? 'border-emerald-200/40 bg-emerald-500 text-slate-950 shadow-emerald-950/40' : open ? 'border-cyan-200/40 bg-slate-800 text-cyan-200' : 'border-white/15 bg-cyan-500 text-slate-950 shadow-cyan-950/40'}`} aria-label={open ? 'Hide Tara' : nativeWakeAvailable ? 'Open Tara' : 'Talk to Tara'}>{recording ? <MicOff size={22} /> : <Mic size={22} />}</button>
+      {!open && (
+        <button
+          type="button"
+          onClick={nativeWakeAvailable ? openNora : startRecording}
+          className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] right-4 z-[80] flex h-14 w-14 items-center justify-center rounded-full border border-cyan-200/30 bg-cyan-500 text-slate-950 shadow-2xl shadow-cyan-950/50 active:scale-95 sm:bottom-6 sm:right-6"
+          aria-label={nativeWakeAvailable ? 'Open NORA' : 'Talk to NORA'}
+        >
+          {recording ? <MicOff size={22} /> : <Mic size={22} />}
+        </button>
+      )}
+
+      <style jsx global>{`
+        .nora-screen { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+        .nora-ambient {
+          background:
+            radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--nora-accent) 10%, transparent), transparent 36%),
+            linear-gradient(115deg, transparent 15%, rgba(255,255,255,.018) 45%, transparent 70%);
+          opacity: .95;
+        }
+        .nora-icon-button {
+          width: 44px; height: 44px; border-radius: 9999px; display:flex; align-items:center; justify-content:center;
+          border: 1px solid color-mix(in srgb, var(--nora-accent) 35%, rgba(255,255,255,.12));
+          background: rgba(10,16,28,.66); color:#e6f4ff; box-shadow: inset 0 0 16px rgba(255,255,255,.025);
+        }
+        .nora-orb-shell {
+          position: relative; width: min(44vw, 310px); aspect-ratio: 1; display:grid; place-items:center;
+          transition: transform .5s ease, filter .5s ease;
+        }
+        .nora-orb-core {
+          position:absolute; inset:12%; border-radius:9999px; overflow:hidden;
+          border:1px solid color-mix(in srgb, var(--nora-accent) 82%, white 18%);
+          background:
+            radial-gradient(circle at 40% 36%, rgba(255,255,255,.28), transparent 20%),
+            radial-gradient(circle at 60% 58%, color-mix(in srgb, var(--nora-secondary) 40%, transparent), transparent 38%),
+            radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--nora-accent) 36%, #031024), #020610 68%);
+          box-shadow:
+            0 0 22px color-mix(in srgb, var(--nora-accent) 55%, transparent),
+            0 0 70px color-mix(in srgb, var(--nora-accent) 24%, transparent),
+            inset 0 0 42px rgba(255,255,255,.12);
+        }
+        .nora-orb-ring { position:absolute; border-radius:9999px; border:1px solid color-mix(in srgb, var(--nora-accent) 48%, transparent); }
+        .nora-ring-a { inset:4%; animation:nora-spin 16s linear infinite; }
+        .nora-ring-b { inset:0; border-style:dotted; opacity:.35; animation:nora-spin-reverse 25s linear infinite; }
+        .nora-orb-flow { position:absolute; width:130%; height:42%; left:-15%; top:30%; border-radius:50%; filter:blur(5px); opacity:.8; transform:rotate(-12deg); }
+        .nora-flow-a { background:linear-gradient(90deg, transparent, var(--nora-accent), white, transparent); animation:nora-flow 4.5s ease-in-out infinite alternate; }
+        .nora-flow-b { top:46%; background:linear-gradient(90deg, transparent, var(--nora-secondary), transparent); transform:rotate(18deg); animation:nora-flow 5.6s ease-in-out infinite alternate-reverse; }
+        .nora-orb-stars { position:absolute; inset:0; opacity:.55; background-image:radial-gradient(circle, rgba(255,255,255,.9) 0 1px, transparent 1.2px); background-size:17px 19px; mask-image:radial-gradient(circle, black, transparent 70%); }
+        .nora-speaking .nora-orb-core, .nora-listening .nora-orb-core { animation:nora-pulse 2.1s ease-in-out infinite; }
+        .nora-processing .nora-ring-a { animation-duration:2.4s; }
+        .nora-processing .nora-ring-b { animation-duration:4s; }
+        .nora-minimal .nora-orb-core { background:#03070c; box-shadow:0 0 24px var(--nora-accent), inset 0 0 30px rgba(80,160,255,.08); }
+        .nora-minimal .nora-orb-flow, .nora-minimal .nora-orb-stars { opacity:.04; }
+        .nora-waveform.nora-orb-shell, .nora-aurora.nora-orb-shell { transform:scaleX(1.08); }
+        .nora-waveform .nora-orb-core, .nora-aurora .nora-orb-core { border-radius:46% 54% 48% 52% / 55% 44% 56% 45%; animation:nora-morph 7s ease-in-out infinite; }
+        .nora-galaxy .nora-orb-stars { opacity:.95; animation:nora-spin 28s linear infinite; }
+        .nora-ripple .nora-ring-a { inset:-7%; box-shadow:0 0 0 18px rgba(60,140,255,.035), 0 0 0 40px rgba(60,140,255,.02); }
+        .nora-glass .nora-orb-core { border-radius:28%; transform:rotate(45deg); }
+        .nora-glass .nora-orb-flow, .nora-glass .nora-orb-stars { transform:rotate(-45deg); }
+        .nora-executive .nora-orb-core { box-shadow:0 0 34px color-mix(in srgb, var(--nora-accent) 60%, transparent), inset 0 0 62px rgba(0,0,0,.7); }
+        .nora-earth .nora-orb-core { background:radial-gradient(circle at 44% 35%, rgba(90,170,255,.5), transparent 25%), radial-gradient(circle at 55% 65%, #0b3a72, #020611 63%); }
+        .nora-holographic .nora-orb-core { background:repeating-radial-gradient(circle at center, rgba(64,160,255,.15) 0 2px, transparent 3px 9px), #020816; }
+        .nora-wavebar { width:2px; height:8px; border-radius:9999px; background:var(--nora-accent); opacity:.45; }
+        .nora-wavebar-live { animation:nora-wave 900ms ease-in-out infinite alternate; opacity:.95; box-shadow:0 0 7px var(--nora-accent); }
+        .nora-glass-card { border:1px solid rgba(255,255,255,.09); background:rgba(9,17,30,.68); backdrop-filter:blur(18px); border-radius:18px; padding:12px 14px; font-size:12px; color:#e7edf5; box-shadow:0 12px 38px rgba(0,0,0,.24); }
+        .nora-card-label { display:block; margin-bottom:4px; font-size:8px; font-weight:800; text-transform:uppercase; letter-spacing:.19em; color:#718096; }
+        .nora-processing-card { color:var(--nora-accent); }
+        .nora-input { border:1px solid color-mix(in srgb, var(--nora-accent) 52%, rgba(255,255,255,.14)); border-radius:9999px; background:rgba(7,13,24,.72); backdrop-filter:blur(18px); box-shadow:0 0 24px rgba(0,0,0,.25), inset 0 0 22px rgba(255,255,255,.018); }
+        .nora-action-button { min-width:48px; height:48px; border-radius:9999px; display:flex; align-items:center; justify-content:center; gap:6px; padding:0 13px; border:1px solid color-mix(in srgb, var(--nora-accent) 48%, rgba(255,255,255,.10)); background:rgba(7,13,24,.8); color:#ecf7ff; font-size:10px; box-shadow:0 0 18px color-mix(in srgb, var(--nora-accent) 14%, transparent); }
+        .nora-mic-active { background:color-mix(in srgb, var(--nora-accent) 72%, #051427); color:#02101b; }
+        .nora-end-button { border-color:rgba(255,70,70,.58); background:rgba(95,7,15,.58); box-shadow:0 0 20px rgba(255,30,45,.16); }
+        @keyframes nora-spin { to { transform:rotate(360deg); } }
+        @keyframes nora-spin-reverse { to { transform:rotate(-360deg); } }
+        @keyframes nora-flow { from { transform:translateX(-8%) rotate(-12deg) scaleY(.8); } to { transform:translateX(8%) rotate(8deg) scaleY(1.18); } }
+        @keyframes nora-pulse { 0%,100% { transform:scale(.97); filter:brightness(.92); } 50% { transform:scale(1.035); filter:brightness(1.18); } }
+        @keyframes nora-wave { from { height:5px; } to { height:28px; } }
+        @keyframes nora-morph { 0%,100% { border-radius:46% 54% 48% 52% / 55% 44% 56% 45%; } 50% { border-radius:56% 44% 58% 42% / 43% 58% 42% 57%; } }
+        @media (max-height: 700px) {
+          .nora-orb-shell { width:min(31vh, 210px); }
+          .nora-glass-card { padding:9px 11px; }
+        }
+        @media (min-width: 700px) {
+          .nora-orb-shell { width:min(35vw, 360px); }
+        }
+      `}</style>
     </>
   );
 }
