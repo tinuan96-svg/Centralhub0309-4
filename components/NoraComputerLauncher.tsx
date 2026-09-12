@@ -17,6 +17,8 @@ type VoiceCommand = {
 type NativeComputerBridge = {
   getPlatform?: () => string;
   openNoraComputerMode?: (sessionId: string, targetUrl: string, accessToken: string, supabaseUrl: string) => boolean;
+  speakTara?: (text: string, languageTag: string) => boolean;
+  stopTaraTts?: () => void;
 };
 
 type Target = { key: string; system: string; url: string };
@@ -47,7 +49,6 @@ function targetByKey(key: unknown): Target | null {
 
 function targetFor(text: string): Target | null {
   const value = text.toLowerCase();
-  // Specific Google products must be checked before generic Google terms.
   if (/\b(merchant center|google merchant|merchant account)\b/.test(value)) return targetByKey('google_merchant');
   if (/\b(google ads|google advertising|adwords|ads account)\b/.test(value)) return targetByKey('google_ads');
   if (/\b(google analytics|ga4|analytics account)\b/.test(value)) return targetByKey('google_analytics');
@@ -78,10 +79,24 @@ function targetFromCommand(command: VoiceCommand | null): Target | null {
         if (known) return { ...known, url: payloadUrl, system: payloadSystem || known.system };
       }
     } catch {
-      // Ignore invalid model/backend URLs and fall back to deterministic matching.
+      // Ignore invalid backend URLs and fall back to deterministic task matching.
     }
   }
   return targetFor(`${command.input_text || ''} ${command.action_name || ''}`);
+}
+
+function announceHandoff(target: Target) {
+  const native = bridge();
+  if (native?.getPlatform?.() !== 'android') return;
+  try {
+    native.stopTaraTts?.();
+    native.speakTara?.(
+      `I’m opening ${target.system} and starting this task now. I’ll pause if I need login, verification, missing details, or your approval for a consequential final step.`,
+      'en-GB',
+    );
+  } catch {
+    // The visible browser still launches even if speech is unavailable.
+  }
 }
 
 export default function NoraComputerLauncher() {
@@ -169,6 +184,7 @@ export default function NoraComputerLauncher() {
       if (insertError || !actionSession?.id) throw new Error(insertError?.message || 'Could not create NORA action session.');
 
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+      announceHandoff(target);
       const launched = native.openNoraComputerMode(actionSession.id, target.url, authSession.access_token, supabaseUrl) === true;
       if (!launched) {
         await supabase.from('nora_action_sessions').update({ status: 'failed', last_error: 'Android Computer Mode could not launch.', completed_at: new Date().toISOString() }).eq('id', actionSession.id);
