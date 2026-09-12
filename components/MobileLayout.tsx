@@ -8,6 +8,7 @@ import MobileBottomNav from './MobileBottomNav';
 import DhlInvoiceAutoSync from './DhlInvoiceAutoSync';
 import CentralHubLiveUpdate from './CentralHubLiveUpdate';
 import CentralHubVoiceAssistant from './CentralHubVoiceAssistant';
+import NoraLiveActionOverlay from './NoraLiveActionOverlay';
 import QuickActionsFab from '@/app/dashboard/components/QuickActionsFab';
 import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
 import { useState, useEffect } from 'react';
@@ -45,6 +46,7 @@ export default function MobileLayout({ children }: MobileLayoutProps) {
       </main>
       {pathname === '/dashboard' && <QuickActionsFab />}
       <CentralHubVoiceAssistant />
+      <NoraLiveActionOverlay />
       <MobileBottomNav />
     </div>
   );
@@ -56,6 +58,7 @@ export default function MobileLayout({ children }: MobileLayoutProps) {
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden"><Topbar /><main className="flex-1 min-h-0 min-w-0 overflow-y-auto overscroll-contain pb-safe-bottom pr-safe-right pl-safe-left"><div className="max-w-[1920px] min-w-0 mx-auto w-full">{children}</div></main></div>
       {pathname === '/dashboard' && <QuickActionsFab />}
       <CentralHubVoiceAssistant />
+      <NoraLiveActionOverlay />
     </div>
   );
 }
