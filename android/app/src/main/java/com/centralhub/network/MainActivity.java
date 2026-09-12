@@ -29,7 +29,7 @@ public class MainActivity extends BridgeActivity {
     private static final String EXTRA_ACTION_URL = "centralhub_action_url";
     private static final int REQUEST_POST_NOTIFICATIONS = 4101;
     private static final int REQUEST_RECORD_AUDIO = 4102;
-    private static final long NORA_FOLLOWUP_WINDOW_MS = 120_000L;
+    private static final long NORA_FOLLOWUP_WINDOW_MS = 35_000L;
 
     // Bridge method names remain Tara-compatible so installed web/native versions can
     // overlap during rollout. NORA is now the primary product name and wake phrase.
@@ -46,6 +46,7 @@ public class MainActivity extends BridgeActivity {
     private boolean taraSegmentedSession = false;
     private int taraConsecutiveErrors = 0;
     private long taraLastTranscriptAt = 0L;
+    private String taraLastTranscriptText = "";
     private long noraConversationUntil = 0L;
 
     @Override
@@ -229,7 +230,10 @@ public class MainActivity extends BridgeActivity {
                 taraListening = false;
                 taraConsecutiveErrors = 0;
                 taraPartialWakeDispatched = false;
-                scheduleTaraRestart(taraSegmentedSession ? 2600L : 1800L);
+                long delay = System.currentTimeMillis() < noraConversationUntil
+                        ? 900L
+                        : (taraSegmentedSession ? 2600L : 1800L);
+                scheduleTaraRestart(delay);
             }
 
             @Override
@@ -260,7 +264,7 @@ public class MainActivity extends BridgeActivity {
                 taraListening = false;
                 taraConsecutiveErrors = 0;
                 taraPartialWakeDispatched = false;
-                scheduleTaraRestart(2600L);
+                scheduleTaraRestart(System.currentTimeMillis() < noraConversationUntil ? 900L : 2600L);
             }
 
             @Override public void onEvent(int eventType, Bundle params) { }
@@ -287,6 +291,10 @@ public class MainActivity extends BridgeActivity {
                 return;
             } else {
                 noraConversationUntil = now + NORA_FOLLOWUP_WINDOW_MS;
+                // The web assistant already knows how to handle an explicitly-addressed
+                // NORA turn. Prefix active-conversation follow-ups so natural replies
+                // do not get rejected by the stricter ambient-speech heuristic there.
+                canonical = "NORA " + canonical;
             }
 
             dispatchTaraTranscriptDebounced(canonical);
@@ -357,16 +365,18 @@ public class MainActivity extends BridgeActivity {
     public void setTaraSpeaking(boolean speaking) {
         taraSpeaking = speaking;
 
+        if (!speaking && noraConversationUntil > 0L) {
+            // Give the user a fresh follow-up turn after NORA finishes speaking.
+            noraConversationUntil = System.currentTimeMillis() + NORA_FOLLOWUP_WINDOW_MS;
+        }
+
         // On Android 13+ keep the long on-device segmented recognizer alive while
         // NORA speaks and simply ignore recognition callbacks. Cancelling and
         // restarting it for every reply is what produced Samsung's double beep.
-        if (taraSegmentedSession && taraListening) {
-            if (!speaking && !taraListening) scheduleTaraRestart(1800L);
-            return;
-        }
+        if (taraSegmentedSession && taraListening) return;
 
         if (speaking) stopTaraRecognizer();
-        else if (!taraListening) scheduleTaraRestart(1800L);
+        else if (!taraListening) scheduleTaraRestart(noraConversationUntil > System.currentTimeMillis() ? 900L : 1800L);
     }
 
     private void startTaraRecognizerIfReady() {
@@ -390,7 +400,8 @@ public class MainActivity extends BridgeActivity {
     private void scheduleTaraRestart(long delayMs) {
         taraHandler.removeCallbacks(taraRestartRunnable);
         if (!taraEnabled || !taraResumed || taraSpeaking || taraListening) return;
-        taraHandler.postDelayed(taraRestartRunnable, Math.max(1600L, delayMs));
+        long minimumDelay = System.currentTimeMillis() < noraConversationUntil ? 600L : 1600L;
+        taraHandler.postDelayed(taraRestartRunnable, Math.max(minimumDelay, delayMs));
     }
 
     private void stopTaraRecognizer() {
@@ -417,10 +428,21 @@ public class MainActivity extends BridgeActivity {
 
     private void dispatchTaraTranscriptDebounced(String text) {
         if (text == null || text.trim().isEmpty()) return;
+        String clean = text.trim();
         long now = System.currentTimeMillis();
-        if (now - taraLastTranscriptAt < 700L) return;
+        long elapsed = now - taraLastTranscriptAt;
+        boolean sameTranscript = clean.equalsIgnoreCase(taraLastTranscriptText);
+        boolean expandsPartialWake = "NORA".equalsIgnoreCase(taraLastTranscriptText)
+                && clean.length() > 5
+                && clean.regionMatches(true, 0, "NORA ", 0, 5);
+
+        // Suppress duplicate callbacks, but never drop a full "NORA <command>"
+        // result merely because the partial wake "NORA" arrived milliseconds first.
+        if (elapsed < 700L && (sameTranscript || !expandsPartialWake)) return;
+
         taraLastTranscriptAt = now;
-        dispatchTaraTranscript(text);
+        taraLastTranscriptText = clean;
+        dispatchTaraTranscript(clean);
     }
 
     private void dispatchTaraTranscript(String text) {
@@ -441,6 +463,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onPause() {
         taraResumed = false;
+        noraConversationUntil = 0L;
         stopTaraRecognizer();
         super.onPause();
     }
