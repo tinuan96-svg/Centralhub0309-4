@@ -144,9 +144,14 @@ Deno.serve(async (req) => {
     await db.from("nora_action_sessions").update({ status: "paused", current_step: "Paused — waiting for admin" }).eq("id", sessionId);
     return json(200, { success: true, kind: "paused" });
   }
+  if (action === "cancel") {
+    await db.from("nora_action_sessions").update({ status: "cancelled", current_step: "Cancelled by admin", completed_at: new Date().toISOString() }).eq("id", sessionId);
+    await db.from("nora_action_steps").update({ status: "skipped", completed_at: new Date().toISOString() }).eq("session_id", sessionId).in("status", ["planned", "running", "waiting_input", "waiting_approval"]);
+    return json(200, { success: true, kind: "cancelled" });
+  }
 
   let openaiBody: Record<string, unknown>;
-  let nextTurn = previousTurn + 1;
+  const nextTurn = previousTurn + 1;
   if (nextTurn > MAX_TURNS) {
     await db.from("nora_action_sessions").update({ status: "failed", last_error: "NORA Computer Mode reached its step limit.", completed_at: new Date().toISOString() }).eq("id", sessionId);
     return json(409, { success: false, error: "turn_limit_reached" });
@@ -208,7 +213,7 @@ Deno.serve(async (req) => {
     const result = await openaiRequest(openaiKey, openaiBody);
     const call = computerCall(result);
     const outputText = textOutput(result);
-    const nextMetadata = { ...(metadata as any), computer_response_id: result.id, computer_turn_count: nextTurn, computer_model: MODEL };
+    const nextMetadata: any = { ...(metadata as any), computer_response_id: result.id, computer_turn_count: nextTurn, computer_model: MODEL };
 
     if (call) {
       const actions = cleanActions(call.actions);
