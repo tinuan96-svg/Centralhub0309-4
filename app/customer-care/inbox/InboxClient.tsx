@@ -267,7 +267,7 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
   }
 
   return (
-    <div className="flex h-[calc(100dvh-64px)] max-h-[calc(100dvh-64px)] w-full max-w-full min-h-0 overflow-hidden relative bg-slate-950">
+    <div className="flex h-full max-h-full w-full max-w-full min-h-0 overflow-hidden relative bg-slate-950">
       {/* Desktop / tablet conversation list. The list owns its vertical scroll. */}
       <aside className={`${selectedConv ? 'hidden md:flex' : 'flex'} w-full md:w-64 lg:w-72 2xl:w-80 h-full max-h-full flex-none min-h-0 overflow-hidden border-r border-slate-800 flex-col bg-slate-900/50`}>
         <div className="h-12 lg:h-14 shrink-0 px-3 lg:px-4 border-b border-slate-800 flex items-center justify-between bg-slate-900">
@@ -413,7 +413,7 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
               <div ref={chatEndRef} />
             </div>
 
-            <footer className="shrink-0 border-t border-slate-800 bg-slate-900 px-2 sm:px-3 lg:px-4 pt-2 sm:pt-3 pb-[calc(0.45rem+env(safe-area-inset-bottom))] sm:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+            <footer className="relative z-30 shrink-0 border-t border-slate-800 bg-slate-900 px-2 sm:px-3 lg:px-4 pt-2 sm:pt-3 pb-[calc(0.45rem+env(safe-area-inset-bottom))] sm:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
               <div className="flex items-end gap-1.5 sm:gap-2">
                 <button type="button" className="shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-full text-slate-400 hover:text-white hover:bg-slate-800" aria-label="Attachments" title="Attachments">＋</button>
                 <textarea
