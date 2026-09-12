@@ -5,7 +5,13 @@ import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.net.Uri;
 import android.os.Build;
+import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
+import android.speech.tts.Voice;
 import android.webkit.JavascriptInterface;
+import java.util.Locale;
+import java.util.Set;
+import java.util.UUID;
 
 public final class CentralHubNativeBridge {
     private static final String PREFS = "centralhub_native_push";
@@ -13,10 +19,47 @@ public final class CentralHubNativeBridge {
 
     private final MainActivity activity;
     private final Context context;
+    private TextToSpeech taraTts;
+    private volatile boolean taraTtsReady = false;
 
     public CentralHubNativeBridge(MainActivity activity) {
         this.activity = activity;
         this.context = activity.getApplicationContext();
+        initializeTaraTts();
+    }
+
+    private void initializeTaraTts() {
+        activity.runOnUiThread(() -> {
+            taraTts = new TextToSpeech(context, status -> {
+                taraTtsReady = status == TextToSpeech.SUCCESS;
+                if (!taraTtsReady || taraTts == null) return;
+                taraTts.setSpeechRate(0.93f);
+                taraTts.setPitch(1.04f);
+                taraTts.setLanguage(Locale.UK);
+            });
+
+            taraTts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                @Override
+                public void onStart(String utteranceId) {
+                    activity.runOnUiThread(() -> activity.setTaraSpeaking(true));
+                }
+
+                @Override
+                public void onDone(String utteranceId) {
+                    activity.runOnUiThread(() -> activity.setTaraSpeaking(false));
+                }
+
+                @Override
+                public void onError(String utteranceId) {
+                    activity.runOnUiThread(() -> activity.setTaraSpeaking(false));
+                }
+
+                @Override
+                public void onError(String utteranceId, int errorCode) {
+                    activity.runOnUiThread(() -> activity.setTaraSpeaking(false));
+                }
+            });
+        });
     }
 
     public static void saveFcmToken(Context context, String token) {
@@ -79,6 +122,119 @@ public final class CentralHubNativeBridge {
     @JavascriptInterface
     public void setTaraSpeaking(boolean speaking) {
         activity.runOnUiThread(() -> activity.setTaraSpeaking(speaking));
+    }
+
+    @JavascriptInterface
+    public boolean isTaraTtsReady() {
+        return taraTtsReady && taraTts != null;
+    }
+
+    @JavascriptInterface
+    public boolean speakTara(String text, String languageTag) {
+        if (text == null || text.trim().isEmpty() || !isTaraTtsReady()) return false;
+        final String speech = text.trim();
+        final Locale locale = resolveLocale(languageTag);
+
+        activity.runOnUiThread(() -> {
+            TextToSpeech tts = taraTts;
+            if (tts == null || !taraTtsReady) {
+                activity.setTaraSpeaking(false);
+                return;
+            }
+
+            activity.setTaraSpeaking(true);
+            Locale selected = selectSupportedLocale(tts, locale);
+            tts.setLanguage(selected);
+            tts.setSpeechRate(0.93f);
+            tts.setPitch(1.04f);
+            selectExecutiveVoice(tts, selected);
+            int result = tts.speak(
+                    speech,
+                    TextToSpeech.QUEUE_FLUSH,
+                    null,
+                    "tara-" + UUID.randomUUID()
+            );
+            if (result == TextToSpeech.ERROR) {
+                activity.setTaraSpeaking(false);
+            }
+        });
+        return true;
+    }
+
+    @JavascriptInterface
+    public void stopTaraTts() {
+        activity.runOnUiThread(() -> {
+            if (taraTts != null) {
+                try {
+                    taraTts.stop();
+                } catch (Exception ignored) {
+                }
+            }
+            activity.setTaraSpeaking(false);
+        });
+    }
+
+    private Locale resolveLocale(String languageTag) {
+        if (languageTag == null || languageTag.trim().isEmpty()) return Locale.UK;
+        try {
+            Locale locale = Locale.forLanguageTag(languageTag.trim());
+            return locale.getLanguage().isEmpty() ? Locale.UK : locale;
+        } catch (Exception ignored) {
+            return Locale.UK;
+        }
+    }
+
+    private Locale selectSupportedLocale(TextToSpeech tts, Locale preferred) {
+        int support = tts.isLanguageAvailable(preferred);
+        if (support >= TextToSpeech.LANG_AVAILABLE) return preferred;
+        int ukSupport = tts.isLanguageAvailable(Locale.UK);
+        if (ukSupport >= TextToSpeech.LANG_AVAILABLE) return Locale.UK;
+        return Locale.US;
+    }
+
+    private void selectExecutiveVoice(TextToSpeech tts, Locale locale) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return;
+        try {
+            Set<Voice> voices = tts.getVoices();
+            if (voices == null || voices.isEmpty()) return;
+            Voice firstMatch = null;
+            Voice preferred = null;
+            for (Voice voice : voices) {
+                if (voice == null || voice.getLocale() == null) continue;
+                if (!voice.getLocale().getLanguage().equalsIgnoreCase(locale.getLanguage())) continue;
+                if (firstMatch == null) firstMatch = voice;
+                String name = voice.getName() == null ? "" : voice.getName().toLowerCase(Locale.ROOT);
+                if (name.contains("female")
+                        || name.contains("sonia")
+                        || name.contains("serena")
+                        || name.contains("samantha")
+                        || name.contains("aria")
+                        || name.contains("ava")
+                        || name.contains("veena")
+                        || name.contains("heera")) {
+                    preferred = voice;
+                    break;
+                }
+            }
+            if (preferred != null) tts.setVoice(preferred);
+            else if (firstMatch != null) tts.setVoice(firstMatch);
+        } catch (Exception ignored) {
+        }
+    }
+
+    public void shutdown() {
+        taraTtsReady = false;
+        if (taraTts != null) {
+            try {
+                taraTts.stop();
+            } catch (Exception ignored) {
+            }
+            try {
+                taraTts.shutdown();
+            } catch (Exception ignored) {
+            }
+            taraTts = null;
+        }
     }
 
     /**

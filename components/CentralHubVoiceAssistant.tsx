@@ -28,6 +28,9 @@ type TaraNativeBridge = {
   isTaraVoiceAvailable?: () => boolean;
   setTaraEnabled?: (enabled: boolean) => void;
   setTaraSpeaking?: (speaking: boolean) => void;
+  isTaraTtsReady?: () => boolean;
+  speakTara?: (text: string, languageTag: string) => boolean;
+  stopTaraTts?: () => void;
 };
 
 type TaraTranscriptEvent = CustomEvent<{ text?: string }>;
@@ -167,23 +170,46 @@ export default function CentralHubVoiceAssistant() {
   useEffect(() => () => {
     stopTracks();
     window.speechSynthesis?.cancel();
+    getTaraBridge()?.stopTaraTts?.();
     getTaraBridge()?.setTaraSpeaking?.(false);
   }, []);
 
   const speak = useCallback((text: string, onDone?: () => void) => {
-    if (!text || typeof window === 'undefined' || !('speechSynthesis' in window) || !autoSpeak) {
-      getTaraBridge()?.setTaraSpeaking?.(false);
+    if (!text || typeof window === 'undefined' || !autoSpeak) {
+      const bridge = getTaraBridge();
+      bridge?.stopTaraTts?.();
+      bridge?.setTaraSpeaking?.(false);
       onDone?.();
       return;
     }
 
     const bridge = getTaraBridge();
+    const hasMalayalam = /[\u0D00-\u0D7F]/.test(text);
+    const language = hasMalayalam ? 'ml-IN' : 'en-GB';
+
+    if (bridge?.getPlatform?.() === 'android' && bridge?.speakTara) {
+      window.speechSynthesis?.cancel();
+      try {
+        if (bridge.speakTara(text, language)) {
+          onDone?.();
+          return;
+        }
+      } catch {
+        // Fall through to Web Speech when the native bridge is not ready yet.
+      }
+    }
+
+    if (!('speechSynthesis' in window)) {
+      bridge?.setTaraSpeaking?.(false);
+      onDone?.();
+      return;
+    }
+
     bridge?.setTaraSpeaking?.(true);
     window.speechSynthesis.cancel();
 
     const utterance = new SpeechSynthesisUtterance(text);
-    const hasMalayalam = /[\u0D00-\u0D7F]/.test(text);
-    utterance.lang = hasMalayalam ? 'ml-IN' : 'en-GB';
+    utterance.lang = language;
     utterance.rate = 0.93;
     utterance.pitch = 1.04;
     utterance.volume = 1;
@@ -203,6 +229,13 @@ export default function CentralHubVoiceAssistant() {
     window.speechSynthesis.speak(utterance);
   }, [autoSpeak]);
 
+  const stopSpeech = useCallback(() => {
+    window.speechSynthesis?.cancel();
+    const bridge = getTaraBridge();
+    bridge?.stopTaraTts?.();
+    bridge?.setTaraSpeaking?.(false);
+  }, []);
+
   const runCommand = useCallback(async (text: string) => {
     const clean = text.trim();
     if (!clean || processingRef.current) return;
@@ -218,15 +251,15 @@ export default function CentralHubVoiceAssistant() {
       setResponse(result);
       responseRef.current = result;
       if (result.speak !== false) speak(result.reply);
-      else getTaraBridge()?.setTaraSpeaking?.(false);
+      else stopSpeech();
     } catch (e: any) {
       setError(e?.message || 'Tara failed.');
-      getTaraBridge()?.setTaraSpeaking?.(false);
+      stopSpeech();
     } finally {
       processingRef.current = false;
       setProcessing(false);
     }
-  }, [mode, speak]);
+  }, [mode, speak, stopSpeech]);
 
   const handleNativeTranscript = useCallback((rawText: string) => {
     if (processingRef.current || recordingRef.current) return;
@@ -306,7 +339,7 @@ export default function CentralHubVoiceAssistant() {
     } catch (e: any) {
       processingRef.current = false;
       setProcessing(false);
-      getTaraBridge()?.setTaraSpeaking?.(false);
+      stopSpeech();
       setError(e?.message || 'Voice transcription failed.');
     }
   };
@@ -322,6 +355,7 @@ export default function CentralHubVoiceAssistant() {
     setSession(true);
     setError('');
     setResponse(null);
+    stopSpeech();
     getTaraBridge()?.setTaraSpeaking?.(true);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
@@ -362,8 +396,7 @@ export default function CentralHubVoiceAssistant() {
 
   const close = () => {
     if (recording) stopRecording();
-    window.speechSynthesis?.cancel();
-    getTaraBridge()?.setTaraSpeaking?.(false);
+    stopSpeech();
     setOpen(false);
   };
 
@@ -389,7 +422,7 @@ export default function CentralHubVoiceAssistant() {
             </div>
             <div className="flex items-center gap-1">
               <span className={`hidden sm:inline-flex rounded-full border px-2 py-1 text-[9px] font-black uppercase tracking-wide ${taraSession ? 'border-emerald-500/30 text-emerald-200' : 'border-slate-700 text-slate-500'}`}>{taraSession ? 'conversation active' : 'waiting for Tara'}</span>
-              <button type="button" onClick={() => { setAutoSpeak((v) => !v); window.speechSynthesis?.cancel(); getTaraBridge()?.setTaraSpeaking?.(false); }} className="h-9 w-9 rounded-xl border border-slate-800 bg-slate-900 text-slate-300 flex items-center justify-center" aria-label={autoSpeak ? 'Mute Tara voice replies' : 'Enable Tara voice replies'}>{autoSpeak ? <Volume2 size={16} /> : <VolumeX size={16} />}</button>
+              <button type="button" onClick={() => { setAutoSpeak((v) => !v); stopSpeech(); }} className="h-9 w-9 rounded-xl border border-slate-800 bg-slate-900 text-slate-300 flex items-center justify-center" aria-label={autoSpeak ? 'Mute Tara voice replies' : 'Enable Tara voice replies'}>{autoSpeak ? <Volume2 size={16} /> : <VolumeX size={16} />}</button>
               <button type="button" onClick={close} className="h-9 w-9 rounded-xl border border-slate-800 bg-slate-900 text-slate-300 flex items-center justify-center" aria-label="Hide Tara"><X size={17} /></button>
             </div>
           </div>
