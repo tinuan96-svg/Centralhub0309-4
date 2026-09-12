@@ -20,6 +20,7 @@ import android.webkit.WebViewClient;
 import com.getcapacitor.BridgeActivity;
 import com.google.firebase.messaging.FirebaseMessaging;
 import java.util.ArrayList;
+import java.util.Locale;
 import org.json.JSONObject;
 
 public class MainActivity extends BridgeActivity {
@@ -36,6 +37,10 @@ public class MainActivity extends BridgeActivity {
     private boolean taraSpeaking = false;
     private boolean taraResumed = false;
     private boolean taraListening = false;
+    private boolean taraUsingOnDevice = false;
+    private boolean taraPartialWakeDispatched = false;
+    private int taraConsecutiveErrors = 0;
+    private long taraLastTranscriptAt = 0L;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -59,7 +64,7 @@ public class MainActivity extends BridgeActivity {
                 "CentralHubNative"
         );
 
-        setupTaraRecognizer();
+        setupTaraRecognizer(true);
 
         FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
             if (task.isSuccessful() && task.getResult() != null) {
@@ -160,24 +165,41 @@ public class MainActivity extends BridgeActivity {
         handleNotificationIntent(getIntent());
     }
 
-    private void setupTaraRecognizer() {
+    private void setupTaraRecognizer(boolean preferOnDevice) {
+        destroyTaraRecognizer();
         if (!SpeechRecognizer.isRecognitionAvailable(this)) return;
+
+        taraUsingOnDevice = false;
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+            if (preferOnDevice
+                    && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
                     && SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
                 taraRecognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(this);
+                taraUsingOnDevice = true;
             } else {
                 taraRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
             }
-        } catch (Exception ignored) {
+        } catch (Exception firstError) {
             taraRecognizer = null;
+            taraUsingOnDevice = false;
+            if (preferOnDevice) {
+                try {
+                    taraRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
+                } catch (Exception ignored) {
+                    taraRecognizer = null;
+                }
+            }
         }
         if (taraRecognizer == null) return;
 
         taraRecognizerIntent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
         taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false);
-        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3);
+        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
+        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);
+        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getPackageName());
+        if (taraUsingOnDevice) {
+            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
+        }
 
         taraRecognizer.setRecognitionListener(new RecognitionListener() {
             @Override
@@ -204,8 +226,23 @@ public class MainActivity extends BridgeActivity {
             @Override
             public void onError(int error) {
                 taraListening = false;
+                taraPartialWakeDispatched = false;
                 if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) return;
-                scheduleTaraRestart(error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY ? 1200L : 550L);
+
+                if (shouldFallbackFromOnDevice(error)) {
+                    taraConsecutiveErrors += 1;
+                    if (taraConsecutiveErrors >= 2) {
+                        fallbackToSystemRecognizer();
+                        return;
+                    }
+                } else if (error != SpeechRecognizer.ERROR_NO_MATCH
+                        && error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT
+                        && error != SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
+                    taraConsecutiveErrors += 1;
+                }
+
+                long delay = error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY ? 1200L : 450L;
+                scheduleTaraRestart(delay);
             }
 
             @Override
@@ -214,25 +251,78 @@ public class MainActivity extends BridgeActivity {
                 ArrayList<String> matches = results == null
                         ? null
                         : results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
-                if (!taraSpeaking && matches != null) {
+
+                if (!taraSpeaking && matches != null && !taraPartialWakeDispatched) {
                     for (String match : matches) {
                         if (match != null && !match.trim().isEmpty()) {
-                            dispatchTaraTranscript(match.trim());
+                            dispatchTaraTranscriptDebounced(match.trim());
                             break;
                         }
                     }
                 }
-                scheduleTaraRestart(450L);
+
+                taraConsecutiveErrors = 0;
+                taraPartialWakeDispatched = false;
+                scheduleTaraRestart(300L);
             }
 
             @Override
             public void onPartialResults(Bundle partialResults) {
+                if (taraSpeaking || taraPartialWakeDispatched) return;
+                ArrayList<String> matches = partialResults == null
+                        ? null
+                        : partialResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                if (matches == null) return;
+
+                // Short wake-word utterances are often returned only as partial
+                // results on Samsung/Google recognizers. Dispatch them immediately
+                // instead of waiting for a final result that may become NO_MATCH.
+                for (String match : matches) {
+                    if (isSimpleTaraWakePhrase(match)) {
+                        taraPartialWakeDispatched = true;
+                        dispatchTaraTranscriptDebounced(match.trim());
+                        break;
+                    }
+                }
             }
 
             @Override
             public void onEvent(int eventType, Bundle params) {
             }
         });
+    }
+
+    private boolean shouldFallbackFromOnDevice(int error) {
+        if (!taraUsingOnDevice) return false;
+        return error == SpeechRecognizer.ERROR_AUDIO
+                || error == SpeechRecognizer.ERROR_CLIENT
+                || error == SpeechRecognizer.ERROR_SERVER
+                || error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED
+                || error == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED
+                || error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE;
+    }
+
+    private void fallbackToSystemRecognizer() {
+        stopTaraRecognizer();
+        setupTaraRecognizer(false);
+        taraConsecutiveErrors = 0;
+        scheduleTaraRestart(400L);
+    }
+
+    private boolean isSimpleTaraWakePhrase(String raw) {
+        if (raw == null) return false;
+        String normalized = raw.trim().toLowerCase(Locale.ROOT)
+                .replaceAll("[\\p{Punct}\\s]+", " ")
+                .trim();
+        if (normalized.length() > 18) return false;
+        return normalized.equals("tara")
+                || normalized.equals("thara")
+                || normalized.equals("hey tara")
+                || normalized.equals("hey thara")
+                || normalized.equals("താര")
+                || normalized.equals("താരാ")
+                || normalized.equals("தாரா")
+                || normalized.equals("தார");
     }
 
     public boolean isTaraVoiceAvailable() {
@@ -258,23 +348,29 @@ public class MainActivity extends BridgeActivity {
         if (speaking) {
             stopTaraRecognizer();
         } else {
-            scheduleTaraRestart(350L);
+            scheduleTaraRestart(250L);
         }
     }
 
     private void startTaraRecognizerIfReady() {
         if (!taraEnabled || !taraResumed || taraSpeaking || taraListening) return;
-        if (taraRecognizer == null) setupTaraRecognizer();
+        if (taraRecognizer == null) setupTaraRecognizer(true);
         if (taraRecognizer == null || taraRecognizerIntent == null) return;
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
 
         try {
             taraHandler.removeCallbacks(taraRestartRunnable);
+            taraPartialWakeDispatched = false;
             taraRecognizer.startListening(taraRecognizerIntent);
             taraListening = true;
         } catch (Exception ignored) {
             taraListening = false;
-            scheduleTaraRestart(1000L);
+            taraConsecutiveErrors += 1;
+            if (taraUsingOnDevice && taraConsecutiveErrors >= 2) {
+                fallbackToSystemRecognizer();
+            } else {
+                scheduleTaraRestart(750L);
+            }
         }
     }
 
@@ -287,12 +383,38 @@ public class MainActivity extends BridgeActivity {
     private void stopTaraRecognizer() {
         taraHandler.removeCallbacks(taraRestartRunnable);
         taraListening = false;
+        taraPartialWakeDispatched = false;
         if (taraRecognizer != null) {
             try {
                 taraRecognizer.cancel();
             } catch (Exception ignored) {
             }
         }
+    }
+
+    private void destroyTaraRecognizer() {
+        taraHandler.removeCallbacks(taraRestartRunnable);
+        taraListening = false;
+        taraPartialWakeDispatched = false;
+        if (taraRecognizer != null) {
+            try {
+                taraRecognizer.cancel();
+            } catch (Exception ignored) {
+            }
+            try {
+                taraRecognizer.destroy();
+            } catch (Exception ignored) {
+            }
+        }
+        taraRecognizer = null;
+        taraRecognizerIntent = null;
+    }
+
+    private void dispatchTaraTranscriptDebounced(String text) {
+        long now = System.currentTimeMillis();
+        if (now - taraLastTranscriptAt < 700L) return;
+        taraLastTranscriptAt = now;
+        dispatchTaraTranscript(text);
     }
 
     private void dispatchTaraTranscript(String text) {
@@ -307,7 +429,7 @@ public class MainActivity extends BridgeActivity {
     public void onResume() {
         super.onResume();
         taraResumed = true;
-        scheduleTaraRestart(300L);
+        scheduleTaraRestart(250L);
     }
 
     @Override
@@ -320,13 +442,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onDestroy() {
         taraHandler.removeCallbacksAndMessages(null);
-        if (taraRecognizer != null) {
-            try {
-                taraRecognizer.destroy();
-            } catch (Exception ignored) {
-            }
-            taraRecognizer = null;
-        }
+        destroyTaraRecognizer();
         super.onDestroy();
     }
 
