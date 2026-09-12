@@ -28,10 +28,8 @@ function applyShruthiIdentity() {
       if ((el.textContent || '').trim().toUpperCase() === 'NORA') el.textContent = 'SHRUTHI';
     });
 
-    screen.querySelectorAll('p').forEach((el) => {
-      const text = (el.textContent || '').trim();
-      if (text === 'Say “NORA”' || text === 'Say “Nora”') el.textContent = 'Say “SHRUTHI”';
-    });
+    // Keep the current native wake cue truthful until Picovoice owner-lock is active.
+    // NORA remains a supported legacy wake alias during the migration to Shruthi.
 
     screen.querySelectorAll('input[placeholder], button[aria-label], [title]').forEach((el) => {
       replaceAttribute(el, 'placeholder');
