@@ -48,9 +48,6 @@ public class MainActivity extends BridgeActivity {
 
         WebSettings webSettings = bridge.getWebView().getSettings();
         webSettings.setUseWideViewPort(true);
-        // The inner Fold display has a wide layout, but the default WebView scale
-        // makes the admin shell feel oversized. Apply a compact zoom-out only there;
-        // the cover display keeps its existing responsive scale.
         int screenWidthDp = getResources().getConfiguration().screenWidthDp;
         if (screenWidthDp >= 600) {
             webSettings.setLoadWithOverviewMode(true);
@@ -64,7 +61,7 @@ public class MainActivity extends BridgeActivity {
                 "CentralHubNative"
         );
 
-        setupTaraRecognizer(true);
+        setupTaraRecognizer();
 
         FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
             if (task.isSuccessful() && task.getResult() != null) {
@@ -90,8 +87,6 @@ public class MainActivity extends BridgeActivity {
                     return false;
                 }
 
-                // Open native Android destinations outside the WebView. This keeps
-                // WhatsApp, phone, email, SMS, maps and Play Store links working.
                 if ("whatsapp".equals(scheme)
                         || "tel".equals(scheme)
                         || "mailto".equals(scheme)
@@ -145,7 +140,7 @@ public class MainActivity extends BridgeActivity {
                                 );
                             }
                         }
-                    } catch (Exception e) {
+                    } catch (Exception ignored) {
                     }
                 }
                 return super.shouldInterceptRequest(view, request);
@@ -165,30 +160,21 @@ public class MainActivity extends BridgeActivity {
         handleNotificationIntent(getIntent());
     }
 
-    private void setupTaraRecognizer(boolean preferOnDevice) {
+    /**
+     * Tara passive wake listening deliberately uses Android's on-device recognizer only.
+     * Falling back to the interactive/system recognizer causes Samsung devices to emit
+     * an audible start/stop tone every time the recognizer session is recycled.
+     */
+    private void setupTaraRecognizer() {
         destroyTaraRecognizer();
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) return;
+        if (!isTaraVoiceAvailable()) return;
 
-        taraUsingOnDevice = false;
         try {
-            if (preferOnDevice
-                    && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-                    && SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
-                taraRecognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(this);
-                taraUsingOnDevice = true;
-            } else {
-                taraRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
-            }
-        } catch (Exception firstError) {
+            taraRecognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(this);
+            taraUsingOnDevice = true;
+        } catch (Exception ignored) {
             taraRecognizer = null;
             taraUsingOnDevice = false;
-            if (preferOnDevice) {
-                try {
-                    taraRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
-                } catch (Exception ignored) {
-                    taraRecognizer = null;
-                }
-            }
         }
         if (taraRecognizer == null) return;
 
@@ -197,9 +183,10 @@ public class MainActivity extends BridgeActivity {
         taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
         taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);
         taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getPackageName());
-        if (taraUsingOnDevice) {
-            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
-        }
+        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
+        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 8000L);
+        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 6000L);
+        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 12000L);
 
         taraRecognizer.setRecognitionListener(new RecognitionListener() {
             @Override
@@ -229,19 +216,23 @@ public class MainActivity extends BridgeActivity {
                 taraPartialWakeDispatched = false;
                 if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) return;
 
-                if (shouldFallbackFromOnDevice(error)) {
-                    taraConsecutiveErrors += 1;
-                    if (taraConsecutiveErrors >= 2) {
-                        fallbackToSystemRecognizer();
-                        return;
-                    }
-                } else if (error != SpeechRecognizer.ERROR_NO_MATCH
-                        && error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT
-                        && error != SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
-                    taraConsecutiveErrors += 1;
+                taraConsecutiveErrors += 1;
+                if (error == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED
+                        || error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE) {
+                    requestTaraLanguageModel();
+                    scheduleTaraRestart(6000L);
+                    return;
                 }
 
-                long delay = error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY ? 1200L : 450L;
+                long delay;
+                if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
+                    delay = 1800L;
+                } else if (error == SpeechRecognizer.ERROR_NO_MATCH
+                        || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                    delay = 1800L;
+                } else {
+                    delay = Math.min(8000L, 1800L + (taraConsecutiveErrors * 800L));
+                }
                 scheduleTaraRestart(delay);
             }
 
@@ -255,7 +246,7 @@ public class MainActivity extends BridgeActivity {
                 if (!taraSpeaking && matches != null && !taraPartialWakeDispatched) {
                     for (String match : matches) {
                         if (match != null && !match.trim().isEmpty()) {
-                            dispatchTaraTranscriptDebounced(match.trim());
+                            dispatchTaraTranscriptDebounced(canonicalizeTaraTranscript(match));
                             break;
                         }
                     }
@@ -263,7 +254,7 @@ public class MainActivity extends BridgeActivity {
 
                 taraConsecutiveErrors = 0;
                 taraPartialWakeDispatched = false;
-                scheduleTaraRestart(300L);
+                scheduleTaraRestart(1200L);
             }
 
             @Override
@@ -274,13 +265,10 @@ public class MainActivity extends BridgeActivity {
                         : partialResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                 if (matches == null) return;
 
-                // Short wake-word utterances are often returned only as partial
-                // results on Samsung/Google recognizers. Dispatch them immediately
-                // instead of waiting for a final result that may become NO_MATCH.
                 for (String match : matches) {
                     if (isSimpleTaraWakePhrase(match)) {
                         taraPartialWakeDispatched = true;
-                        dispatchTaraTranscriptDebounced(match.trim());
+                        dispatchTaraTranscriptDebounced("Tara");
                         break;
                     }
                 }
@@ -292,33 +280,50 @@ public class MainActivity extends BridgeActivity {
         });
     }
 
-    private boolean shouldFallbackFromOnDevice(int error) {
-        if (!taraUsingOnDevice) return false;
-        return error == SpeechRecognizer.ERROR_AUDIO
-                || error == SpeechRecognizer.ERROR_CLIENT
-                || error == SpeechRecognizer.ERROR_SERVER
-                || error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED
-                || error == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED
-                || error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE;
+    private void requestTaraLanguageModel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+                || taraRecognizer == null
+                || taraRecognizerIntent == null) return;
+        try {
+            taraRecognizer.triggerModelDownload(taraRecognizerIntent);
+        } catch (Exception ignored) {
+        }
     }
 
-    private void fallbackToSystemRecognizer() {
-        stopTaraRecognizer();
-        setupTaraRecognizer(false);
-        taraConsecutiveErrors = 0;
-        scheduleTaraRestart(400L);
+    /**
+     * Normalise common speech-recognition interpretations of the short name Tara.
+     * This is intentionally restricted to the first word so ordinary speech is not
+     * broadly rewritten or accidentally treated as a wake command.
+     */
+    private String canonicalizeTaraTranscript(String raw) {
+        if (raw == null) return "";
+        String clean = raw.trim();
+        if (clean.isEmpty()) return clean;
+
+        String normalized = clean.toLowerCase(Locale.ROOT);
+        String[] variants = new String[]{"tara", "thara", "sarah", "terra", "tiara", "taira", "dara"};
+        for (String variant : variants) {
+            if (normalized.equals(variant)) return "Tara";
+            if (normalized.equals("hey " + variant)) return "Tara";
+            if (normalized.startsWith(variant + " ")) {
+                return "Tara " + clean.substring(variant.length()).trim();
+            }
+            String heyVariant = "hey " + variant + " ";
+            if (normalized.startsWith(heyVariant)) {
+                return "Tara " + clean.substring(heyVariant.length()).trim();
+            }
+        }
+        return clean;
     }
 
     private boolean isSimpleTaraWakePhrase(String raw) {
         if (raw == null) return false;
-        String normalized = raw.trim().toLowerCase(Locale.ROOT)
+        String canonical = canonicalizeTaraTranscript(raw);
+        String normalized = canonical.trim().toLowerCase(Locale.ROOT)
                 .replaceAll("[\\p{Punct}\\s]+", " ")
                 .trim();
         if (normalized.length() > 18) return false;
         return normalized.equals("tara")
-                || normalized.equals("thara")
-                || normalized.equals("hey tara")
-                || normalized.equals("hey thara")
                 || normalized.equals("താര")
                 || normalized.equals("താരാ")
                 || normalized.equals("தாரா")
@@ -326,7 +331,9 @@ public class MainActivity extends BridgeActivity {
     }
 
     public boolean isTaraVoiceAvailable() {
-        return SpeechRecognizer.isRecognitionAvailable(this);
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                && SpeechRecognizer.isRecognitionAvailable(this)
+                && SpeechRecognizer.isOnDeviceRecognitionAvailable(this);
     }
 
     public void setTaraEnabled(boolean enabled) {
@@ -348,13 +355,13 @@ public class MainActivity extends BridgeActivity {
         if (speaking) {
             stopTaraRecognizer();
         } else {
-            scheduleTaraRestart(250L);
+            scheduleTaraRestart(450L);
         }
     }
 
     private void startTaraRecognizerIfReady() {
         if (!taraEnabled || !taraResumed || taraSpeaking || taraListening) return;
-        if (taraRecognizer == null) setupTaraRecognizer(true);
+        if (taraRecognizer == null) setupTaraRecognizer();
         if (taraRecognizer == null || taraRecognizerIntent == null) return;
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
 
@@ -366,18 +373,14 @@ public class MainActivity extends BridgeActivity {
         } catch (Exception ignored) {
             taraListening = false;
             taraConsecutiveErrors += 1;
-            if (taraUsingOnDevice && taraConsecutiveErrors >= 2) {
-                fallbackToSystemRecognizer();
-            } else {
-                scheduleTaraRestart(750L);
-            }
+            scheduleTaraRestart(Math.min(8000L, 1800L + (taraConsecutiveErrors * 800L)));
         }
     }
 
     private void scheduleTaraRestart(long delayMs) {
         taraHandler.removeCallbacks(taraRestartRunnable);
         if (!taraEnabled || !taraResumed || taraSpeaking) return;
-        taraHandler.postDelayed(taraRestartRunnable, Math.max(250L, delayMs));
+        taraHandler.postDelayed(taraRestartRunnable, Math.max(800L, delayMs));
     }
 
     private void stopTaraRecognizer() {
@@ -408,9 +411,11 @@ public class MainActivity extends BridgeActivity {
         }
         taraRecognizer = null;
         taraRecognizerIntent = null;
+        taraUsingOnDevice = false;
     }
 
     private void dispatchTaraTranscriptDebounced(String text) {
+        if (text == null || text.trim().isEmpty()) return;
         long now = System.currentTimeMillis();
         if (now - taraLastTranscriptAt < 700L) return;
         taraLastTranscriptAt = now;
@@ -429,7 +434,7 @@ public class MainActivity extends BridgeActivity {
     public void onResume() {
         super.onResume();
         taraResumed = true;
-        scheduleTaraRestart(250L);
+        scheduleTaraRestart(500L);
     }
 
     @Override
@@ -452,7 +457,7 @@ public class MainActivity extends BridgeActivity {
         if (requestCode == REQUEST_RECORD_AUDIO
                 && grantResults.length > 0
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            scheduleTaraRestart(250L);
+            scheduleTaraRestart(500L);
         }
     }
 
@@ -463,11 +468,6 @@ public class MainActivity extends BridgeActivity {
         handleNotificationIntent(intent);
     }
 
-    /**
-     * Route notification taps into the exact CentralHub page supplied by the push
-     * payload. Only CentralHub-relative URLs or the CentralHub HTTPS origin are
-     * accepted, so a push payload cannot turn the native app into an open redirect.
-     */
     private void handleNotificationIntent(Intent intent) {
         if (intent == null) return;
         String actionUrl = intent.getStringExtra(EXTRA_ACTION_URL);
@@ -502,10 +502,6 @@ public class MainActivity extends BridgeActivity {
         return null;
     }
 
-    /**
-     * Keep Android Back inside the WebView while there is an in-app page to
-     * return to. Only the root page is allowed to close the activity.
-     */
     @Override
     @SuppressWarnings("deprecation")
     public void onBackPressed() {
@@ -520,8 +516,6 @@ public class MainActivity extends BridgeActivity {
             return;
         }
 
-        // Next.js client navigation can use the History API. If WebView's
-        // native history stack has not caught up yet, ask the page directly.
         webView.evaluateJavascript(
                 "(window.history && window.history.length > 1) ? 'true' : 'false'",
                 value -> {
