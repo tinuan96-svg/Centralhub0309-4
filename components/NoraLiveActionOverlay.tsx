@@ -19,6 +19,7 @@ type ActionSession = {
   approval_reason: string | null;
   screenshot_url: string | null;
   last_error: string | null;
+  completed_at: string | null;
   updated_at: string;
 };
 
