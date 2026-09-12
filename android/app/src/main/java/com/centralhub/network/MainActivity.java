@@ -54,6 +54,9 @@ public class MainActivity extends BridgeActivity {
 
         WebSettings webSettings = bridge.getWebView().getSettings();
         webSettings.setUseWideViewPort(true);
+        // Shruthi cloud TTS is generated after an authenticated network round-trip.
+        // Allow the trusted CentralHub WebView to play that assistant audio without a second tap.
+        webSettings.setMediaPlaybackRequiresUserGesture(false);
         int screenWidthDp = getResources().getConfiguration().screenWidthDp;
         if (screenWidthDp >= 600) {
             webSettings.setLoadWithOverviewMode(true);

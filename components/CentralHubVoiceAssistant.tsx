@@ -23,6 +23,13 @@ type AssistantReply = {
   upstream_code?: string | null;
 };
 
+type ShruthiSpeechReply = {
+  success?: boolean;
+  audioBase64?: string;
+  mimeType?: string;
+  voice?: string;
+  error?: string;
+};
 type NativeBridge = {
   getAppId?: () => string;
   getPlatform?: () => string;
@@ -145,6 +152,15 @@ async function invokeVoice(body: Record<string, unknown>): Promise<AssistantRepl
   return (data || {}) as AssistantReply;
 }
 
+async function invokeShruthiSpeech(text: string): Promise<ShruthiSpeechReply> {
+  const headers = await getVoiceAuthHeaders();
+  const { data, error } = await supabase.functions.invoke('centralhub-shruthi-speech', {
+    body: { text },
+    headers,
+  });
+  if (error) throw new Error(error.message || 'Shruthi speech request failed.');
+  return (data || {}) as ShruthiSpeechReply;
+}
 function inferMode(pathname: string, text: string): AssistantMode {
   const value = `${pathname} ${text}`.toLowerCase();
   if (/developer|github|supabase|netlify|deploy|code|schema|api|webhook|integration/.test(value)) return 'developer';
@@ -210,6 +226,8 @@ export default function CentralHubVoiceAssistant() {
   const noraSessionRef = useRef(false);
   const responseRef = useRef<AssistantReply | null>(null);
   const themeRef = useRef<NoraThemeId>('signature');
+  const cloudAudioRef = useRef<HTMLAudioElement | null>(null);
+  const cloudAudioUrlRef = useRef<string | null>(null);
 
   const theme = useMemo(() => THEMES.find((item) => item.id === themeId) || THEMES[0], [themeId]);
   const prompts = useMemo(() => quickPrompts(pathname), [pathname]);
@@ -248,14 +266,24 @@ export default function CentralHubVoiceAssistant() {
   }, []);
 
   const stopSpeech = useCallback(() => {
-    if (speechVisualTimerRef.current) window.clearTimeout(speechVisualTimerRef.current);
-    speechVisualTimerRef.current = null;
-    setSpeaking(false);
-    window.speechSynthesis?.cancel();
-    const bridge = getNativeBridge();
-    bridge?.stopTaraTts?.();
-    bridge?.setTaraSpeaking?.(false);
-  }, []);
+  if (speechVisualTimerRef.current) window.clearTimeout(speechVisualTimerRef.current);
+  speechVisualTimerRef.current = null;
+  const cloudAudio = cloudAudioRef.current;
+  if (cloudAudio) {
+    try { cloudAudio.pause(); } catch { }
+    cloudAudio.src = '';
+    cloudAudioRef.current = null;
+  }
+  if (cloudAudioUrlRef.current) {
+    URL.revokeObjectURL(cloudAudioUrlRef.current);
+    cloudAudioUrlRef.current = null;
+  }
+  setSpeaking(false);
+  window.speechSynthesis?.cancel();
+  const bridge = getNativeBridge();
+  bridge?.stopTaraTts?.();
+  bridge?.setTaraSpeaking?.(false);
+}, []);
 
   useEffect(() => () => {
     stopTracks();
@@ -263,36 +291,44 @@ export default function CentralHubVoiceAssistant() {
   }, [stopSpeech, stopTracks]);
 
   const speak = useCallback((text: string) => {
-    if (!text || typeof window === 'undefined' || !autoSpeak) {
-      stopSpeech();
-      return;
-    }
+  if (!text || typeof window === 'undefined' || !autoSpeak) {
+    stopSpeech();
+    return;
+  }
 
-    const bridge = getNativeBridge();
-    const hasMalayalam = /[\u0D00-\u0D7F]/.test(text);
-    const language = hasMalayalam ? 'ml-IN' : 'en-GB';
-    setSpeaking(true);
+  const bridge = getNativeBridge();
+  const hasMalayalam = /[\u0D00-\u0D7F]/.test(text);
+  const language = hasMalayalam ? 'ml-IN' : 'en-GB';
+  stopSpeech();
+  setSpeaking(true);
+  bridge?.setTaraSpeaking?.(true);
 
+  const finish = () => {
+    bridge?.setTaraSpeaking?.(false);
     if (speechVisualTimerRef.current) window.clearTimeout(speechVisualTimerRef.current);
-    const estimatedMs = Math.min(22_000, Math.max(1800, text.length * 58));
-    speechVisualTimerRef.current = window.setTimeout(() => setSpeaking(false), estimatedMs);
+    speechVisualTimerRef.current = null;
+    setSpeaking(false);
+  };
 
+  if (speechVisualTimerRef.current) window.clearTimeout(speechVisualTimerRef.current);
+  const estimatedMs = Math.min(30_000, Math.max(2200, text.length * 62));
+  speechVisualTimerRef.current = window.setTimeout(finish, estimatedMs);
+
+  const fallbackToLocalFemale = () => {
     if (bridge?.getPlatform?.() === 'android' && bridge?.speakTara) {
       window.speechSynthesis?.cancel();
       try {
         if (bridge.speakTara(text, language)) return;
       } catch {
-        // Fall through to Web Speech when native TTS is not ready.
+        // Fall through to browser female voice only.
       }
     }
 
     if (!('speechSynthesis' in window)) {
-      bridge?.setTaraSpeaking?.(false);
-      setSpeaking(false);
+      finish();
       return;
     }
 
-    bridge?.setTaraSpeaking?.(true);
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = language;
@@ -301,24 +337,51 @@ export default function CentralHubVoiceAssistant() {
     utterance.volume = 1;
     const preferred = pickExecutiveVoice(window.speechSynthesis.getVoices(), language);
     if (!preferred) {
-      bridge?.setTaraSpeaking?.(false);
-      if (speechVisualTimerRef.current) window.clearTimeout(speechVisualTimerRef.current);
-      speechVisualTimerRef.current = null;
-      setSpeaking(false);
+      finish();
       return;
     }
     utterance.voice = preferred;
-
-    const finish = () => {
-      bridge?.setTaraSpeaking?.(false);
-      if (speechVisualTimerRef.current) window.clearTimeout(speechVisualTimerRef.current);
-      speechVisualTimerRef.current = null;
-      setSpeaking(false);
-    };
     utterance.onend = finish;
     utterance.onerror = finish;
     window.speechSynthesis.speak(utterance);
-  }, [autoSpeak, stopSpeech]);
+  };
+
+  void (async () => {
+    try {
+      const speech = await invokeShruthiSpeech(text);
+      if (!speech.success || !speech.audioBase64) throw new Error(speech.error || 'No speech audio returned.');
+
+      const binary = atob(speech.audioBase64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: speech.mimeType || 'audio/mpeg' });
+      const url = URL.createObjectURL(blob);
+      cloudAudioUrlRef.current = url;
+      const audio = new Audio(url);
+      cloudAudioRef.current = audio;
+      audio.preload = 'auto';
+      audio.onended = () => {
+        if (cloudAudioRef.current === audio) cloudAudioRef.current = null;
+        if (cloudAudioUrlRef.current === url) {
+URL.revokeObjectURL(url);
+cloudAudioUrlRef.current = null;
+        }
+        finish();
+      };
+      audio.onerror = () => {
+        if (cloudAudioRef.current === audio) cloudAudioRef.current = null;
+        if (cloudAudioUrlRef.current === url) {
+URL.revokeObjectURL(url);
+cloudAudioUrlRef.current = null;
+        }
+        fallbackToLocalFemale();
+      };
+      await audio.play();
+    } catch {
+      fallbackToLocalFemale();
+    }
+  })();
+}, [autoSpeak, stopSpeech]);
 
   const runCommand = useCallback(async (text: string) => {
     const clean = text.trim();
