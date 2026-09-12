@@ -1,0 +1,3 @@
+Shruthi native wake/voice safety release marker.
+
+This release includes explicit Shruthi/Sruthi/Shruti wake recognition, NORA as a narrow legacy alias, removal of Tara/Thara wake aliases, session-close protection against ambient reopening, and male TTS fallback blocking.
