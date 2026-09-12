@@ -1,79 +1,15 @@
 'use client';
 
-import { useEffect } from 'react';
-
-const SHRUTHI_NAME = 'Shruthi';
-
-function replaceAttribute(el: Element, name: string) {
-  const value = el.getAttribute(name);
-  if (!value || !/nora/i.test(value)) return;
-  el.setAttribute(name, value.replace(/NORA/gi, SHRUTHI_NAME).replace(/Nora/g, SHRUTHI_NAME));
-}
-
-function applyShruthiIdentity() {
-  const screen = document.querySelector('.nora-screen');
-  if (screen) {
-    screen.setAttribute('aria-label', 'Shruthi AI Executive Assistant');
-
-    const title = screen.querySelector('h2');
-    if (title) title.textContent = 'SHRUTHI · ശ്രുതി';
-
-    screen.querySelectorAll('.nora-processing-card').forEach((el) => {
-      if (/NORA/i.test(el.textContent || '')) {
-        el.textContent = (el.textContent || '').replace(/NORA/gi, 'Shruthi');
-      }
-    });
-
-    screen.querySelectorAll('.nora-card-label').forEach((el) => {
-      if ((el.textContent || '').trim().toUpperCase() === 'NORA') el.textContent = 'SHRUTHI';
-    });
-
-    // Keep the current native wake cue truthful until Picovoice owner-lock is active.
-    // NORA remains a supported legacy wake alias during the migration to Shruthi.
-
-    screen.querySelectorAll('input[placeholder], button[aria-label], [title]').forEach((el) => {
-      replaceAttribute(el, 'placeholder');
-      replaceAttribute(el, 'aria-label');
-      replaceAttribute(el, 'title');
-    });
-  }
-
-  document.querySelectorAll('button[aria-label], img[alt], input[placeholder]').forEach((el) => {
-    replaceAttribute(el, 'aria-label');
-    replaceAttribute(el, 'alt');
-    replaceAttribute(el, 'placeholder');
-  });
-
-  document.querySelectorAll('h2, span, p, div').forEach((el) => {
-    if (el.children.length) return;
-    const text = (el.textContent || '').trim();
-    if (!text) return;
-    if (text === 'NORA · Live Action') el.textContent = 'SHRUTHI · Live Action';
-    else if (text === 'NORA LIVE ACTION') el.textContent = 'SHRUTHI LIVE ACTION';
-    else if (text === 'NORA is preparing the browser view') el.textContent = 'Shruthi is preparing the browser view';
-    else if (text === 'NORA needs your input') el.textContent = 'Shruthi needs your input';
-  });
-
-  document.querySelectorAll('button[aria-label*="Shruthi"]').forEach((el) => {
-    const label = el.getAttribute('aria-label') || '';
-    if (/^(Open|Talk to) Shruthi/i.test(label)) el.classList.add('shruthi-launcher');
-  });
-}
-
+/**
+ * Visual-only Shruthi skin.
+ *
+ * Keep this component free of DOM mutation observers. The assistant is highly
+ * dynamic while listening/processing/speaking, and repeatedly rewriting its
+ * DOM from a MutationObserver can create a self-triggering render loop that
+ * blocks pointer input. User-facing text is owned by the React components;
+ * this file only paints the approved Shruthi imagery.
+ */
 export default function ShruthiIdentitySkin() {
-  useEffect(() => {
-    applyShruthiIdentity();
-    const observer = new MutationObserver(() => applyShruthiIdentity());
-    observer.observe(document.body, {
-      subtree: true,
-      childList: true,
-      characterData: true,
-      attributes: true,
-      attributeFilter: ['aria-label', 'placeholder', 'alt', 'title'],
-    });
-    return () => observer.disconnect();
-  }, []);
-
   return (
     <style jsx global>{`
       .nora-screen::after {
@@ -100,6 +36,7 @@ export default function ShruthiIdentitySkin() {
         inset: 0;
         z-index: 3;
         border-radius: inherit;
+        pointer-events: none;
         background:
           linear-gradient(180deg, rgba(3,8,18,.02), rgba(3,8,18,.28)),
           url('/shruthi-avatar.png') center 30% / cover no-repeat;
@@ -124,26 +61,12 @@ export default function ShruthiIdentitySkin() {
         z-index: 5;
         opacity: .12 !important;
         mix-blend-mode: screen;
+        pointer-events: none;
       }
 
       .nora-speaking .nora-orb-core::after,
       .nora-listening .nora-orb-core::after {
         animation: shruthi-soft-glow 1.9s ease-in-out infinite;
-      }
-
-      .shruthi-launcher {
-        background-image:
-          linear-gradient(180deg, rgba(4,11,24,.02), rgba(4,11,24,.25)),
-          url('/shruthi-avatar.png') !important;
-        background-position: center 28% !important;
-        background-size: cover !important;
-        color: transparent !important;
-        border-color: rgba(125,211,252,.55) !important;
-        box-shadow: 0 0 0 2px rgba(87,184,255,.12), 0 0 28px rgba(43,147,255,.32) !important;
-      }
-
-      .shruthi-launcher svg {
-        opacity: 0;
       }
 
       @keyframes shruthi-soft-glow {
