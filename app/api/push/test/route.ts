@@ -10,6 +10,15 @@ function isInvalidFirebaseToken(result: { status?: number; error?: string }) {
   return result.status === 404 || /UNREGISTERED|registration-token-not-registered|not a valid FCM registration token/i.test(result.error || '');
 }
 
+function summarizePushResult(result: any) {
+  return {
+    id: result?.id || null,
+    ok: Boolean(result?.ok),
+    status: Number.isFinite(Number(result?.status)) ? Number(result.status) : null,
+    error: result?.error ? String(result.error).slice(0, 300) : null,
+  };
+}
+
 export async function POST(req: Request) {
   if (process.env.NEXT_OUTPUT?.trim() === 'export') {
     return new Response('Not available in static export', { status: 404 });
@@ -44,6 +53,7 @@ export async function POST(req: Request) {
       metadata: {
         source: 'centralhub-push-test',
         created_at: createdAt,
+        delivery_state: 'attempting',
       },
     })
     .select('id, title, message, action_url, severity, category')
@@ -114,21 +124,49 @@ export async function POST(req: Request) {
     }
   }
 
-  const sent = webResults.filter((result) => result.ok).length
-    + nativeResults.filter((result) => result.ok).length;
+  const webSent = webResults.filter((result) => result.ok).length;
+  const nativeSent = nativeResults.filter((result) => result.ok).length;
+  const sent = webSent + nativeSent;
   const attempted = (webConfig.configured ? webResults.length : 0) + (firebaseConfig.configured ? nativeResults.length : 0);
+  const completedAt = new Date().toISOString();
+
+  // Persist the provider acknowledgement so a push test can be verified later
+  // from Supabase instead of relying only on the transient browser response.
+  const { error: auditError } = await supabase
+    .from('system_notifications')
+    .update({
+      metadata: {
+        source: 'centralhub-push-test',
+        created_at: createdAt,
+        completed_at: completedAt,
+        delivery_state: sent > 0 ? 'accepted' : 'failed',
+        provider_accepted: sent > 0,
+        attempted,
+        sent,
+        web_configured: webConfig.configured,
+        native_configured: firebaseConfig.configured,
+        web_attempted: webResults.length,
+        web_sent: webSent,
+        native_attempted: nativeResults.length,
+        native_sent: nativeSent,
+        web_results: webResults.map(summarizePushResult),
+        native_results: nativeResults.map(summarizePushResult),
+      },
+    })
+    .eq('id', notification.id);
 
   return NextResponse.json({
     success: sent > 0,
     notification_id: notification.id,
     sent,
     attempted,
-    web_sent: webResults.filter((result) => result.ok).length,
-    native_sent: nativeResults.filter((result) => result.ok).length,
+    web_sent: webSent,
+    native_sent: nativeSent,
     native_configured: firebaseConfig.configured,
     web_configured: webConfig.configured,
     enabled_native_devices: nativeDevices?.length || 0,
     enabled_web_subscriptions: subscriptions?.length || 0,
+    delivery_audit_saved: !auditError,
     web_results: webResults,
     native_results: nativeResults,
     error: sent > 0 ? undefined : 'No configured push provider accepted the test.',
