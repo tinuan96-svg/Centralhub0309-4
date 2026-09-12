@@ -30,6 +30,8 @@ public class MainActivity extends BridgeActivity {
     private static final int REQUEST_POST_NOTIFICATIONS = 4101;
     private static final int REQUEST_RECORD_AUDIO = 4102;
 
+    // Bridge method names remain Tara-compatible so installed web/native versions can
+    // overlap during rollout. NORA is now the primary product name and wake phrase.
     private final Handler taraHandler = new Handler(Looper.getMainLooper());
     private final Runnable taraRestartRunnable = this::startTaraRecognizerIfReady;
     private SpeechRecognizer taraRecognizer;
@@ -39,7 +41,6 @@ public class MainActivity extends BridgeActivity {
     private boolean taraSpeaking = false;
     private boolean taraResumed = false;
     private boolean taraListening = false;
-    private boolean taraUsingOnDevice = false;
     private boolean taraPartialWakeDispatched = false;
     private boolean taraSegmentedSession = false;
     private int taraConsecutiveErrors = 0;
@@ -83,7 +84,7 @@ public class MainActivity extends BridgeActivity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
-                String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase();
+                String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
                 if ("http".equals(scheme) || "https".equals(scheme)) {
                     return false;
                 }
@@ -129,15 +130,15 @@ public class MainActivity extends BridgeActivity {
                             }
                             try {
                                 return new WebResourceResponse(
-                                    "text/html",
-                                    "utf-8",
-                                    getAssets().open(assetPath)
+                                        "text/html",
+                                        "utf-8",
+                                        getAssets().open(assetPath)
                                 );
                             } catch (Exception e) {
                                 return new WebResourceResponse(
-                                    "text/html",
-                                    "utf-8",
-                                    getAssets().open("public/index.html")
+                                        "text/html",
+                                        "utf-8",
+                                        getAssets().open("public/index.html")
                                 );
                             }
                         }
@@ -162,11 +163,12 @@ public class MainActivity extends BridgeActivity {
     }
 
     /**
-     * Tara passive wake listening uses the on-device recognizer only. On Android
-     * 13+ it requests a long segmented session so Samsung/Google recognition does
-     * not repeatedly tear down and restart every few seconds (the source of the
-     * audible double-beep loop). Partial/segment results are still delivered while
-     * the long session remains open.
+     * Passive wake listening uses Android's on-device recognizer. NORA is the
+     * primary wake phrase. Legacy Tara variants are accepted only as a migration
+     * compatibility alias so older spoken habits do not break abruptly.
+     *
+     * On Android 13+ a long segmented session avoids the repeated short recognizer
+     * recycle that produced Samsung's audible double-beep loop.
      */
     private void setupTaraRecognizer() {
         destroyTaraRecognizer();
@@ -175,10 +177,8 @@ public class MainActivity extends BridgeActivity {
 
         try {
             taraRecognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(this);
-            taraUsingOnDevice = true;
         } catch (Exception ignored) {
             taraRecognizer = null;
-            taraUsingOnDevice = false;
         }
         if (taraRecognizer == null) return;
 
@@ -194,10 +194,19 @@ public class MainActivity extends BridgeActivity {
             taraRecognizerIntent.putStringArrayListExtra(
                     RecognizerIntent.EXTRA_BIASING_STRINGS,
                     new ArrayList<>(Arrays.asList(
+                            "NORA",
+                            "Nora",
+                            "Norah",
+                            "Noora",
+                            "Noura",
+                            "Hey NORA",
+                            "Hey Nora",
+                            "നോറ",
+                            "നോറാ",
+                            "நோரா",
+                            // Legacy compatibility aliases.
                             "Tara",
                             "Thara",
-                            "Hey Tara",
-                            "Hey Thara",
                             "താര",
                             "താരാ",
                             "தாரா"
@@ -265,7 +274,7 @@ public class MainActivity extends BridgeActivity {
 
             @Override
             public void onResults(Bundle results) {
-                processTaraRecognitionBundle(results);
+                processNoraRecognitionBundle(results);
                 taraListening = false;
                 taraConsecutiveErrors = 0;
                 taraPartialWakeDispatched = false;
@@ -281,9 +290,9 @@ public class MainActivity extends BridgeActivity {
                 if (matches == null) return;
 
                 for (String match : matches) {
-                    if (isSimpleTaraWakePhrase(match)) {
+                    if (isSimpleNoraWakePhrase(match)) {
                         taraPartialWakeDispatched = true;
-                        dispatchTaraTranscriptDebounced("Tara");
+                        dispatchTaraTranscriptDebounced("NORA");
                         break;
                     }
                 }
@@ -291,7 +300,7 @@ public class MainActivity extends BridgeActivity {
 
             @Override
             public void onSegmentResults(Bundle segmentResults) {
-                processTaraRecognitionBundle(segmentResults);
+                processNoraRecognitionBundle(segmentResults);
                 taraConsecutiveErrors = 0;
                 taraPartialWakeDispatched = false;
                 taraListening = true;
@@ -311,7 +320,7 @@ public class MainActivity extends BridgeActivity {
         });
     }
 
-    private void processTaraRecognitionBundle(Bundle results) {
+    private void processNoraRecognitionBundle(Bundle results) {
         ArrayList<String> matches = results == null
                 ? null
                 : results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
@@ -319,8 +328,8 @@ public class MainActivity extends BridgeActivity {
 
         for (String match : matches) {
             if (match == null || match.trim().isEmpty()) continue;
-            String canonical = canonicalizeTaraTranscript(match);
-            if (taraPartialWakeDispatched && "Tara".equalsIgnoreCase(canonical.trim())) {
+            String canonical = canonicalizeNoraTranscript(match);
+            if (taraPartialWakeDispatched && "NORA".equalsIgnoreCase(canonical.trim())) {
                 return;
             }
             dispatchTaraTranscriptDebounced(canonical);
@@ -338,39 +347,54 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
-    private String canonicalizeTaraTranscript(String raw) {
+    private String canonicalizeNoraTranscript(String raw) {
         if (raw == null) return "";
         String clean = raw.trim();
         if (clean.isEmpty()) return clean;
 
         String normalized = clean.toLowerCase(Locale.ROOT);
-        String[] variants = new String[]{"tara", "thara", "sarah", "terra", "tiara", "taira", "dara"};
-        for (String variant : variants) {
-            if (normalized.equals(variant)) return "Tara";
-            if (normalized.equals("hey " + variant)) return "Tara";
+        String[] noraVariants = new String[]{"nora", "norah", "noora", "noura", "norra", "nora's"};
+        for (String variant : noraVariants) {
+            if (normalized.equals(variant) || normalized.equals("hey " + variant)) return "NORA";
             if (normalized.startsWith(variant + " ")) {
-                return "Tara " + clean.substring(variant.length()).trim();
+                return "NORA " + clean.substring(variant.length()).trim();
             }
             String heyVariant = "hey " + variant + " ";
             if (normalized.startsWith(heyVariant)) {
-                return "Tara " + clean.substring(heyVariant.length()).trim();
+                return "NORA " + clean.substring(heyVariant.length()).trim();
+            }
+        }
+
+        if (normalized.equals("നോറ") || normalized.equals("നോറാ") || normalized.equals("நோரா")) {
+            return "NORA";
+        }
+
+        // Legacy Tara recognition is mapped to NORA only during the migration.
+        String[] legacyVariants = new String[]{"tara", "thara", "sarah", "terra", "tiara", "taira", "dara"};
+        for (String variant : legacyVariants) {
+            if (normalized.equals(variant) || normalized.equals("hey " + variant)) return "NORA";
+            if (normalized.startsWith(variant + " ")) {
+                return "NORA " + clean.substring(variant.length()).trim();
+            }
+            String heyVariant = "hey " + variant + " ";
+            if (normalized.startsWith(heyVariant)) {
+                return "NORA " + clean.substring(heyVariant.length()).trim();
             }
         }
         return clean;
     }
 
-    private boolean isSimpleTaraWakePhrase(String raw) {
+    private boolean isSimpleNoraWakePhrase(String raw) {
         if (raw == null) return false;
-        String canonical = canonicalizeTaraTranscript(raw);
+        String canonical = canonicalizeNoraTranscript(raw);
         String normalized = canonical.trim().toLowerCase(Locale.ROOT)
                 .replaceAll("[\\p{Punct}\\s]+", " ")
                 .trim();
         if (normalized.length() > 18) return false;
-        return normalized.equals("tara")
-                || normalized.equals("താര")
-                || normalized.equals("താരാ")
-                || normalized.equals("தாரா")
-                || normalized.equals("தார");
+        return normalized.equals("nora")
+                || normalized.equals("നോറ")
+                || normalized.equals("നോറാ")
+                || normalized.equals("நோரா");
     }
 
     public boolean isTaraVoiceAvailable() {
@@ -454,7 +478,6 @@ public class MainActivity extends BridgeActivity {
         }
         taraRecognizer = null;
         taraRecognizerIntent = null;
-        taraUsingOnDevice = false;
         taraSegmentedSession = false;
     }
 
@@ -470,6 +493,7 @@ public class MainActivity extends BridgeActivity {
         WebView webView = bridge == null ? null : bridge.getWebView();
         if (webView == null || text == null || text.trim().isEmpty()) return;
         String quoted = JSONObject.quote(text.trim());
+        // Keep the legacy event name during rollout; web clients map the payload to NORA.
         String script = "window.dispatchEvent(new CustomEvent('centralhub:tara-transcript',{detail:{text:" + quoted + "}}));";
         webView.post(() -> webView.evaluateJavascript(script, null));
     }
