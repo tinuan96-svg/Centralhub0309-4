@@ -21,6 +21,12 @@ type VoiceProfile = {
   samples: number;
 };
 
+type SettledTurn = {
+  text: string;
+  segments: number;
+  elapsed: number;
+};
+
 const EVENT_NAME = 'centralhub:tara-transcript';
 const PROFILE_KEY = 'centralhub:nora-voice-profile-v1';
 const DEFAULT_PROFILE: VoiceProfile = { version: 1, avgGapMs: 900, avgWords: 8, samples: 0 };
@@ -125,7 +131,7 @@ function settleDelay(text: string, profile: VoiceProfile, segmentCount: number) 
 
   if (CONTINUATION_END.test(body)) delay += 520;
   if (COMPLETE_HINT.test(body)) delay -= 180;
-  if (STOP_WORDS.test(clean)) delay = Math.min(delay, 450);
+  if (STOP_WORDS.test(clean)) delay = Math.min(delay, 500);
   if (segmentCount > 1) delay += Math.min(260, (segmentCount - 1) * 70);
 
   return Math.round(clamp(delay, 650, 2400));
@@ -142,12 +148,18 @@ export default function NoraAdaptiveVoiceNormalizer() {
     let segmentCount = 0;
     let firstPendingAt = 0;
     let lastRawAt = 0;
-    let timer: number | null = null;
-    let busyWaitStartedAt = 0;
+    let settleTimer: number | null = null;
+    let drainTimer: number | null = null;
+    let queuedTurns: SettledTurn[] = [];
 
-    const clearTimer = () => {
-      if (timer != null) window.clearTimeout(timer);
-      timer = null;
+    const clearSettleTimer = () => {
+      if (settleTimer != null) window.clearTimeout(settleTimer);
+      settleTimer = null;
+    };
+
+    const clearDrainTimer = () => {
+      if (drainTimer != null) window.clearTimeout(drainTimer);
+      drainTimer = null;
     };
 
     const updateGapProfile = (gapMs: number) => {
@@ -172,13 +184,14 @@ export default function NoraAdaptiveVoiceNormalizer() {
       saveProfile(profile);
     };
 
-    const dispatchSettled = (text: string, usedDelay: number, segments: number) => {
+    const dispatchSettled = (turn: SettledTurn) => {
+      updateWordsProfile(turn.text);
       window.dispatchEvent(new CustomEvent<TranscriptDetail>(EVENT_NAME, {
         detail: {
-          text,
+          text: turn.text,
           settled: true,
-          settle_ms: usedDelay,
-          segment_count: segments,
+          settle_ms: turn.elapsed,
+          segment_count: turn.segments,
           communication_style: {
             avg_gap_ms: Math.round(profile.avgGapMs),
             avg_words: Number(profile.avgWords.toFixed(1)),
@@ -188,36 +201,54 @@ export default function NoraAdaptiveVoiceNormalizer() {
       }));
     };
 
-    const flush = () => {
-      clearTimer();
-      if (!pending) return;
-
-      const isStop = STOP_WORDS.test(pending);
-      if (!isStop && noraBusy()) {
-        if (!busyWaitStartedAt) busyWaitStartedAt = Date.now();
-        if (Date.now() - busyWaitStartedAt < 25_000) {
-          timer = window.setTimeout(flush, 420);
-          return;
-        }
+    const drainQueue = () => {
+      clearDrainTimer();
+      if (!queuedTurns.length) return;
+      if (noraBusy()) {
+        drainTimer = window.setTimeout(drainQueue, 420);
+        return;
       }
 
-      const text = pending.trim();
-      const segments = segmentCount;
-      const elapsed = firstPendingAt ? Date.now() - firstPendingAt : 0;
+      const next = queuedTurns.shift();
+      if (!next) return;
+      dispatchSettled(next);
+
+      // Let React apply Processing/Speaking state before evaluating the next queued turn.
+      if (queuedTurns.length) drainTimer = window.setTimeout(drainQueue, 650);
+    };
+
+    const enqueueTurn = (turn: SettledTurn) => {
+      if (!turn.text || NON_SEMANTIC.test(splitWake(turn.text).body)) return;
+      if (STOP_WORDS.test(turn.text)) {
+        // A stop/end instruction supersedes queued conversational turns, but still waits
+        // until the current response has finished so the assistant cannot drop it.
+        queuedTurns = [turn];
+      } else {
+        queuedTurns.push(turn);
+        if (queuedTurns.length > 6) queuedTurns = queuedTurns.slice(-6);
+      }
+      drainQueue();
+    };
+
+    const flush = () => {
+      clearSettleTimer();
+      if (!pending) return;
+
+      const turn: SettledTurn = {
+        text: pending.trim(),
+        segments: segmentCount,
+        elapsed: firstPendingAt ? Date.now() - firstPendingAt : 0,
+      };
       pending = '';
       segmentCount = 0;
       firstPendingAt = 0;
-      busyWaitStartedAt = 0;
-
-      if (!text || NON_SEMANTIC.test(splitWake(text).body)) return;
-      updateWordsProfile(text);
-      dispatchSettled(text, elapsed, segments);
+      enqueueTurn(turn);
     };
 
     const scheduleFlush = () => {
-      clearTimer();
+      clearSettleTimer();
       const delay = settleDelay(pending, profile, segmentCount);
-      timer = window.setTimeout(flush, delay);
+      settleTimer = window.setTimeout(flush, delay);
     };
 
     const onTranscript = (event: Event) => {
@@ -236,8 +267,8 @@ export default function NoraAdaptiveVoiceNormalizer() {
       const now = Date.now();
       const gap = lastRawAt ? now - lastRawAt : 0;
 
-      // A long silence means the earlier phrase was almost certainly a complete turn.
-      // Flush it first, then start a new turn instead of gluing unrelated speech together.
+      // A long silence closes the previous turn. It is queued instead of being glued
+      // to the next sentence, even when NORA is still processing/speaking.
       if (pending && gap > 2800) flush();
       else if (pending && gap) updateGapProfile(gap);
 
@@ -251,7 +282,9 @@ export default function NoraAdaptiveVoiceNormalizer() {
 
     window.addEventListener(EVENT_NAME, onTranscript as EventListener);
     return () => {
-      clearTimer();
+      clearSettleTimer();
+      clearDrainTimer();
+      queuedTurns = [];
       window.removeEventListener(EVENT_NAME, onTranscript as EventListener);
     };
   }, []);
