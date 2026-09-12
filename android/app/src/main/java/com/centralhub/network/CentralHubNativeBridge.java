@@ -21,6 +21,8 @@ public final class CentralHubNativeBridge {
     private final Context context;
     private TextToSpeech taraTts;
     private volatile boolean taraTtsReady = false;
+    private String pendingSpeech = "";
+    private String pendingLanguageTag = "en-GB";
 
     public CentralHubNativeBridge(MainActivity activity) {
         this.activity = activity;
@@ -32,10 +34,23 @@ public final class CentralHubNativeBridge {
         activity.runOnUiThread(() -> {
             taraTts = new TextToSpeech(context, status -> {
                 taraTtsReady = status == TextToSpeech.SUCCESS;
-                if (!taraTtsReady || taraTts == null) return;
+                if (!taraTtsReady || taraTts == null) {
+                    activity.setTaraSpeaking(false);
+                    return;
+                }
                 taraTts.setSpeechRate(0.93f);
                 taraTts.setPitch(1.04f);
                 taraTts.setLanguage(Locale.UK);
+
+                // The first wake reply can arrive before Android's TTS engine has
+                // finished initialising. Queue it instead of silently dropping it.
+                if (!pendingSpeech.isEmpty()) {
+                    String speech = pendingSpeech;
+                    String language = pendingLanguageTag;
+                    pendingSpeech = "";
+                    pendingLanguageTag = "en-GB";
+                    speakTara(speech, language);
+                }
             });
 
             taraTts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
@@ -90,9 +105,7 @@ public final class CentralHubNativeBridge {
     public long getVersionCode() {
         try {
             PackageInfo info = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                return info.getLongVersionCode();
-            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) return info.getLongVersionCode();
             return info.versionCode;
         } catch (Exception ignored) {
             return 0L;
@@ -130,15 +143,36 @@ public final class CentralHubNativeBridge {
     }
 
     @JavascriptInterface
-    public boolean speakTara(String text, String languageTag) {
-        if (text == null || text.trim().isEmpty() || !isTaraTtsReady()) return false;
-        final String speech = text.trim();
-        final Locale locale = resolveLocale(languageTag);
+    public boolean isTaraLanguageAvailable(String languageTag) {
+        TextToSpeech tts = taraTts;
+        if (!taraTtsReady || tts == null) return false;
+        Locale locale = resolveLocale(languageTag);
+        try {
+            return tts.isLanguageAvailable(locale) >= TextToSpeech.LANG_AVAILABLE;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
 
+    @JavascriptInterface
+    public boolean speakTara(String text, String languageTag) {
+        if (text == null || text.trim().isEmpty()) return false;
+        final String speech = text.trim();
+        final String requestedLanguage = languageTag == null || languageTag.trim().isEmpty() ? "en-GB" : languageTag.trim();
+
+        if (!isTaraTtsReady()) {
+            pendingSpeech = speech;
+            pendingLanguageTag = requestedLanguage;
+            activity.runOnUiThread(() -> activity.setTaraSpeaking(true));
+            return true;
+        }
+
+        final Locale locale = resolveLocale(requestedLanguage);
         activity.runOnUiThread(() -> {
             TextToSpeech tts = taraTts;
             if (tts == null || !taraTtsReady) {
-                activity.setTaraSpeaking(false);
+                pendingSpeech = speech;
+                pendingLanguageTag = requestedLanguage;
                 return;
             }
 
@@ -152,32 +186,26 @@ public final class CentralHubNativeBridge {
                     speech,
                     TextToSpeech.QUEUE_FLUSH,
                     null,
-                    "tara-" + UUID.randomUUID()
+                    "nora-" + UUID.randomUUID()
             );
-            if (result == TextToSpeech.ERROR) {
-                activity.setTaraSpeaking(false);
-            }
+            if (result == TextToSpeech.ERROR) activity.setTaraSpeaking(false);
         });
         return true;
     }
 
     @JavascriptInterface
     public void stopTaraTts() {
+        pendingSpeech = "";
+        pendingLanguageTag = "en-GB";
         activity.runOnUiThread(() -> {
             if (taraTts != null) {
-                try {
-                    taraTts.stop();
-                } catch (Exception ignored) {
-                }
+                try { taraTts.stop(); } catch (Exception ignored) { }
             }
             activity.setTaraSpeaking(false);
         });
     }
 
-    /**
-     * Launch NORA's visible browser-computer mode. Credentials stay in memory
-     * only for the lifetime of the Activity; NORA never stores passwords/OTP.
-     */
+    /** Launch NORA's visible browser-computer mode. Authentication secrets remain manual. */
     @JavascriptInterface
     public boolean openNoraComputerMode(
             String sessionId,
@@ -193,6 +221,7 @@ public final class CentralHubNativeBridge {
             Uri target = Uri.parse(targetUrl.trim());
             Uri backend = Uri.parse(supabaseUrl.trim());
             if (!"https".equalsIgnoreCase(target.getScheme())
+                    || target.getHost() == null
                     || !"https".equalsIgnoreCase(backend.getScheme())
                     || backend.getHost() == null
                     || !backend.getHost().toLowerCase(Locale.ROOT).endsWith(".supabase.co")) return false;
@@ -253,30 +282,19 @@ public final class CentralHubNativeBridge {
             }
             if (preferred != null) tts.setVoice(preferred);
             else if (firstMatch != null) tts.setVoice(firstMatch);
-        } catch (Exception ignored) {
-        }
+        } catch (Exception ignored) { }
     }
 
     public void shutdown() {
+        pendingSpeech = "";
         taraTtsReady = false;
         if (taraTts != null) {
-            try {
-                taraTts.stop();
-            } catch (Exception ignored) {
-            }
-            try {
-                taraTts.shutdown();
-            } catch (Exception ignored) {
-            }
+            try { taraTts.stop(); } catch (Exception ignored) { }
+            try { taraTts.shutdown(); } catch (Exception ignored) { }
             taraTts = null;
         }
     }
 
-    /**
-     * Open a trusted HTTPS destination outside CentralHub's WebView. This is used
-     * by the dashboard app-update control so an APK can be downloaded by the
-     * system browser/download manager instead of getting trapped inside WebView.
-     */
     @JavascriptInterface
     public boolean openExternalUrl(String value) {
         if (value == null || value.trim().isEmpty()) return false;
@@ -286,7 +304,7 @@ public final class CentralHubNativeBridge {
             String host = uri.getHost();
             if (!"https".equalsIgnoreCase(scheme) || host == null) return false;
 
-            String normalizedHost = host.toLowerCase();
+            String normalizedHost = host.toLowerCase(Locale.ROOT);
             boolean allowed = normalizedHost.equals("github.com")
                     || normalizedHost.endsWith(".githubusercontent.com")
                     || normalizedHost.equals("centralhub.network");
