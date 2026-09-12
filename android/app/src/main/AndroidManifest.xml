@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- Android 11+ package visibility: SpeechRecognizer must be allowed to
-         discover the installed recognition service or Tara can appear ready
+         discover the installed recognition service or NORA can appear ready
          in the WebView while the native listener never actually starts. -->
     <queries>
         <intent>
@@ -32,6 +32,16 @@
             </intent-filter>
 
         </activity>
+
+        <!-- Isolated visible browser controlled by NORA with human takeover.
+             Not exported: it can only be launched from the authenticated
+             CentralHub app through the native bridge. -->
+        <activity
+            android:name=".NoraComputerActivity"
+            android:label="NORA Live Action"
+            android:theme="@style/AppTheme.NoActionBar"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
