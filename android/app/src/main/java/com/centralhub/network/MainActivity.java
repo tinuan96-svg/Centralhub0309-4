@@ -304,21 +304,21 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
-    protected void onResume() {
+    public void onResume() {
         super.onResume();
         taraResumed = true;
         scheduleTaraRestart(300L);
     }
 
     @Override
-    protected void onPause() {
+    public void onPause() {
         taraResumed = false;
         stopTaraRecognizer();
         super.onPause();
     }
 
     @Override
-    protected void onDestroy() {
+    public void onDestroy() {
         taraHandler.removeCallbacksAndMessages(null);
         if (taraRecognizer != null) {
             try {
