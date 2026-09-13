@@ -57,9 +57,14 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const onCommandRef = useRef(onCommand);
+  // isListeningRef is the user's desired state. recognitionActiveRef tracks whether
+  // Android/WebView has actually opened the microphone. Keeping these separate stops
+  // the UI claiming "Listening" before SpeechRecognition.onstart really fires.
   const isListeningRef = useRef(false);
+  const recognitionActiveRef = useRef(false);
   const isSpeakingRef = useRef(false);
   const restartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recognitionStartWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechCompletionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nativePickingExclusiveRef = useRef(false);
   const wakeLockRef = useRef<any>(null);
@@ -94,15 +99,42 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
 
   const restartRecognitionAfterSpeech = useCallback((delayMs = 450) => {
     if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current);
-    restartTimeoutRef.current = setTimeout(() => {
-      if (!isListeningRef.current || isSpeakingRef.current) return;
-      try {
-        recognitionRef.current?.start();
-      } catch (e) {
-        // The recognizer may already be starting. Its onend handler will recover it.
-        console.warn('[Voice] Resume after speech deferred:', e);
+
+    const attemptStart = () => {
+      if (!isListeningRef.current) return;
+
+      const browserSpeaking = Boolean(synthRef.current?.speaking);
+      if (isSpeakingRef.current || browserSpeaking) {
+        restartTimeoutRef.current = setTimeout(attemptStart, 250);
+        return;
       }
-    }, delayMs);
+
+      const recognition = recognitionRef.current;
+      if (!recognition) return;
+
+      try {
+        recognition.start();
+      } catch (e) {
+        // Android WebView can still be releasing the native wake recognizer/audio
+        // focus. Retry automatically instead of requiring the user to toggle Off/On.
+        console.warn('[Voice] Recognition start deferred:', e);
+        restartTimeoutRef.current = setTimeout(attemptStart, 350);
+        return;
+      }
+
+      if (recognitionStartWatchdogRef.current) clearTimeout(recognitionStartWatchdogRef.current);
+      recognitionStartWatchdogRef.current = setTimeout(() => {
+        if (!isListeningRef.current || recognitionActiveRef.current) return;
+        console.warn('[Voice] Recognition did not become active; recycling recognizer');
+        setIsListening(false);
+        try { recognition.abort?.(); } catch (e) {
+          try { recognition.stop?.(); } catch (stopError) {}
+        }
+        restartTimeoutRef.current = setTimeout(attemptStart, 400);
+      }, 1600);
+    };
+
+    restartTimeoutRef.current = setTimeout(attemptStart, delayMs);
   }, []);
 
   const initRecognition = useCallback(() => {
@@ -112,6 +144,11 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
     if (!SpeechRecognition) {
       setError('not-supported');
       return;
+    }
+
+    if (recognitionStartWatchdogRef.current) {
+      clearTimeout(recognitionStartWatchdogRef.current);
+      recognitionStartWatchdogRef.current = null;
     }
 
     if (recognitionRef.current) {
@@ -124,6 +161,7 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
       } catch (e) {}
     }
 
+    recognitionActiveRef.current = false;
     const recognition = new SpeechRecognition();
     recognition.continuous = false;
     recognition.interimResults = false;
@@ -134,6 +172,11 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
 
     recognition.onstart = () => {
       console.log('[Voice] Started listening');
+      recognitionActiveRef.current = true;
+      if (recognitionStartWatchdogRef.current) {
+        clearTimeout(recognitionStartWatchdogRef.current);
+        recognitionStartWatchdogRef.current = null;
+      }
       setIsListening(true);
       setError(null);
     };
@@ -168,26 +211,17 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
 
       if (event.error === 'not-allowed' || event.error === 'audio-capture') {
         isListeningRef.current = false;
+        recognitionActiveRef.current = false;
         setIsListening(false);
       }
     };
 
     recognition.onend = () => {
       console.log('[Voice] Recognition ended');
+      recognitionActiveRef.current = false;
 
       if (isListeningRef.current) {
-        if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current);
-        restartTimeoutRef.current = setTimeout(() => {
-          const browserSpeaking = Boolean(synthRef.current?.speaking);
-          if (isListeningRef.current && !isSpeakingRef.current && !browserSpeaking) {
-            console.log('[Voice] Restarting...');
-            try {
-              recognitionRef.current?.start();
-            } catch (e) {
-              console.warn('[Voice] Restart failed', e);
-            }
-          }
-        }, 350);
+        restartRecognitionAfterSpeech(350);
       } else {
         setIsListening(false);
       }
@@ -195,7 +229,7 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
 
     recognitionRef.current = recognition;
     return recognition;
-  }, []);
+  }, [restartRecognitionAfterSpeech]);
 
   useEffect(() => {
     let disposed = false;
@@ -230,7 +264,7 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
 
       // Android suspends WebView speech recognition when the screen is explicitly
       // locked. Preserve the session intent and resume the recognizer on unlock.
-      if (isListeningRef.current && !isSpeakingRef.current) {
+      if (isListeningRef.current) {
         if (!recognitionRef.current) initRecognition();
         restartRecognitionAfterSpeech(700);
       }
@@ -264,6 +298,7 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
     return () => {
       disposed = true;
       isListeningRef.current = false;
+      recognitionActiveRef.current = false;
       isSpeakingRef.current = false;
       if (recognitionRef.current) {
         try {
@@ -272,6 +307,7 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
         } catch(e) {}
       }
       if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current);
+      if (recognitionStartWatchdogRef.current) clearTimeout(recognitionStartWatchdogRef.current);
       if (speechCompletionTimerRef.current) clearTimeout(speechCompletionTimerRef.current);
       if (typeof window !== 'undefined') {
         document.removeEventListener('visibilitychange', resumePickingAfterVisibility);
@@ -298,19 +334,26 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
     isListeningRef.current = true;
 
     const rec = initRecognition();
-    if (rec) {
-      try {
-        rec.start();
-        setIsListening(true);
-      } catch (err: any) {
-        console.warn('[Voice] Start error:', err.message);
-      }
+    if (!rec) {
+      isListeningRef.current = false;
+      recognitionActiveRef.current = false;
+      setIsListening(false);
+      return;
     }
-  }, [initRecognition]);
+
+    // Do not open the recognizer while the initial item prompt is still speaking.
+    // This was the startup race that made the button appear enabled but required an
+    // Off -> On toggle before Android actually delivered transcripts.
+    setIsListening(false);
+    restartRecognitionAfterSpeech(180);
+  }, [initRecognition, restartRecognitionAfterSpeech]);
 
   const stopListening = useCallback(() => {
     console.log('[Voice] stopListening called');
     isListeningRef.current = false;
+    recognitionActiveRef.current = false;
+    if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current);
+    if (recognitionStartWatchdogRef.current) clearTimeout(recognitionStartWatchdogRef.current);
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch(e) {}
     }
@@ -330,6 +373,7 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
     }
 
     if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current);
+    if (recognitionStartWatchdogRef.current) clearTimeout(recognitionStartWatchdogRef.current);
     if (speechCompletionTimerRef.current) clearTimeout(speechCompletionTimerRef.current);
 
     const finishSpeech = () => {
@@ -339,7 +383,9 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
       }
       utteranceRef.current = null;
       setSpeakingState(false);
-      if (wasListening) restartRecognitionAfterSpeech();
+      // The user may have enabled listening while TTS was already in progress.
+      // Always honor the current intent, not only the state captured before speech.
+      if (isListeningRef.current) restartRecognitionAfterSpeech();
     };
 
     setSpeakingState(true);
