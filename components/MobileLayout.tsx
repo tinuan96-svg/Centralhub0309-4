@@ -8,6 +8,7 @@ import MobileBottomNav from './MobileBottomNav';
 import DhlInvoiceAutoSync from './DhlInvoiceAutoSync';
 import CentralHubLiveUpdate from './CentralHubLiveUpdate';
 import NoraAdaptiveVoiceNormalizer from './NoraAdaptiveVoiceNormalizer';
+import NoraWakeListenerRecovery from './NoraWakeListenerRecovery';
 import CentralHubVoiceAssistant from './CentralHubVoiceAssistant';
 import NoraConversationSessionSync from './NoraConversationSessionSync';
 import NoraLiveActionOverlay from './NoraLiveActionOverlay';
@@ -51,6 +52,7 @@ export default function MobileLayout({ children }: MobileLayoutProps) {
       {pathname === '/dashboard' && <QuickActionsFab />}
       <ShruthiIdentitySkin />
       <NoraAdaptiveVoiceNormalizer />
+      <NoraWakeListenerRecovery />
       <CentralHubVoiceAssistant />
       <NoraConversationSessionSync />
       <NoraComputerLauncher />
@@ -67,6 +69,7 @@ export default function MobileLayout({ children }: MobileLayoutProps) {
       {pathname === '/dashboard' && <QuickActionsFab />}
       <ShruthiIdentitySkin />
       <NoraAdaptiveVoiceNormalizer />
+      <NoraWakeListenerRecovery />
       <CentralHubVoiceAssistant />
       <NoraConversationSessionSync />
       <NoraComputerLauncher />
