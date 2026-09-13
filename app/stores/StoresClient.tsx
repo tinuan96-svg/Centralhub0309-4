@@ -120,8 +120,8 @@ export default function StoresPage({ params, searchParams }: { params: any; sear
         />
 
         <div className={designTokens.spacing.section}>
-        <div className="sticky top-14 md:static z-20 bg-slate-950/80 backdrop-blur-md md:bg-transparent -mx-6 px-6 py-4 border-b md:border-0 border-slate-800/50 flex items-center justify-between mb-6">
-          <div>
+        <div className="sticky top-14 fold-inner:static z-20 bg-slate-950/80 backdrop-blur-md fold-inner:bg-transparent -mx-6 px-6 py-4 border-b fold-inner:border-0 border-slate-800/50 flex items-center justify-between gap-4 mb-5">
+          <div className="min-w-0">
             <h2 className="text-lg sm:text-xl font-bold text-slate-100 uppercase tracking-tighter">
               Active Stores ({stores.length})
             </h2>
@@ -131,7 +131,7 @@ export default function StoresPage({ params, searchParams }: { params: any; sear
           </div>
           <button
             onClick={handleCreateStore}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 shadow-lg shadow-blue-900/20"
+            className="shrink-0 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 shadow-lg shadow-blue-900/20"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -157,7 +157,7 @@ export default function StoresPage({ params, searchParams }: { params: any; sear
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 fold-inner:grid-cols-2 xl:grid-cols-3 gap-4 xl:gap-6">
               {stores.map((store) => {
                 const stats = storeStats[store.id];
                 if (!stats) {
