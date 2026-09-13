@@ -62,6 +62,7 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
   const restartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechCompletionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nativePickingExclusiveRef = useRef(false);
+  const wakeLockRef = useRef<any>(null);
 
   useEffect(() => {
     onCommandRef.current = onCommand;
@@ -197,6 +198,44 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
   }, []);
 
   useEffect(() => {
+    let disposed = false;
+
+    const requestScreenWakeLock = async () => {
+      if (disposed || typeof document === 'undefined' || document.visibilityState !== 'visible') return;
+      if (wakeLockRef.current) return;
+
+      try {
+        const wakeLockApi = (navigator as any)?.wakeLock;
+        if (!wakeLockApi?.request) return;
+        const lock = await wakeLockApi.request('screen');
+        if (disposed) {
+          try { await lock.release?.(); } catch (e) {}
+          return;
+        }
+        wakeLockRef.current = lock;
+        lock.addEventListener?.('release', () => {
+          if (wakeLockRef.current === lock) wakeLockRef.current = null;
+        });
+        console.log('[Voice] Screen wake lock active for picking');
+      } catch (wakeError) {
+        // Screen Wake Lock is best-effort. Picking still works when the API is not
+        // available, and visibility recovery below restores recognition after unlock.
+        console.warn('[Voice] Screen wake lock unavailable:', wakeError);
+      }
+    };
+
+    const resumePickingAfterVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      void requestScreenWakeLock();
+
+      // Android suspends WebView speech recognition when the screen is explicitly
+      // locked. Preserve the session intent and resume the recognizer on unlock.
+      if (isListeningRef.current && !isSpeakingRef.current) {
+        if (!recognitionRef.current) initRecognition();
+        restartRecognitionAfterSpeech(700);
+      }
+    };
+
     if (typeof window !== 'undefined') {
       synthRef.current = window.speechSynthesis || null;
 
@@ -215,9 +254,15 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
           console.warn('[Voice] Could not pause native wake listener:', nativeError);
         }
       }
+
+      void requestScreenWakeLock();
+      document.addEventListener('visibilitychange', resumePickingAfterVisibility);
+      window.addEventListener('focus', resumePickingAfterVisibility);
+      window.addEventListener('pageshow', resumePickingAfterVisibility);
     }
 
     return () => {
+      disposed = true;
       isListeningRef.current = false;
       isSpeakingRef.current = false;
       if (recognitionRef.current) {
@@ -229,6 +274,9 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
       if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current);
       if (speechCompletionTimerRef.current) clearTimeout(speechCompletionTimerRef.current);
       if (typeof window !== 'undefined') {
+        document.removeEventListener('visibilitychange', resumePickingAfterVisibility);
+        window.removeEventListener('focus', resumePickingAfterVisibility);
+        window.removeEventListener('pageshow', resumePickingAfterVisibility);
         try { window.speechSynthesis?.cancel(); } catch (e) {}
         try { (window as any).CentralHubNative?.stopTaraTts?.(); } catch (e) {}
         if (nativePickingExclusiveRef.current) {
@@ -236,9 +284,13 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
           nativePickingExclusiveRef.current = false;
         }
       }
+      if (wakeLockRef.current) {
+        try { void wakeLockRef.current.release?.(); } catch (e) {}
+        wakeLockRef.current = null;
+      }
       utteranceRef.current = null;
     };
-  }, []);
+  }, [initRecognition, restartRecognitionAfterSpeech]);
 
   const startListening = useCallback(() => {
     console.log('[Voice] startListening called');
