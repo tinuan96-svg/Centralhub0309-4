@@ -10,6 +10,43 @@ export interface VoicePickingControls {
   error: string | null;
 }
 
+const PICKING_COMMAND_HINT = /\b(?:picked|pick|picket|pecked|packed|pic|done|finish|finished|complete|completed|confirm|confirmed|yes|yeah|yep|okay|ok|next|skip|back|previous|repeat|pause|resume|continue|stop)\b/i;
+const PICKED_HOMOPHONE_HINT = /\b(?:picked|pick|picket|pecked|packed|pic)\b/i;
+
+function normalizePickingTranscript(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/\b(?:picked it|pick it|picket|pecked|packed)\b/g, 'picked')
+    .replace(/\bpic\b/g, 'pick')
+    .replace(/\s+/g, ' ');
+}
+
+function chooseBestPickingTranscript(result: any) {
+  if (!result || typeof result.length !== 'number' || result.length === 0) return '';
+
+  let bestText = String(result[0]?.transcript || '').trim();
+  let bestScore = Number(result[0]?.confidence || 0);
+
+  for (let index = 0; index < result.length; index += 1) {
+    const alternative = result[index];
+    const text = String(alternative?.transcript || '').trim();
+    if (!text) continue;
+
+    let score = Number(alternative?.confidence || 0);
+    if (PICKING_COMMAND_HINT.test(text)) score += 2;
+    if (PICKED_HOMOPHONE_HINT.test(text)) score += 3;
+    if (/\b(?:picked|pick)\b/i.test(text)) score += 2;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestText = text;
+    }
+  }
+
+  return normalizePickingTranscript(bestText);
+}
+
 export function useVoicePicking(onCommand: (command: string) => void): VoicePickingControls {
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -24,6 +61,7 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
   const isSpeakingRef = useRef(false);
   const restartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechCompletionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nativePickingExclusiveRef = useRef(false);
 
   useEffect(() => {
     onCommandRef.current = onCommand;
@@ -89,6 +127,9 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
     recognition.continuous = false;
     recognition.interimResults = false;
     recognition.lang = 'en-GB';
+    // Short warehouse commands are easy for Android to confuse. Ask for several
+    // candidates and pick the one that best matches the known picking vocabulary.
+    try { recognition.maxAlternatives = 5; } catch (e) {}
 
     recognition.onstart = () => {
       console.log('[Voice] Started listening');
@@ -97,7 +138,10 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
     };
 
     recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript.toLowerCase().trim();
+      const result = event?.results?.[event.resultIndex ?? 0] || event?.results?.[0];
+      const transcript = chooseBestPickingTranscript(result);
+      if (!transcript) return;
+
       console.log('[Voice] Result:', transcript);
 
       setLastCommand(transcript);
@@ -155,6 +199,22 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
   useEffect(() => {
     if (typeof window !== 'undefined') {
       synthRef.current = window.speechSynthesis || null;
+
+      // Active picking owns the microphone while this hook is mounted. The Android
+      // shell normally keeps NORA/Shruthi's passive on-device recognizer running;
+      // two recognizers competing for the same microphone makes very short commands
+      // such as "picked" unreliable on Samsung devices. Pause the passive listener
+      // for the picking session, then restore it when the user leaves picking.
+      const nativeBridge = (window as any).CentralHubNative;
+      if (nativeBridge?.setTaraEnabled) {
+        try {
+          nativeBridge.setTaraEnabled(false);
+          nativePickingExclusiveRef.current = true;
+          console.log('[Voice] Native wake listener paused for active picking');
+        } catch (nativeError) {
+          console.warn('[Voice] Could not pause native wake listener:', nativeError);
+        }
+      }
     }
 
     return () => {
@@ -171,6 +231,10 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
       if (typeof window !== 'undefined') {
         try { window.speechSynthesis?.cancel(); } catch (e) {}
         try { (window as any).CentralHubNative?.stopTaraTts?.(); } catch (e) {}
+        if (nativePickingExclusiveRef.current) {
+          try { (window as any).CentralHubNative?.setTaraEnabled?.(true); } catch (e) {}
+          nativePickingExclusiveRef.current = false;
+        }
       }
       utteranceRef.current = null;
     };
