@@ -18,20 +18,29 @@ export async function requireAdmin() {
     throw new Error('Unauthorized');
   }
 
-  // Check role in user metadata or custom table
-  const role = user.user_metadata?.role || user.app_metadata?.role;
-  const isAdmin = role === 'admin' || role === 'superadmin';
+  // Authorization must only use trusted app_metadata or server-side profile data.
+  const role = String(user.app_metadata?.role || '').toLowerCase();
+  let isAdmin = role === 'admin' || role === 'superadmin' || role === 'administrator';
 
   if (!isAdmin) {
-    // Double check via DB function if needed
     const supabaseAdmin = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.CENTRALHUB_SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    const { data: is_admin } = await supabaseAdmin.rpc('is_admin', { user_id: user.id });
-    if (!is_admin) {
-        throw new Error('Forbidden: Admin access required');
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('user_profiles')
+      .select('profile_role,is_active')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (profileError) {
+      throw new Error('Forbidden: Admin access required');
+    }
+
+    isAdmin = profile?.is_active !== false && ['admin', 'superadmin', 'administrator'].includes(String(profile?.profile_role || '').toLowerCase());
+    if (!isAdmin) {
+      throw new Error('Forbidden: Admin access required');
     }
   }
 
