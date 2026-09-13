@@ -1,0 +1,139 @@
+name: Security Auth Hotfix
+
+on:
+  push:
+    paths:
+      - '.github/workflows/security-auth-hotfix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-auth:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Remove user-editable authorization paths
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          # DHL: only trusted app_metadata or server-side user_profiles may grant admin.
+          p = Path('supabase/functions/dhl-ecommerce/index.ts')
+          s = p.read_text()
+          old = 'const metadataRole = String(user.app_metadata?.role || user.user_metadata?.profile_role || "").toLowerCase();'
+          new = 'const metadataRole = String(user.app_metadata?.role || "").toLowerCase();'
+          assert old in s, 'DHL vulnerable metadata fallback not found'
+          p.write_text(s.replace(old, new, 1))
+
+          # WhatsApp: remove user_metadata and email-domain admin bypass; keep trusted profile and store_staff paths.
+          p = Path('supabase/functions/whatsapp-send/index.ts')
+          s = p.read_text()
+          old = """    if (!internal) {
+      const metadata = { ...(user.app_metadata || {}), ...(user.user_metadata || {}) }
+      let isAdmin = ['admin', 'superadmin', 'administrator'].includes(String(metadata.role || metadata.profile_role || '').toLowerCase())
+      if (!isAdmin && /@(keralagroceries\\.com|keralagroceries\\.co\\.uk)$/i.test(user.email || '')) isAdmin = true
+      if (!isAdmin) { try { isAdmin = !!(await admin.rpc('is_admin', { user_id: user.id })).data } catch (_) {} }
+      if (!isAdmin) {
+        const { count } = await admin.from('store_staff').select('user_id', { count: 'exact', head: true }).eq('store_id', finalStoreId).eq('user_id', user.id)
+        if (!count) return json({ error: 'Forbidden: you do not have access to send messages for this store.' }, 403)
+      }
+    }
+"""
+          new = """    if (!internal) {
+      const metadataRole = String(user.app_metadata?.role || '').toLowerCase()
+      let isAdmin = ['admin', 'superadmin', 'administrator'].includes(metadataRole)
+      if (!isAdmin) {
+        const { data: profile } = await admin.from('user_profiles')
+          .select('profile_role,is_active')
+          .eq('id', user.id)
+          .maybeSingle()
+        isAdmin = profile?.is_active !== false && ['admin', 'superadmin', 'administrator'].includes(String(profile?.profile_role || '').toLowerCase())
+      }
+      if (!isAdmin) {
+        const { count } = await admin.from('store_staff').select('user_id', { count: 'exact', head: true }).eq('store_id', finalStoreId).eq('user_id', user.id)
+        if (!count) return json({ error: 'Forbidden: you do not have access to send messages for this store.' }, 403)
+      }
+    }
+"""
+          assert old in s, 'WhatsApp vulnerable authorization block not found'
+          p.write_text(s.replace(old, new, 1))
+
+          # Shared server helper: never authorize from user_metadata and use the actual profile table, not a mismatched RPC signature.
+          p = Path('lib/utils/auth-helpers.ts')
+          s = p.read_text()
+          old = """  // Check role in user metadata or custom table
+  const role = user.user_metadata?.role || user.app_metadata?.role;
+  const isAdmin = role === 'admin' || role === 'superadmin';
+
+  if (!isAdmin) {
+    // Double check via DB function if needed
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.CENTRALHUB_SUPABASE_SERVICE_ROLE_KEY!
+    );
+
+    const { data: is_admin } = await supabaseAdmin.rpc('is_admin', { user_id: user.id });
+    if (!is_admin) {
+        throw new Error('Forbidden: Admin access required');
+    }
+  }
+"""
+          new = """  // Authorization must only use trusted app_metadata or server-side profile data.
+  const role = String(user.app_metadata?.role || '').toLowerCase();
+  let isAdmin = role === 'admin' || role === 'superadmin' || role === 'administrator';
+
+  if (!isAdmin) {
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.CENTRALHUB_SUPABASE_SERVICE_ROLE_KEY!
+    );
+
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('user_profiles')
+      .select('profile_role,is_active')
+      .eq('id', user.id)
+      .maybeSingle();
+    if (profileError) throw new Error('Forbidden: Admin access required');
+    isAdmin = profile?.is_active !== false && ['admin', 'superadmin', 'administrator'].includes(String(profile?.profile_role || '').toLowerCase());
+    if (!isAdmin) throw new Error('Forbidden: Admin access required');
+  }
+"""
+          assert old in s, 'Shared auth helper vulnerable block not found'
+          p.write_text(s.replace(old, new, 1))
+
+          # Guard: known protected paths must not derive authorization from user_metadata.
+          for path in [
+              Path('supabase/functions/dhl-ecommerce/index.ts'),
+              Path('supabase/functions/whatsapp-send/index.ts'),
+              Path('supabase/functions/update-order-status/index.ts'),
+              Path('lib/utils/auth-helpers.ts'),
+          ]:
+              text = path.read_text()
+              assert 'user_metadata?.profile_role' not in text, f'unsafe profile_role metadata remains in {path}'
+              assert 'user_metadata?.role' not in text, f'unsafe role metadata remains in {path}'
+          PY
+      - name: Validate
+        run: |
+          npm ci
+          npm run lint --if-present
+          npm run typecheck --if-present
+          npm run build
+      - name: Commit hotfix
+        run: |
+          if git diff --quiet; then
+            echo 'No changes required.'
+            exit 0
+          fi
+          git config user.name 'centralhub-security-bot'
+          git config user.email 'centralhub-security-bot@users.noreply.github.com'
+          git add supabase/functions/dhl-ecommerce/index.ts supabase/functions/whatsapp-send/index.ts lib/utils/auth-helpers.ts
+          git commit -m 'security: trust only server-controlled admin roles'
+          git push origin HEAD:main
