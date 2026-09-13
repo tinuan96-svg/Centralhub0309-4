@@ -1,0 +1,101 @@
+name: One-time Shruthi minimize UI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/one-time-shruthi-minimize.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Add persistent Shruthi minimize mode
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          p = Path('components/CentralHubVoiceAssistant.tsx')
+          s = p.read_text()
+
+          replacements = [
+            (
+              "import { ChevronRight, Menu, Mic, MicOff, Send, Settings, Square, Volume2, VolumeX, X } from 'lucide-react';",
+              "import { ChevronRight, Maximize2, Mic, MicOff, Minus, Send, Settings, Square, Volume2, VolumeX, X } from 'lucide-react';"
+            ),
+            (
+              "  const [open, setOpen] = useState(false);\n  const [recording, setRecording] = useState(false);",
+              "  const [open, setOpen] = useState(false);\n  const [minimized, setMinimized] = useState(false);\n  const [recording, setRecording] = useState(false);"
+            ),
+            (
+              "      setSession(false);\n      setOpen(false);\n      setTranscript('');",
+              "      setSession(false);\n      setOpen(false);\n      setMinimized(false);\n      setTranscript('');"
+            ),
+            (
+              "      setSession(true);\n      setOpen(true);\n      const command = stripWakeWord(heard);",
+              "      setSession(true);\n      setOpen(true);\n      setMinimized(false);\n      const command = stripWakeWord(heard);"
+            ),
+            (
+              "    setSession(false);\n    setOpen(false);\n    setTranscript('');",
+              "    setSession(false);\n    setOpen(false);\n    setMinimized(false);\n    setTranscript('');"
+            ),
+            (
+              "  const openNora = useCallback(() => {\n    chooseTheme();\n    setOpen(true);\n  }, [chooseTheme]);",
+              "  const openNora = useCallback(() => {\n    chooseTheme();\n    setMinimized(false);\n    setOpen(true);\n  }, [chooseTheme]);"
+            ),
+            (
+              "      {open && (\n        <section className=\"nora-screen fixed inset-0 z-[120] overflow-hidden text-white\"",
+              "      {open && !minimized && (\n        <section className=\"nora-screen fixed inset-0 z-[120] overflow-hidden text-white\""
+            ),
+            (
+              "              <button type=\"button\" onClick={endConversation} className=\"nora-icon-button\" aria-label=\"Return to CentralHub\">\n                <Menu size={21} />\n              </button>",
+              "              <button type=\"button\" onClick={() => setMinimized(true)} className=\"nora-icon-button\" aria-label=\"Minimize SHRUTHI\">\n                <Minus size={22} />\n              </button>"
+            ),
+            (
+              "onClick={() => { setSession(false); router.push(response.navigation_path!); setOpen(false); }}",
+              "onClick={() => { setSession(false); setMinimized(false); router.push(response.navigation_path!); setOpen(false); }}"
+            ),
+          ]
+
+          for old, new in replacements:
+            if old not in s:
+              raise SystemExit(f'Missing expected source fragment:\n{old[:180]}')
+            s = s.replace(old, new, 1)
+
+          marker = '''        </section>\n      )}\n\n      {!open && ('''
+          mini = '''        </section>\n      )}\n\n      {open && minimized && (\n        <section\n          className=\"fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] right-3 z-[120] flex w-[min(430px,calc(100vw-1.5rem))] items-center gap-2 rounded-[30px] border border-cyan-300/25 bg-slate-950/95 p-2 text-white shadow-[0_0_44px_rgba(34,211,238,.22)] backdrop-blur-2xl sm:bottom-6 sm:right-6\"\n          style={rootStyle}\n          aria-label=\"SHRUTHI minimized assistant\"\n          aria-live=\"polite\"\n        >\n          <button\n            type=\"button\"\n            onClick={() => setMinimized(false)}\n            className=\"flex min-w-0 flex-1 items-center gap-3 rounded-[24px] px-3 py-2.5 text-left active:scale-[0.99]\"\n            aria-label=\"Expand SHRUTHI\"\n          >\n            <span className=\"grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-cyan-300/25 bg-gradient-to-br from-blue-500/35 via-cyan-400/20 to-violet-500/35 text-lg text-cyan-200 shadow-[0_0_22px_rgba(34,211,238,.20)]\">✦</span>\n            <span className=\"min-w-0 flex-1\">\n              <span className=\"block text-[9px] font-black uppercase tracking-[0.24em] text-cyan-300/80\">SHRUTHI</span>\n              <span className=\"mt-0.5 block truncate text-[15px] font-semibold text-slate-100\">{statusLabel}</span>\n            </span>\n            <span className=\"flex h-7 shrink-0 items-center gap-[2px]\" aria-hidden=\"true\">\n              {Array.from({ length: 7 }).map((_, index) => (\n                <span\n                  key={index}\n                  className={`nora-wavebar ${voiceState === 'listening' || voiceState === 'speaking' ? 'nora-wavebar-live' : ''}`}\n                  style={{ animationDelay: `${index * 55}ms` }}\n                />\n              ))}\n            </span>\n            <Maximize2 size={17} className=\"shrink-0 text-slate-400\" />\n          </button>\n\n          <button\n            type=\"button\"\n            onClick={recording ? stopRecording : startRecording}\n            disabled={processing}\n            className={`grid h-11 w-11 shrink-0 place-items-center rounded-full border border-cyan-300/25 ${recording ? 'bg-cyan-400 text-slate-950' : 'bg-white/[0.055] text-cyan-200'} disabled:opacity-40`}\n            aria-label={recording ? 'Stop listening' : 'Talk to SHRUTHI'}\n          >\n            {recording ? <Square size={17} fill=\"currentColor\" /> : <Mic size={19} />}\n          </button>\n\n          <button\n            type=\"button\"\n            onClick={endConversation}\n            className=\"grid h-11 w-11 shrink-0 place-items-center rounded-full border border-rose-400/30 bg-rose-500/10 text-rose-200\"\n            aria-label=\"End SHRUTHI conversation\"\n          >\n            <X size={19} />\n          </button>\n        </section>\n      )}\n\n      {!open && ('''
+
+          if marker not in s:
+            raise SystemExit('Could not find render insertion point for minimized assistant')
+          s = s.replace(marker, mini, 1)
+          p.write_text(s)
+          PY
+
+      - name: Verify Shruthi component
+        run: |
+          npm ci
+          npx eslint components/CentralHubVoiceAssistant.tsx
+          npx tsc --noEmit
+
+      - name: Remove one-time workflow and commit verified change
+        shell: bash
+        run: |
+          rm -f .github/workflows/one-time-shruthi-minimize.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add components/CentralHubVoiceAssistant.tsx .github/workflows/one-time-shruthi-minimize.yml
+          git commit -m "feat: minimize Shruthi without ending voice session"
+          git push origin HEAD:main
