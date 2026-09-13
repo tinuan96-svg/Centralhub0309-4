@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { ChevronRight, Menu, Mic, MicOff, Send, Settings, Square, Volume2, VolumeX, X } from 'lucide-react';
+import { ChevronRight, Maximize2, Mic, MicOff, Minus, Send, Settings, Square, Volume2, VolumeX, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 type AssistantMode = 'operations' | 'board' | 'developer';
@@ -204,6 +204,7 @@ export default function CentralHubVoiceAssistant() {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [minimized, setMinimized] = useState(false);
   const [recording, setRecording] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -426,6 +427,7 @@ cloudAudioUrlRef.current = null;
     if (STOP_WORDS.test(heard) && (noraSessionRef.current || woke)) {
       setSession(false);
       setOpen(false);
+      setMinimized(false);
       setTranscript('');
       setResponse(null);
       speak('Of course. I’ll stay quiet until you call me again.');
@@ -437,6 +439,7 @@ cloudAudioUrlRef.current = null;
       chooseTheme(heard);
       setSession(true);
       setOpen(true);
+      setMinimized(false);
       const command = stripWakeWord(heard);
       if (!command) {
         setTranscript('SHRUTHI');
@@ -555,6 +558,7 @@ cloudAudioUrlRef.current = null;
     stopSpeech();
     setSession(false);
     setOpen(false);
+    setMinimized(false);
     setTranscript('');
     setResponse(null);
     setError('');
@@ -562,6 +566,7 @@ cloudAudioUrlRef.current = null;
 
   const openNora = useCallback(() => {
     chooseTheme();
+    setMinimized(false);
     setOpen(true);
   }, [chooseTheme]);
 
@@ -580,13 +585,13 @@ cloudAudioUrlRef.current = null;
 
   return (
     <>
-      {open && (
+      {open && !minimized && (
         <section className="nora-screen fixed inset-0 z-[120] overflow-hidden text-white" style={rootStyle} aria-label="SHRUTHI AI Executive Assistant">
           <div className="absolute inset-0 nora-ambient pointer-events-none" />
           <div className="relative z-10 flex h-full min-h-0 flex-col px-4 pb-[max(18px,env(safe-area-inset-bottom))] pt-[max(14px,env(safe-area-inset-top))] sm:px-7">
             <header className="flex items-center justify-between gap-3">
-              <button type="button" onClick={endConversation} className="nora-icon-button" aria-label="Return to CentralHub">
-                <Menu size={21} />
+              <button type="button" onClick={() => setMinimized(true)} className="nora-icon-button" aria-label="Minimize SHRUTHI">
+                <Minus size={22} />
               </button>
               <div className="text-center">
                 <div className="text-[22px] font-light tracking-tight sm:text-[26px]">Central<span className="font-semibold text-[var(--nora-accent)]">Hub</span></div>
@@ -634,7 +639,7 @@ cloudAudioUrlRef.current = null;
                         {response.navigation_path && (
                           <button
                             type="button"
-                            onClick={() => { setSession(false); router.push(response.navigation_path!); setOpen(false); }}
+                            onClick={() => { setSession(false); setMinimized(false); router.push(response.navigation_path!); setOpen(false); }}
                             className="mt-3 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--nora-accent)]"
                           >
                             Open related page <ChevronRight size={13} />
@@ -714,6 +719,57 @@ cloudAudioUrlRef.current = null;
               </button>
             </footer>
           </div>
+        </section>
+      )}
+
+      {open && minimized && (
+        <section
+          className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] right-3 z-[120] flex w-[min(430px,calc(100vw-1.5rem))] items-center gap-2 rounded-[30px] border border-cyan-300/25 bg-slate-950/95 p-2 text-white shadow-[0_0_44px_rgba(34,211,238,.22)] backdrop-blur-2xl sm:bottom-6 sm:right-6"
+          style={rootStyle}
+          aria-label="SHRUTHI minimized assistant"
+          aria-live="polite"
+        >
+          <button
+            type="button"
+            onClick={() => setMinimized(false)}
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-[24px] px-3 py-2.5 text-left active:scale-[0.99]"
+            aria-label="Expand SHRUTHI"
+          >
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-cyan-300/25 bg-gradient-to-br from-blue-500/35 via-cyan-400/20 to-violet-500/35 text-lg text-cyan-200 shadow-[0_0_22px_rgba(34,211,238,.20)]">✦</span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[9px] font-black uppercase tracking-[0.24em] text-cyan-300/80">SHRUTHI</span>
+              <span className="mt-0.5 block truncate text-[15px] font-semibold text-slate-100">{statusLabel}</span>
+            </span>
+            <span className="flex h-7 shrink-0 items-center gap-[2px]" aria-hidden="true">
+              {Array.from({ length: 7 }).map((_, index) => (
+                <span
+                  key={index}
+                  className={`nora-wavebar ${voiceState === 'listening' || voiceState === 'speaking' ? 'nora-wavebar-live' : ''}`}
+                  style={{ animationDelay: `${index * 55}ms` }}
+                />
+              ))}
+            </span>
+            <Maximize2 size={17} className="shrink-0 text-slate-400" />
+          </button>
+
+          <button
+            type="button"
+            onClick={recording ? stopRecording : startRecording}
+            disabled={processing}
+            className={`grid h-11 w-11 shrink-0 place-items-center rounded-full border border-cyan-300/25 ${recording ? 'bg-cyan-400 text-slate-950' : 'bg-white/[0.055] text-cyan-200'} disabled:opacity-40`}
+            aria-label={recording ? 'Stop listening' : 'Talk to SHRUTHI'}
+          >
+            {recording ? <Square size={17} fill="currentColor" /> : <Mic size={19} />}
+          </button>
+
+          <button
+            type="button"
+            onClick={endConversation}
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-rose-400/30 bg-rose-500/10 text-rose-200"
+            aria-label="End SHRUTHI conversation"
+          >
+            <X size={19} />
+          </button>
         </section>
       )}
 
