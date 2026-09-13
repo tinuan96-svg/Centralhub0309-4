@@ -311,8 +311,10 @@ public class MainActivity extends BridgeActivity {
             if (explicitWake) {
                 noraConversationActive = true;
             } else if (!noraConversationActive) {
-                // Ambient/background speech is ignored until NORA is explicitly active.
-                return;
+                // Android returns recognition alternatives in ranked order. A Samsung
+                // recognizer may put a near-match first and Shruthi/NORA second.
+                // Check every candidate before deciding this was ambient speech.
+                continue;
             } else {
                 // During an active conversation there is no timeout. Prefix each
                 // follow-up so the web assistant treats it as the current NORA turn.
