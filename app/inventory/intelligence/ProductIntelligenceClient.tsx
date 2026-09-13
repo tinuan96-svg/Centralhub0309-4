@@ -106,19 +106,19 @@ export default function ProductIntelligenceClient() {
 
       <section className="rounded-2xl border border-slate-800 bg-slate-900/55 p-4 lg:p-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div>
+          <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-lg border border-cyan-500/25 bg-cyan-500/10 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-cyan-300">Product intelligence</span>
               <span className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-emerald-300">Paid orders only</span>
             </div>
             <h1 className="mt-3 text-2xl font-black tracking-tight text-white lg:text-3xl">Sales performance by item, brand and category</h1>
-            <p className="mt-1 max-w-4xl text-sm text-slate-400">Item-level revenue, units, margin, brand-by-category performance, rice trends and Double Horse category breakdown using the existing CentralHub order item data.</p>
+            <p className="mt-1 max-w-4xl text-sm text-slate-400">Item-level revenue, units, margin, brand-by-category performance, rice trends and Double Horse category breakdown using CentralHub paid order-item data.</p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
             <StoreScopeSelector value={storeId} onStoreChange={setStoreId} />
-            <div className="flex rounded-xl border border-slate-800 bg-slate-950/70 p-1 overflow-x-auto no-scrollbar max-w-full">
+            <div className="flex max-w-full overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/70 p-1 no-scrollbar">
               {ranges.map(range => (
-                <button key={range} type="button" onClick={() => setTimeRange(range)} className={`rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-wide whitespace-nowrap ${timeRange === range ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>{range}</button>
+                <button key={range} type="button" onClick={() => setTimeRange(range)} className={`whitespace-nowrap rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-wide ${timeRange === range ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>{range}</button>
               ))}
             </div>
           </div>
@@ -172,7 +172,24 @@ export default function ProductIntelligenceClient() {
           <div className="grid gap-4 xl:grid-cols-2">
             <Panel title="Brand by category performance" subtitle="Which brand wins inside each category">
               {brandCategoryRows.length ? (
-                <div className="overflow-x-auto"><table className="ch-data-table"><thead><tr><th>Brand</th><th>Category</th><th>Revenue</th><th>Units</th><th>Margin</th><th>Orders</th></tr></thead><tbody>{brandCategoryRows.map(row => (<tr key={`${row.brandId}-${row.categoryId}`}><td>{row.brandName}</td><td>{row.categoryName}</td><td>{formatCurrency(row.revenue)}</td><td>{number(row.units)}</td><td>{row.margin.toFixed(1)}%</td><td>{number(row.orderCount)}</td></tr>))}</tbody></table></div>
+                <>
+                  <div className="grid gap-3 xl:hidden">
+                    {brandCategoryRows.map(row => (
+                      <div key={`${row.brandId}-${row.categoryId}`} className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0"><p className="truncate font-black text-white">{row.brandName}</p><p className="truncate text-xs text-slate-400">{row.categoryName}</p></div>
+                          <p className="shrink-0 font-black text-cyan-200">{formatCurrency(row.revenue)}</p>
+                        </div>
+                        <div className="mt-3 grid grid-cols-3 gap-3 text-xs">
+                          <div><p className="text-[9px] font-black uppercase text-slate-500">Units</p><p className="mt-1 font-bold text-slate-200">{number(row.units)}</p></div>
+                          <div><p className="text-[9px] font-black uppercase text-slate-500">Margin</p><p className="mt-1 font-bold text-emerald-300">{row.margin.toFixed(1)}%</p></div>
+                          <div><p className="text-[9px] font-black uppercase text-slate-500">Orders</p><p className="mt-1 font-bold text-slate-200">{number(row.orderCount)}</p></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="hidden overflow-x-auto xl:block"><table className="ch-data-table"><thead><tr><th>Brand</th><th>Category</th><th>Revenue</th><th>Units</th><th>Margin</th><th>Orders</th></tr></thead><tbody>{brandCategoryRows.map(row => (<tr key={`${row.brandId}-${row.categoryId}`}><td>{row.brandName}</td><td>{row.categoryName}</td><td>{formatCurrency(row.revenue)}</td><td>{number(row.units)}</td><td>{row.margin.toFixed(1)}%</td><td>{number(row.orderCount)}</td></tr>))}</tbody></table></div>
+                </>
               ) : <EmptyState>No brand/category sales in this selection.</EmptyState>}
             </Panel>
 
@@ -188,7 +205,29 @@ export default function ProductIntelligenceClient() {
 
           <Panel title="Item-level sales intelligence" subtitle="Top selling products with SKU, brand, category, stock and margin">
             {topProducts.length ? (
-              <div className="overflow-x-auto"><table className="ch-data-table"><thead><tr><th>Product</th><th>SKU</th><th>Brand</th><th>Category</th><th>Revenue</th><th>Units</th><th>Orders</th><th>Profit</th><th>Margin</th><th>Stock</th></tr></thead><tbody>{topProducts.map(product => (<tr key={product.id}><td><Link className="text-cyan-200 hover:text-white" href={`/inventory-management/stock/${product.id}`}>{product.name}</Link></td><td>{product.sku || '-'}</td><td>{product.brand_name || 'No Brand'}</td><td>{product.category_name || 'Uncategorized'}</td><td>{formatCurrency(product.revenue)}</td><td>{number(product.unitsSold)}</td><td>{number(product.orderCount)}</td><td>{formatCurrency(product.grossProfit)}</td><td>{product.margin.toFixed(1)}%</td><td>{number(product.stock)}</td></tr>))}</tbody></table></div>
+              <>
+                <div className="grid gap-3 xl:hidden">
+                  {topProducts.map(product => (
+                    <div key={product.id} className="rounded-xl border border-slate-800 bg-slate-950/45 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <Link className="block truncate font-black text-cyan-200 hover:text-white" href={`/inventory-management/stock/${product.id}`}>{product.name}</Link>
+                          <p className="mt-1 truncate text-[10px] text-slate-500">{product.sku || 'No SKU'} · {product.brand_name || 'No Brand'} · {product.category_name || 'Uncategorized'}</p>
+                        </div>
+                        <p className="shrink-0 text-base font-black text-white">{formatCurrency(product.revenue)}</p>
+                      </div>
+                      <div className="mt-4 grid grid-cols-5 gap-2 text-center">
+                        <div><p className="text-[8px] font-black uppercase tracking-wide text-slate-600">Units</p><p className="mt-1 text-xs font-bold text-slate-200">{number(product.unitsSold)}</p></div>
+                        <div><p className="text-[8px] font-black uppercase tracking-wide text-slate-600">Orders</p><p className="mt-1 text-xs font-bold text-slate-200">{number(product.orderCount)}</p></div>
+                        <div><p className="text-[8px] font-black uppercase tracking-wide text-slate-600">Profit</p><p className="mt-1 text-xs font-bold text-emerald-300">{formatCurrency(product.grossProfit)}</p></div>
+                        <div><p className="text-[8px] font-black uppercase tracking-wide text-slate-600">Margin</p><p className="mt-1 text-xs font-bold text-cyan-300">{product.margin.toFixed(1)}%</p></div>
+                        <div><p className="text-[8px] font-black uppercase tracking-wide text-slate-600">Stock</p><p className="mt-1 text-xs font-bold text-slate-200">{number(product.stock)}</p></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="hidden overflow-x-auto xl:block"><table className="ch-data-table"><thead><tr><th>Product</th><th>SKU</th><th>Brand</th><th>Category</th><th>Revenue</th><th>Units</th><th>Orders</th><th>Profit</th><th>Margin</th><th>Stock</th></tr></thead><tbody>{topProducts.map(product => (<tr key={product.id}><td><Link className="text-cyan-200 hover:text-white" href={`/inventory-management/stock/${product.id}`}>{product.name}</Link></td><td>{product.sku || '-'}</td><td>{product.brand_name || 'No Brand'}</td><td>{product.category_name || 'Uncategorized'}</td><td>{formatCurrency(product.revenue)}</td><td>{number(product.unitsSold)}</td><td>{number(product.orderCount)}</td><td>{formatCurrency(product.grossProfit)}</td><td>{product.margin.toFixed(1)}%</td><td>{number(product.stock)}</td></tr>))}</tbody></table></div>
+              </>
             ) : <EmptyState>No item-level sales for this selection.</EmptyState>}
           </Panel>
         </section>
