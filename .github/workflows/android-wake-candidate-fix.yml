@@ -1,0 +1,46 @@
+name: Android Wake Alternative Candidate Fix
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/android-wake-candidate-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Patch recognition alternative handling
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('android/app/src/main/java/com/centralhub/network/MainActivity.java')
+          s = p.read_text()
+          old = """            } else if (!noraConversationActive) {\n                // Ambient/background speech is ignored until NORA is explicitly active.\n                return;\n            } else {\n"""
+          new = """            } else if (!noraConversationActive) {\n                // Android returns recognition alternatives in ranked order. A Samsung\n                // recognizer may put a near-match first and Shruthi/NORA second.\n                // Check every candidate before deciding this was ambient speech.\n                continue;\n            } else {\n"""
+          if s.count(old) != 1:
+              raise SystemExit('Expected exactly one ambient candidate branch')
+          p.write_text(s.replace(old, new, 1))
+          PY
+
+      - name: Verify candidate fix
+        run: grep -F 'Check every candidate before deciding this was ambient speech.' android/app/src/main/java/com/centralhub/network/MainActivity.java
+
+      - name: Commit fix and remove runner
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/android-wake-candidate-fix.yml
+          git add android/app/src/main/java/com/centralhub/network/MainActivity.java
+          git commit -m 'fix(android): evaluate all wake recognition alternatives'
+          git push origin HEAD:main
