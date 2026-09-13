@@ -29,9 +29,9 @@ type SettledTurn = {
 
 const EVENT_NAME = 'centralhub:tara-transcript';
 const PROFILE_KEY = 'centralhub:nora-voice-profile-v1';
-const DEFAULT_PROFILE: VoiceProfile = { version: 1, avgGapMs: 900, avgWords: 8, samples: 0 };
-const WAKE_START = /^(?:(?:hey\s+)?(?:shruthi|sruthi|shruti|nora|norah|noora|noura|norra|tara|thara))\b[\s,:.!?-]*/iu;
-const STOP_WORDS = /\b(?:(?:shruthi|sruthi|shruti|nora|norah|noora)\s+stop|stop\s+(?:shruthi|sruthi|shruti|nora|norah|noora)|that(?:'s| is) all|thank you shruthi|thanks shruthi|thank you nora|thanks nora|go to sleep|sleep shruthi|sleep nora|end conversation|stop listening)\b|നോറാ?\s*(?:സ്റ്റോപ്പ്|മതി|നിർത്തു)|(?:മതി|നിർത്തു)\s*നോറാ?|நோரா?\s*(?:ஸ்டாப்|போதும்)/iu;
+const DEFAULT_PROFILE: VoiceProfile = { version: 1, avgGapMs: 650, avgWords: 8, samples: 0 };
+const WAKE_START = /^(?:(?:hey\s+)?(?:shruthi|sruthi|shruti|nora|norah|noora|noura|norra))\b[\s,:.!?-]*/iu;
+const STOP_WORDS = /\b(?:(?:shruthi|sruthi|shruti|nora|norah|noora)\s+stop|stop\s+(?:shruthi|sruthi|shruti|nora|norah|noora)|that(?:'s| is) all|thank you shruthi|thanks shruthi|thank you nora|thanks nora|go to sleep|sleep shruthi|sleep nora|end conversation|stop listening)\b|ശ്രുതി\s*(?:സ്റ്റോപ്പ്|മതി|നിർത്തു)|നോറാ?\s*(?:സ്റ്റോപ്പ്|മതി|നിർത്തു)|(?:മതി|നിർത്തു)\s*(?:ശ്രുതി|നോറാ?)|ஸ்ருதி\s*(?:ஸ்டாப்|போதும்)|நோரா?\s*(?:ஸ்டாப்|போதும்)/iu;
 const CONTINUATION_END = /(?:\b(?:and|but|or|so|because|then|also|plus|like|actually|means|if|when|with|for|to|about|from|on|in|the|a|an|my|our|your|this|that)\b|അപ്പോ|പിന്നെ|എന്നിട്ട്|അതുപോലെ|അല്ലെങ്കിൽ|കാരണം|ഒക്കെ|കൂടാതെ|അതിന്റെ|ഇതിന്റെ|എന്ന്|ஆனா|அப்புறம்|மேலும்|அது|இது)\s*[,.:;-]*$/iu;
 const COMPLETE_HINT = /[?.!]$|\b(?:today|now|first|please|account|status|issue|issues|done|finish|finished|complete|completed|okay|ok)\s*[?.!]*$/iu;
 const NON_SEMANTIC = /^(?:uh+|um+|hmm+|mm+|er+|ah+|ഹ്+|മ്മ്+|ം+|ம்+)$/iu;
@@ -47,7 +47,7 @@ function loadProfile(): VoiceProfile {
     const parsed = JSON.parse(raw) as Partial<VoiceProfile>;
     return {
       version: 1,
-      avgGapMs: clamp(Number(parsed.avgGapMs) || DEFAULT_PROFILE.avgGapMs, 450, 1800),
+      avgGapMs: clamp(Number(parsed.avgGapMs) || DEFAULT_PROFILE.avgGapMs, 320, 1400),
       avgWords: clamp(Number(parsed.avgWords) || DEFAULT_PROFILE.avgWords, 2, 40),
       samples: clamp(Number(parsed.samples) || 0, 0, 500),
     };
@@ -122,19 +122,19 @@ function settleDelay(text: string, profile: VoiceProfile, segmentCount: number) 
   const words = wordCount(clean);
   const exactWake = /^(?:SHRUTHI|NORA)$/iu.test(clean);
   const body = splitWake(clean).body;
-  let delay = clamp(profile.avgGapMs + 430, 800, 1750);
+  let delay = clamp(profile.avgGapMs + 250, 550, 1300);
 
-  if (exactWake) delay = Math.max(delay, 1100);
-  if (words <= 2 && !exactWake) delay += 520;
-  else if (words <= 4) delay += 320;
-  else if (words >= 10) delay -= 120;
+  if (exactWake) delay = Math.max(delay, 800);
+  if (words <= 2 && !exactWake) delay += 260;
+  else if (words <= 4) delay += 140;
+  else if (words >= 10) delay -= 100;
 
-  if (CONTINUATION_END.test(body)) delay += 520;
-  if (COMPLETE_HINT.test(body)) delay -= 180;
-  if (STOP_WORDS.test(clean)) delay = Math.min(delay, 500);
-  if (segmentCount > 1) delay += Math.min(260, (segmentCount - 1) * 70);
+  if (CONTINUATION_END.test(body)) delay += 320;
+  if (COMPLETE_HINT.test(body)) delay -= 160;
+  if (STOP_WORDS.test(clean)) delay = Math.min(delay, 350);
+  if (segmentCount > 1) delay += Math.min(180, (segmentCount - 1) * 55);
 
-  return Math.round(clamp(delay, 650, 2400));
+  return Math.round(clamp(delay, 450, 1700));
 }
 
 function noraBusy() {
@@ -163,11 +163,11 @@ export default function NoraAdaptiveVoiceNormalizer() {
     };
 
     const updateGapProfile = (gapMs: number) => {
-      if (gapMs < 120 || gapMs > 2800) return;
+      if (gapMs < 100 || gapMs > 2200) return;
       const alpha = profile.samples < 8 ? 0.28 : 0.16;
       profile = {
         ...profile,
-        avgGapMs: clamp(profile.avgGapMs * (1 - alpha) + gapMs * alpha, 450, 1800),
+        avgGapMs: clamp(profile.avgGapMs * (1 - alpha) + gapMs * alpha, 320, 1400),
         samples: Math.min(500, profile.samples + 1),
       };
     };
@@ -205,7 +205,7 @@ export default function NoraAdaptiveVoiceNormalizer() {
       clearDrainTimer();
       if (!queuedTurns.length) return;
       if (noraBusy()) {
-        drainTimer = window.setTimeout(drainQueue, 420);
+        drainTimer = window.setTimeout(drainQueue, 250);
         return;
       }
 
@@ -214,7 +214,7 @@ export default function NoraAdaptiveVoiceNormalizer() {
       dispatchSettled(next);
 
       // Let React apply Processing/Speaking state before evaluating the next queued turn.
-      if (queuedTurns.length) drainTimer = window.setTimeout(drainQueue, 650);
+      if (queuedTurns.length) drainTimer = window.setTimeout(drainQueue, 350);
     };
 
     const enqueueTurn = (turn: SettledTurn) => {
@@ -269,7 +269,7 @@ export default function NoraAdaptiveVoiceNormalizer() {
 
       // A long silence closes the previous turn. It is queued instead of being glued
       // to the next sentence, even when SHRUTHI is still processing/speaking.
-      if (pending && gap > 2800) flush();
+      if (pending && gap > 2200) flush();
       else if (pending && gap) updateGapProfile(gap);
 
       pending = pending ? mergeTranscript(pending, incoming) : incoming;

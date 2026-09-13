@@ -7,6 +7,13 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" };
+const TRANSCRIBE_HINT = "Shruthi, CentralHub, MalluSpices, KeralaGrocery, PocketGrocery, Supabase, GitHub, Netlify, DHL, Mollie, WhatsApp.";
+const PROMPT_ECHO_MARKERS = [
+  "centralhub ai executive assistant",
+  "nora is a legacy wake/internal alias",
+  "the speaker may code-switch",
+  "important terms include",
+];
 
 function reply(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), { status, headers: jsonHeaders });
@@ -45,14 +52,25 @@ function upstreamCode(payload: any): string | null {
   return value ? String(value).slice(0, 120) : null;
 }
 
+function isPromptEcho(text: string) {
+  const normalized = text.toLowerCase().replace(/\s+/g, " ").trim();
+  if (!normalized) return false;
+  const markerHits = PROMPT_ECHO_MARKERS.filter((marker) => normalized.includes(marker)).length;
+  if (markerHits >= 1) return true;
+  const vocabularyHits = ["shruthi", "centralhub", "malluspices", "keralagrocery", "pocketgrocery", "supabase", "github", "netlify", "dhl", "mollie", "whatsapp"]
+    .filter((term) => normalized.includes(term)).length;
+  return vocabularyHits >= 8 && normalized.length > 100;
+}
+
 async function getSnapshot(db: any, userId: string) {
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  const [storesRes, orders24Res, orders7Res, securityRes, healthRes, stockRes, poRes, competitorRes, historyRes] = await Promise.all([
+  const [storesRes, orders24Res, orders7Res, paymentExceptionsRes, securityRes, healthRes, stockRes, poRes, competitorRes, historyRes] = await Promise.all([
     db.from("stores").select("id,name,slug,domain").eq("visibility", true),
-    db.from("orders").select("store_id,total,total_amount,total_revenue,gross_profit,order_profit,order_status,status,payment_status,created_at").gte("created_at", since24h).limit(1000),
-    db.from("orders").select("store_id,total,total_amount,total_revenue,gross_profit,order_profit,created_at").gte("created_at", since7d).limit(2000),
+    db.from("orders").select("store_id,total,total_amount,total_revenue,gross_profit,order_profit,order_status,status,payment_status,created_at").eq("payment_status", "paid").gte("created_at", since24h).limit(1000),
+    db.from("orders").select("store_id,total,total_amount,total_revenue,gross_profit,order_profit,payment_status,created_at").eq("payment_status", "paid").gte("created_at", since7d).limit(2000),
+    db.from("orders").select("payment_status").in("payment_status", ["pending", "failed"]).gte("created_at", since24h).limit(1000),
     db.from("security_events").select("store_id,event_type,severity,status,title,occurrence_count,last_seen_at").gte("last_seen_at", since7d).order("last_seen_at", { ascending: false }).limit(30),
     db.from("site_health_issues").select("store_id,title,category,severity,risk_level,status,last_seen_at").in("status", ["open", "queued", "fixing", "failed"]).order("last_seen_at", { ascending: false }).limit(40),
     db.from("products").select("name,brand,category,stock,reorder_level,stock_status").eq("is_active", true).order("stock", { ascending: true, nullsFirst: true }).limit(25),
@@ -65,6 +83,7 @@ async function getSnapshot(db: any, userId: string) {
   const storeMap = Object.fromEntries(stores.map((s: any) => [s.id, s.name]));
   const orders24 = orders24Res.data ?? [];
   const orders7 = orders7Res.data ?? [];
+  const paymentExceptions = paymentExceptionsRes.data ?? [];
   const byStore: Record<string, { orders24h: number; revenue24h: number; profit24h: number }> = {};
 
   for (const store of stores) byStore[store.name] = { orders24h: 0, revenue24h: 0, profit24h: 0 };
@@ -100,6 +119,10 @@ async function getSnapshot(db: any, userId: string) {
         revenue: Number(sum(orders7, ["total_revenue", "total_amount", "total"]).toFixed(2)),
         profit: Number(sum(orders7, ["gross_profit", "order_profit"]).toFixed(2)),
       },
+      paymentExceptions24h: {
+        pending: paymentExceptions.filter((x: any) => String(x.payment_status).toLowerCase() === "pending").length,
+        failed: paymentExceptions.filter((x: any) => String(x.payment_status).toLowerCase() === "failed").length,
+      },
       securityOpen: security.filter((x: any) => String(x.status).toLowerCase() !== "resolved").slice(0, 12),
       siteHealthOpen: health.slice(0, 15),
       lowStock,
@@ -111,6 +134,7 @@ async function getSnapshot(db: any, userId: string) {
 }
 
 Deno.serve(async (req: Request) => {
+  const requestStartedAt = Date.now();
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
   if (req.method !== "POST") return reply(405, { success: false, error: "method_not_allowed" });
 
@@ -148,7 +172,7 @@ Deno.serve(async (req: Request) => {
       const form = new FormData();
       form.append("file", new File([bytes], `centralhub-command.${ext}`, { type: mimeType }));
       form.append("model", Deno.env.get("CENTRALHUB_TRANSCRIBE_MODEL") ?? "gpt-4o-transcribe");
-      form.append("prompt", "Shruthi (ശ്രുതി) is the CentralHub AI executive assistant; NORA is a legacy wake/internal alias. The speaker may code-switch between Malayalam and English. Important terms include Shruthi, CentralHub, MalluSpices, KeralaGrocery, PocketGrocery, Supabase, GitHub, Netlify, DHL, Mollie, WhatsApp, dashboard, orders, profit, stock, competitors, finance, security, board meeting, scan, deploy, notifications.");
+      form.append("prompt", TRANSCRIBE_HINT);
 
       const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
         method: "POST",
@@ -159,7 +183,8 @@ Deno.serve(async (req: Request) => {
       if (!response.ok) return reply(502, { success: false, error: "transcription_failed", status: response.status, upstream_code: upstreamCode(payload) });
       const text = String(payload?.text ?? "").trim();
       if (!text) return reply(422, { success: false, error: "empty_transcript" });
-      return reply(200, { success: true, transcript: text });
+      if (isPromptEcho(text)) return reply(422, { success: false, error: "transcript_prompt_echo" });
+      return reply(200, { success: true, transcript: text, latency_ms: Date.now() - requestStartedAt });
     } catch (error) {
       return reply(500, { success: false, error: error instanceof Error ? error.message : "transcription_error" });
     }
@@ -172,14 +197,18 @@ Deno.serve(async (req: Request) => {
     const pageContext = String(body?.page_context ?? "").trim().slice(0, 300);
     if (!text) return reply(400, { success: false, error: "missing_command" });
 
+    const snapshotStartedAt = Date.now();
     const snapshot = await getSnapshot(db, user.id);
-    const prompt = `You are Shruthi (ശ്രുതി), the private adaptive AI executive assistant inside CentralHub. Shruthi is a professional female executive assistant for the sole super-admin. NORA is a legacy internal/wake alias only; never present NORA or Tara as your primary name. The user may speak Malayalam, English, or naturally mix both; answer in the same language mix unless clarity requires otherwise.\n\nADAPTIVE BEHAVIOUR:\n- Infer the situation rather than exposing mode buttons. Internal modes may behave like Assistant, Analyst, Operations, Executive, Support, or Critical Alert.\n- If the user is casual, be warm and natural. If the topic is finance, banking, payments, security, legal, permissions, production systems, or a serious operational issue, automatically become precise, restrained, and professional.\n- If the user is terse, stressed, urgent, or giving short commands, remove chatter and lead with the answer/action.\n- For ordinary questions, give the useful short answer first. If the user asks to analyse properly, deeply, fully, audit, investigate, compare, or explain, provide deeper analysis with evidence, anomalies, likely causes, risks, and recommended next steps.\n- Use the current CentralHub page as context, but do not assume facts that are not in the snapshot.\n- Remember and use recentConversation for follow-ups so the user does not have to repeat the task.\n- If the live snapshot shows a genuinely serious security or operational condition relevant to the question, lead with the critical fact and current impact. Do not dramatize normal warnings.\n\nINTERNAL LEGACY MODES (not user-facing): operations = operational scan; board = executive/financial/strategic briefing; developer = technical explanation.\n\nCONTROLLED AUTONOMY / SAFETY:\n- The live snapshot available to this function is read-only. Never invent data or pretend to have executed an external action.\n- Safe remediation may be recommended, but this function itself does not directly change GitHub, Netlify, Gmail, payments, orders, prices, database rows, messages, refunds, users, permissions, deployments, or other external systems.\n- Any requested write, destructive, financial, customer-impacting, legal, permission, deployment, production-schema, refund, price-change, or external action must set requires_confirmation=true and clearly describe the proposed action.\n- Read-only questions and summaries use risk_level=read_only and requires_confirmation=false.\n- If asked to inspect or act in GitHub/Netlify/Supabase/Gmail beyond this snapshot, state what should be checked or done and gate the action appropriately; never claim connected execution happened from this function.\n- navigation_path must be one of /dashboard, /orders, /products, /competitors, /finance, /banking, /purchase, /marketing, /business-intelligence, /settings/notifications, or null.\n\nVOICE STYLE:\n- Spoken replies should normally be concise and easy to understand aloud. Avoid reading long tables. Give a short executive answer and offer/indicate the next useful detail.\n- For detailed-analysis requests, still structure the response clearly but keep it natural for voice.\n\nReturn ONLY valid JSON with exactly these fields:\n{"reply":"string","intent":"string","mode":"operations|board|developer","risk_level":"read_only|low|medium|high","requires_confirmation":false,"suggested_action":null,"navigation_path":null,"speak":true}\n\nCURRENT PAGE: ${pageContext || "unknown"}\nINTERNAL MODE: ${requestedMode}\nUSER COMMAND: ${text}\nLIVE SNAPSHOT JSON:\n${JSON.stringify(snapshot)}`;
+    const snapshotMs = Date.now() - snapshotStartedAt;
+    const prompt = `You are Shruthi (ശ്രുതി), the private adaptive AI executive assistant inside CentralHub. Shruthi is a professional female executive assistant for the sole super-admin. NORA is a legacy internal/wake alias only; never present NORA or Tara as your primary name. The user may speak Malayalam, English, or naturally mix both; answer in the same language mix unless clarity requires otherwise.\n\nADAPTIVE BEHAVIOUR:\n- Infer the situation rather than exposing mode buttons. Internal modes may behave like Assistant, Analyst, Operations, Executive, Support, or Critical Alert.\n- If the user is casual, be warm and natural. If the topic is finance, banking, payments, security, legal, permissions, production systems, or a serious operational issue, automatically become precise, restrained, and professional.\n- If the user is terse, stressed, urgent, or giving short commands, remove chatter and lead with the answer/action.\n- For ordinary questions, give the useful short answer first. If the user asks to analyse properly, deeply, fully, audit, investigate, compare, or explain, provide deeper analysis with evidence, anomalies, likely causes, risks, and recommended next steps.\n- Use the current CentralHub page as context, but do not assume facts that are not in the snapshot.\n- Remember and use recentConversation for follow-ups so the user does not have to repeat the task.\n- Sales, revenue and profit figures in the snapshot count payment_status=paid only. Pending/failed payment counts are separate exceptions and must never be described as completed sales.\n- If the live snapshot shows a genuinely serious security or operational condition relevant to the question, lead with the critical fact and current impact. Do not dramatize normal warnings.\n\nINTERNAL LEGACY MODES (not user-facing): operations = operational scan; board = executive/financial/strategic briefing; developer = technical explanation.\n\nCONTROLLED AUTONOMY / SAFETY:\n- The live snapshot available to this function is read-only. Never invent data or pretend to have executed an external action.\n- Safe remediation may be recommended, but this function itself does not directly change GitHub, Netlify, Gmail, payments, orders, prices, database rows, messages, refunds, users, permissions, deployments, or other external systems.\n- Any requested write, destructive, financial, customer-impacting, legal, permission, deployment, production-schema, refund, price-change, or external action must set requires_confirmation=true and clearly describe the proposed action.\n- Read-only questions and summaries use risk_level=read_only and requires_confirmation=false.\n- If asked to inspect or act in GitHub/Netlify/Supabase/Gmail beyond this snapshot, state what should be checked or done and gate the action appropriately; never claim connected execution happened from this function.\n- navigation_path must be one of /dashboard, /orders, /products, /competitors, /finance, /banking, /purchase, /marketing, /business-intelligence, /settings/notifications, or null.\n\nVOICE STYLE:\n- Spoken replies should normally be concise and easy to understand aloud. Avoid reading long tables. Give a short executive answer and offer/indicate the next useful detail.\n- For detailed-analysis requests, still structure the response clearly but keep it natural for voice.\n\nReturn ONLY valid JSON with exactly these fields:\n{"reply":"string","intent":"string","mode":"operations|board|developer","risk_level":"read_only|low|medium|high","requires_confirmation":false,"suggested_action":null,"navigation_path":null,"speak":true}\n\nCURRENT PAGE: ${pageContext || "unknown"}\nINTERNAL MODE: ${requestedMode}\nUSER COMMAND: ${text}\nLIVE SNAPSHOT JSON:\n${JSON.stringify(snapshot)}`;
 
     const configuredModel = String(Deno.env.get("CENTRALHUB_VOICE_MODEL") || Deno.env.get("OPENAI_MODEL_FAST") || "").trim();
     const candidateModels = Array.from(new Set(["gpt-5.6-luna", configuredModel, "gpt-5.6-terra"].filter(Boolean)));
+    const deepRequest = /\b(deep|deeply|detailed|fully|audit|investigate|analyse|analyze|compare|scan everything|full scan)\b|ഡീറ്റെയിൽ|ഡീപ്|ഓഡിറ്റ്|വിശദമായി/iu.test(text);
     let raw: any = null;
     let aiResponse: Response | null = null;
     let usedModel = "";
+    const modelStartedAt = Date.now();
 
     for (const model of candidateModels) {
       usedModel = model;
@@ -190,7 +219,7 @@ Deno.serve(async (req: Request) => {
           model,
           store: false,
           input: prompt,
-          max_output_tokens: 1200,
+          max_output_tokens: deepRequest ? 1200 : 700,
           text: {
             format: {
               type: "json_schema",
@@ -223,6 +252,7 @@ Deno.serve(async (req: Request) => {
       const retryableModelError = aiResponse.status === 404 && (code === "model_not_found" || code === "not_found_error");
       if (!retryableModelError) break;
     }
+    const modelMs = Date.now() - modelStartedAt;
 
     if (!aiResponse?.ok) {
       return reply(502, {
@@ -231,6 +261,7 @@ Deno.serve(async (req: Request) => {
         status: aiResponse?.status ?? 502,
         upstream_code: upstreamCode(raw),
         attempted_model: usedModel || null,
+        latency_ms: Date.now() - requestStartedAt,
       });
     }
 
@@ -239,7 +270,7 @@ Deno.serve(async (req: Request) => {
     try {
       result = JSON.parse(content);
     } catch {
-      return reply(502, { success: false, error: "invalid_assistant_output", attempted_model: usedModel || null });
+      return reply(502, { success: false, error: "invalid_assistant_output", attempted_model: usedModel || null, latency_ms: Date.now() - requestStartedAt });
     }
 
     const safeMode = ["operations", "board", "developer"].includes(String(result?.mode)) ? String(result.mode) : requestedMode;
@@ -257,6 +288,7 @@ Deno.serve(async (req: Request) => {
     };
 
     const status = requiresConfirmation ? "pending_confirmation" : "completed";
+    const totalMs = Date.now() - requestStartedAt;
     const { error: historyError } = await db.from("voice_assistant_commands").insert({
       user_id: user.id,
       mode: finalResult.mode,
@@ -266,12 +298,18 @@ Deno.serve(async (req: Request) => {
       risk_level: finalResult.risk_level,
       requires_confirmation: finalResult.requires_confirmation,
       action_name: finalResult.suggested_action,
-      action_payload: { navigation_path: finalResult.navigation_path, model: usedModel, page_context: pageContext, assistant_name: "Shruthi" },
+      action_payload: {
+        navigation_path: finalResult.navigation_path,
+        model: usedModel,
+        page_context: pageContext,
+        assistant_name: "Shruthi",
+        latency_ms: { snapshot: snapshotMs, model: modelMs, total: totalMs },
+      },
       status,
     });
     if (historyError) console.error("centralhub-voice history insert failed", historyError.message);
 
-    return reply(200, { success: true, transcript: text, ...finalResult, status });
+    return reply(200, { success: true, transcript: text, ...finalResult, status, latency_ms: { snapshot: snapshotMs, model: modelMs, total: totalMs } });
   }
 
   return reply(400, { success: false, error: "invalid_action" });
