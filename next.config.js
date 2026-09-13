@@ -1,12 +1,17 @@
 /** @type {import('next').NextConfig} */
+const isStaticExport = process.env.NEXT_OUTPUT?.trim() === 'export';
+
 const nextConfig = {
-  output: process.env.NEXT_OUTPUT?.trim() === 'export' ? 'export' : undefined,
+  output: isStaticExport ? 'export' : undefined,
   images: {
-    unoptimized: true,
+    // Capacitor/static export cannot use the Next image optimiser. Netlify web
+    // can, so do not disable optimisation globally.
+    unoptimized: isStaticExport,
   },
   reactStrictMode: false,
   typescript: {
-    ignoreBuildErrors: true,
+    // CI already type-checks before building; production should fail closed too.
+    ignoreBuildErrors: false,
   },
   productionBrowserSourceMaps: false,
 };

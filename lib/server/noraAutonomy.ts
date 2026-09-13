@@ -34,18 +34,10 @@ async function writeExecutionLog(
     execution_result?: Record<string, unknown>;
   },
 ) {
-  const { data: existing } = await db
-    .from('automation_execution_log')
-    .select('id')
-    .eq('idempotency_key', row.idempotency_key)
-    .maybeSingle();
-
-  if (existing?.id) return { inserted: false, id: existing.id };
-
   const now = new Date().toISOString();
   const { data, error } = await db
     .from('automation_execution_log')
-    .insert({
+    .upsert({
       action_type: row.action_type,
       status: 'executed',
       mode: 'guarded',
@@ -58,12 +50,15 @@ async function writeExecutionLog(
       execution_result: row.execution_result || {},
       started_at: now,
       completed_at: now,
+    }, {
+      onConflict: 'idempotency_key',
+      ignoreDuplicates: true,
     })
     .select('id')
-    .single();
+    .maybeSingle();
 
   if (error) throw error;
-  return { inserted: true, id: data?.id };
+  return { inserted: Boolean(data?.id), id: data?.id };
 }
 
 export async function runNoraAutonomy(

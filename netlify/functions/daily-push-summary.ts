@@ -6,7 +6,9 @@ import {
 import type { StoredPushSubscription } from '../../lib/server/webPush';
 
 export const config = {
-  schedule: '*/15 * * * *',
+  // 22:00 London is 21:00 UTC during BST and 22:00 UTC during GMT.
+  // The runtime guard below keeps only the correct local-time execution.
+  schedule: '*/15 21,22 * * *',
 };
 
 const TIME_ZONE = 'Europe/London';
@@ -46,15 +48,6 @@ function json(data: Record<string, unknown>, status = 200) {
     status,
     headers: { 'Content-Type': 'application/json' },
   });
-}
-
-function isPaidBusinessOrder(order: any, localDate: string) {
-  const orderDate = getLocalParts(new Date(order.created_at)).date;
-  const orderStatus = String(order.order_status || order.status || '').toLowerCase();
-  const paymentStatus = String(order.payment_status || '').toLowerCase();
-  return orderDate === localDate
-    && paymentStatus === 'paid'
-    && !['cancelled', 'refunded', 'failed', 'payment_failed', 'returned'].includes(orderStatus);
 }
 
 export default async function dailyPushSummary() {
@@ -101,33 +94,25 @@ export default async function dailyPushSummary() {
     return json({ success: true, skipped: true, reason: 'Summary already sent.', summary_date: local.date });
   }
 
-  const { data: orders, error: ordersError } = await db
-    .from('orders')
-    .select('*')
-    .gte('created_at', queryStart)
-    .eq('payment_status', 'paid')
-    .limit(5000);
+  const { data: summary, error: summaryError } = await db
+    .rpc('get_daily_paid_order_summary', {
+      p_local_date: local.date,
+      p_timezone: TIME_ZONE,
+    })
+    .single();
 
-  if (ordersError) return json({ success: false, error: ordersError.message }, 500);
+  if (summaryError || !summary) {
+    return json({ success: false, error: summaryError?.message || 'Could not calculate daily summary.' }, 500);
+  }
 
-  const todaysOrders = (orders || []).filter((order: any) => isPaidBusinessOrder(order, local.date));
-
-  const sales = todaysOrders.reduce((sum: number, order: any) =>
-    sum + toAmount(order.total ?? order.total_amount ?? order.grand_total), 0);
-
-  const profit = todaysOrders.reduce((sum: number, order: any) => {
-    const recordedProfit = Number(order.order_profit ?? order.profit);
-    if (Number.isFinite(recordedProfit)) return sum + recordedProfit;
-
-    const total = toAmount(order.total ?? order.total_amount ?? order.grand_total);
-    const cost = toAmount(order.product_cost_total ?? order.order_cost ?? order.cost_of_goods);
-    return sum + (total - cost);
-  }, 0);
+  const paidOrderCount = Number((summary as any).paid_order_count || 0);
+  const sales = toAmount((summary as any).sales);
+  const profit = toAmount((summary as any).profit);
 
   const title = 'Today’s CentralHub summary';
   const message = [
     `${local.date} paid-order summary`,
-    `Paid orders: ${todaysOrders.length}`,
+    `Paid orders: ${paidOrderCount}`,
     `Sales: ${formatMoney(sales)}`,
     `Profit: ${formatMoney(profit)}`,
   ].join(' • ');
@@ -146,7 +131,7 @@ export default async function dailyPushSummary() {
         source: 'centralhub-daily-summary',
         basis: 'payment_status_paid_only',
         summary_date: local.date,
-        paid_order_count: todaysOrders.length,
+        paid_order_count: paidOrderCount,
         sales,
         profit,
       },
@@ -188,7 +173,7 @@ export default async function dailyPushSummary() {
   return json({
     success: results.some((result) => result.ok),
     summary_date: local.date,
-    paid_order_count: todaysOrders.length,
+    paid_order_count: paidOrderCount,
     sales,
     profit,
     sent: results.filter((result) => result.ok).length,
