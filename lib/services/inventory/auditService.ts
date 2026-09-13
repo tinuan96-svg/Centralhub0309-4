@@ -1,7 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import { InventoryService } from '../inventoryService';
 import { StockSyncService } from '../products/stockSyncService';
-import { InventoryManagementService } from './inventoryManagementService';
 
 export interface AuditProduct {
   id: string;
@@ -73,49 +71,100 @@ export class AuditService {
   }): Promise<boolean> {
     const { productId, totalStock, bins, expiryDate, notes, userId, gtin } = params;
     const auditedAt = new Date().toISOString();
+    const auditNote = notes?.trim() || `Physical stock audit across ${bins.length} location${bins.length === 1 ? '' : 's'}`;
 
     try {
-      const currentInventory = await InventoryService.getInventoryForProduct(productId);
-      const oldStock = Number(currentInventory?.stock_quantity ?? 0);
-      const change = totalStock - oldStock;
-
-      if (change !== 0) {
-        await InventoryManagementService.adjustStock({
-          productId,
-          changeAmount: change,
-          type: 'ADJUST',
-          reason: notes || `Physical stock audit across ${bins.length} location${bins.length === 1 ? '' : 's'}`,
-          notes: notes || `Physical stock audit across ${bins.length} location${bins.length === 1 ? '' : 's'}`,
-        });
+      if (!Number.isFinite(totalStock) || totalStock < 0) {
+        throw new Error('Audit stock total must be a non-negative number.');
       }
 
-      const primaryLocation = bins[0]?.location_code || '';
-      const productUpdate: any = { warehouse_location: primaryLocation, expiry_date: expiryDate, updated_at: auditedAt };
+      const { data: currentInventory, error: currentInventoryError } = await supabase
+        .from('central_inventory')
+        .select('stock_quantity')
+        .eq('product_id', productId)
+        .maybeSingle();
+      if (currentInventoryError) throw currentInventoryError;
+      if (!currentInventory) throw new Error('Product is not registered in the inventory master.');
+
+      const oldStock = Number(currentInventory.stock_quantity ?? 0);
+      const change = totalStock - oldStock;
+      const primaryLocation = bins[0]?.location_code?.trim() || '';
+
+      const productUpdate: any = {
+        warehouse_location: primaryLocation,
+        expiry_date: expiryDate || null,
+        last_audited_at: auditedAt,
+        last_audited_by: userId || null,
+        audit_notes: auditNote,
+        updated_at: auditedAt
+      };
       if (gtin) productUpdate.gtin = gtin;
-      const { error: productError } = await supabase.from('products').update(productUpdate).eq('id', productId);
+
+      const { error: productError } = await supabase
+        .from('products')
+        .update(productUpdate)
+        .eq('id', productId);
       if (productError) throw productError;
 
-      const { error: deleteBinsError } = await supabase.from('product_bin_locations').delete().eq('product_id', productId);
+      const { error: deleteBinsError } = await supabase
+        .from('product_bin_locations')
+        .delete()
+        .eq('product_id', productId);
       if (deleteBinsError) throw deleteBinsError;
+
       if (bins.length > 0) {
-        const { error: binsError } = await supabase.from('product_bin_locations').insert(bins.map(bin => ({
+        const cleanBins = bins.map(bin => ({
           product_id: productId,
-          location_code: bin.location_code,
-          stock_quantity: bin.stock_quantity,
+          location_code: bin.location_code.trim(),
+          stock_quantity: Number(bin.stock_quantity) || 0,
           last_audited_at: auditedAt
-        })));
+        }));
+        if (cleanBins.some(bin => !bin.location_code || bin.stock_quantity < 0)) {
+          throw new Error('Every stock location needs a location code and a non-negative quantity.');
+        }
+        const { error: binsError } = await supabase.from('product_bin_locations').insert(cleanBins);
         if (binsError) throw binsError;
       }
 
-      const { error: inventoryError } = await supabase.from('central_inventory').upsert({
-        product_id: productId,
-        stock_quantity: totalStock,
-        last_audited_at: auditedAt,
-        last_audited_by: userId,
-        audit_notes: notes,
-        updated_at: auditedAt
-      }, { onConflict: 'product_id' });
-      if (inventoryError) throw inventoryError;
+      if (change !== 0) {
+        // central_inventory is a writable view over products. UPDATE is supported by its
+        // INSTEAD OF trigger; UPSERT/ON CONFLICT is not, which was causing audit saves to fail.
+        const { error: stockError } = await supabase
+          .from('central_inventory')
+          .update({ stock_quantity: totalStock, updated_at: auditedAt })
+          .eq('product_id', productId);
+        if (stockError) throw stockError;
+
+        const { data: warehouse } = await supabase
+          .from('warehouses')
+          .select('id')
+          .eq('is_active', true)
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+        const { error: movementError } = await supabase.from('inventory_movements').insert({
+          product_id: productId,
+          warehouse_id: warehouse?.id || null,
+          change_amount: change,
+          old_stock: oldStock,
+          new_stock: totalStock,
+          action_type: 'ADJUST',
+          notes: auditNote,
+          created_at: auditedAt
+        });
+
+        if (movementError) {
+          const { error: rollbackError } = await supabase
+            .from('central_inventory')
+            .update({ stock_quantity: oldStock, updated_at: new Date().toISOString() })
+            .eq('product_id', productId);
+          if (rollbackError) {
+            throw new Error(`Audit ledger failed (${movementError.message}) and stock rollback failed (${rollbackError.message}).`);
+          }
+          throw new Error(`Audit stock change was rolled back because ledger logging failed: ${movementError.message}`);
+        }
+      }
 
       const { error: logError } = await supabase.from('inventory_logs').insert([{
         product_id: productId,
@@ -123,14 +172,22 @@ export class AuditService {
         old_quantity: oldStock,
         new_quantity: totalStock,
         type: 'AUDIT',
+        movement_type: 'AUDIT',
         reason: 'Physical Stock Audit (Multi-Location)',
-        notes: notes || `Audit across ${bins.length} locations.`,
-        edited_by: userId,
+        notes: auditNote,
+        edited_by: userId || null,
         created_at: auditedAt
       }]);
-      if (logError) console.warn('[AuditService] inventory_logs write failed:', logError.message);
+      if (logError) console.warn('[AuditService] secondary inventory_logs write failed:', logError.message);
 
-      await StockSyncService.syncStockToAllWebsites(productId, totalStock);
+      try {
+        await StockSyncService.syncStockToAllWebsites(productId, totalStock);
+      } catch (syncError) {
+        // The physical audit is already saved locally. A downstream store-sync issue must not
+        // falsely report the audit itself as failed; the normal sync/retry pipeline can recover it.
+        console.warn('[AuditService] audit saved but downstream stock sync failed:', syncError);
+      }
+
       return true;
     } catch (error) {
       console.error('[AuditService] Audit failed:', error);
@@ -179,14 +236,6 @@ export class AuditService {
       return null;
     }
 
-    const { error: inventoryError } = await supabase.from('central_inventory').insert([{
-      product_id: data.id,
-      product_name: data.name,
-      stock_quantity: 0,
-      updated_at: new Date().toISOString()
-    }]);
-    if (inventoryError) console.warn('[AuditService] inventory initialization failed:', inventoryError.message);
-
     return {
       id: data.id,
       name: data.name,
@@ -198,8 +247,8 @@ export class AuditService {
       is_active: data.is_active,
       is_published: data.is_published,
       expiry_date: data.expiry_date || null,
-      current_stock: 0,
-      last_audited_at: null,
+      current_stock: Number(data.stock || 0),
+      last_audited_at: data.last_audited_at || null,
     };
   }
 }
