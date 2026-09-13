@@ -1,0 +1,60 @@
+name: Picking summary voice-back hotfix
+
+on:
+  push:
+    paths:
+      - '.github/workflows/voice-summary-back-hotfix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Patch summary back voice command
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('app/picking/active/ActivePickingClient.tsx')
+          text = path.read_text()
+
+          needle = """    if (showSummary && isConfirm) {\n      lastActionTimeRef.current = now;\n      speakRef.current('Finishing session. Good job.');\n      completePicking();\n      return;\n    }\n"""
+
+          replacement = """    if (showSummary && isBack) {\n      lastActionTimeRef.current = now;\n      setShowSummary(false);\n      const reviewIndex = Math.max(0, Math.min(currentIndex, groupedItems.length - 1));\n      if (reviewIndex !== currentIndex) updateCurrentIndex(reviewIndex);\n      speakRef.current('Going back to the previous item.');\n      return;\n    }\n\n    if (showSummary && isConfirm) {\n      lastActionTimeRef.current = now;\n      speakRef.current('Finishing session. Good job.');\n      completePicking();\n      return;\n    }\n"""
+
+          if replacement in text:
+              print('Voice summary back hotfix already present.')
+          elif needle not in text:
+              raise SystemExit('Expected summary confirm block was not found; refusing unsafe edit.')
+          else:
+              path.write_text(text.replace(needle, replacement, 1))
+              print('Applied summary voice-back hotfix.')
+          PY
+
+      - name: Verify patch
+        shell: bash
+        run: |
+          grep -F "showSummary && isBack" app/picking/active/ActivePickingClient.tsx
+          grep -F "Going back to the previous item." app/picking/active/ActivePickingClient.tsx
+
+      - name: Commit hotfix
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/picking/active/ActivePickingClient.tsx
+          git commit -m "fix: allow voice back from picking summary"
+          git push origin HEAD:main
