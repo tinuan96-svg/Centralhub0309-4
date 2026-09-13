@@ -1,4 +1,5 @@
 import { ServiceType } from '../../types';
+import { supabase } from '../../supabase';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -79,12 +80,26 @@ export interface DHLStatusResponse {
   warning?: string;
 }
 
+async function getAccessToken(): Promise<string> {
+  let session = (await supabase.auth.getSession()).data.session;
+  const expiresSoon = session?.expires_at ? session.expires_at * 1000 - Date.now() < 60_000 : false;
+  if (expiresSoon) {
+    const refreshed = await supabase.auth.refreshSession();
+    if (!refreshed.error && refreshed.data.session) session = refreshed.data.session;
+  }
+  const token = session?.access_token;
+  if (!token) throw new Error('Your CentralHub session has expired. Sign in again before using DHL.');
+  return token;
+}
+
 async function callEdgeFunction(path: string, options: RequestInit = {}): Promise<any> {
   const url = `${SUPABASE_URL}/functions/v1/dhl-ecommerce/${path}`;
+  const accessToken = await getAccessToken();
   const response = await fetch(url, {
     ...options,
     headers: {
-      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      'Authorization': `Bearer ${accessToken}`,
+      'Apikey': SUPABASE_ANON_KEY,
       'Content-Type': 'application/json',
       ...(options.headers || {}),
     },
@@ -106,6 +121,10 @@ export class DHLService {
       console.error('DHL status check error:', error);
       return { success: false, configured: false, error: error.message };
     }
+  }
+
+  static async diagnose(): Promise<any> {
+    return callEdgeFunction('diagnose');
   }
 
   static async createShipment(request: DHLShipmentRequest): Promise<DHLShipmentResponse> {
@@ -130,7 +149,6 @@ export class DHLService {
         senderEmail: request.sender.email || '',
         weightKg: Math.max(0.1, request.weightGrams / 1000),
         numberOfItems: request.numberOfItems || 1,
-        // Next-day domestic only — service code resolved in the edge function
         service: 'ND',
         customerReference: request.reference || '',
         specialInstructions: request.specialInstructions || '',
@@ -163,16 +181,16 @@ export class DHLService {
           carrierReference: data.shipmentNumber || undefined,
           estimatedDelivery: undefined,
         };
-      } else {
-        console.error('DHL shipment creation failed:', data);
-        return {
-          success: false,
-          error: data.error || 'DHL shipment creation failed',
-          dhlResponse: data.dhlResponse,
-          rawResponse: data.rawResponse,
-          requestPayload: data.requestPayload,
-        } as any;
       }
+
+      console.error('DHL shipment creation failed:', data);
+      return {
+        success: false,
+        error: data.error || 'DHL shipment creation failed',
+        dhlResponse: data.dhlResponse,
+        rawResponse: data.rawResponse,
+        requestPayload: data.requestPayload,
+      } as any;
     } catch (error: any) {
       console.error('DHL createShipment error:', error);
       return {
@@ -239,7 +257,7 @@ export class DHLService {
     try {
       return await callEdgeFunction('validate-address', {
         method: 'POST',
-        body: JSON.stringify({ postcode, city })
+        body: JSON.stringify({ postcode, city }),
       });
     } catch (error: any) {
       return { success: false, valid: false, error: error.message };
@@ -250,11 +268,10 @@ export class DHLService {
     try {
       const data = await callEdgeFunction('calculate-rate', {
         method: 'POST',
-        body: JSON.stringify(request)
+        body: JSON.stringify(request),
       });
       if (data.success) return data;
 
-      // Fallback to estimated cost if API fails
       const cost = this.calculateEstimatedCost(request.weightGrams, request.serviceType);
       return { success: true, cost, estimatedDays: 1, currency: 'GBP' };
     } catch {
