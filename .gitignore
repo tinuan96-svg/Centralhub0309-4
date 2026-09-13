@@ -22,6 +22,10 @@
 # IDE / local workspace metadata
 /.idea/
 
+# generated audit outputs
+route-audit-output.txt
+feature-continuity-audit-output.txt
+
 # debug
 npm-debug.log*
 yarn-debug.log*
