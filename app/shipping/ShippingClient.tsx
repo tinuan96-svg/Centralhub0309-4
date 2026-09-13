@@ -612,12 +612,7 @@ export default function ShippingPage({ params, searchParams }: { params: any; se
   const runDiagnostic = async () => {
     setCheckingDhl(true);
     try {
-      const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-      const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-      const resp = await fetch(`${SUPABASE_URL}/functions/v1/dhl-ecommerce/diagnose`, {
-        headers: { Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
-      });
-      const data = await resp.json();
+      const data = await DHLService.diagnose();
       console.log('DHL Diagnostic Result:', data);
       alert(`DHL Diagnostic:\nAuth: ${data.tokenStatus}\nEnv: ${data.config.environment}\nCheck console for full details.`);
     } catch (err: any) {

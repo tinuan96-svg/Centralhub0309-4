@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -18,19 +19,15 @@ const DHL_CLIENT_SECRET = Deno.env.get("DHL_CLIENT_SECRET") || "";
 const DHL_ACCOUNT_NUMBER = Deno.env.get("DHL_ACCOUNT_NUMBER") || "";
 const DHL_PICKUP_ACCOUNT = Deno.env.get("DHL_PICKUP_ACCOUNT") || "";
 
-// UAT fallback credentials — used when DHL_ENV=uat and no secrets are set
-const UAT_CLIENT_ID = "9d350864-e5e3-4582-9bc7-181fbf44ab78";
-const UAT_CLIENT_SECRET = ".Vo8Q~ib4Ub-qjAU6bnvIsUr47R.YXv~.66qmb0W";
-const UAT_PICKUP_ACCOUNT = "F020579";
-const UAT_ORDERED_PRODUCT = "220";
+const UAT_ORDERED_PRODUCT = Deno.env.get("DHL_UAT_ORDERED_PRODUCT") || "220";
 
 function getCredentials() {
   if (DHL_ENV === "uat") {
     return {
-      clientId: DHL_CLIENT_ID || UAT_CLIENT_ID,
-      clientSecret: DHL_CLIENT_SECRET || UAT_CLIENT_SECRET,
-      pickupAccount: DHL_PICKUP_ACCOUNT || UAT_PICKUP_ACCOUNT,
-      accountNumber: DHL_ACCOUNT_NUMBER || UAT_PICKUP_ACCOUNT,
+      clientId: DHL_CLIENT_ID,
+      clientSecret: DHL_CLIENT_SECRET,
+      pickupAccount: DHL_PICKUP_ACCOUNT,
+      accountNumber: DHL_ACCOUNT_NUMBER || DHL_PICKUP_ACCOUNT,
       orderedProduct: UAT_ORDERED_PRODUCT,
     };
   }
@@ -41,6 +38,30 @@ function getCredentials() {
     accountNumber: DHL_ACCOUNT_NUMBER,
     orderedProduct: "220",
   };
+}
+
+
+async function authorizeAdmin(req: Request) {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  const authHeader = req.headers.get("Authorization") || "";
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  if (!token) return false;
+  if (serviceKey && token === serviceKey) return true;
+
+  const db = createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+  const { data: { user }, error } = await db.auth.getUser(token);
+  if (error || !user) return false;
+
+  const metadataRole = String(user.app_metadata?.role || user.user_metadata?.profile_role || "").toLowerCase();
+  if (["admin", "superadmin", "administrator"].includes(metadataRole)) return true;
+
+  const { data: profile } = await db
+    .from("user_profiles")
+    .select("profile_role,is_active")
+    .eq("id", user.id)
+    .maybeSingle();
+  return profile?.is_active !== false && ["admin", "superadmin", "administrator"].includes(String(profile?.profile_role || "").toLowerCase());
 }
 
 let cachedToken: { token: string; expiresAt: number } | null = null;
@@ -366,6 +387,13 @@ async function trackShipment(trackingNumber: string) {
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
+
+  if (!(await authorizeAdmin(req))) {
+    return new Response(JSON.stringify({ success: false, error: "Unauthorized: admin access required" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   try {
     const url = new URL(req.url);

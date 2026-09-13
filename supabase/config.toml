@@ -18,3 +18,16 @@ verify_jwt = false
 
 [functions.whatsapp-media]
 verify_jwt = false
+
+[functions.setup-admin]
+verify_jwt = true
+
+[functions.create-user]
+verify_jwt = true
+
+[functions.update-order-status]
+verify_jwt = true
+
+[functions.dhl-ecommerce]
+verify_jwt = true
+

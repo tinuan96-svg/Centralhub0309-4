@@ -77,10 +77,38 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
   if (req.method !== "POST") return reply({ success: false, error: "Method not allowed" }, 405);
 
-  const central = createClient(
-    Deno.env.get("SUPABASE_URL") || "",
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "",
-  );
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  const central = createClient(supabaseUrl, serviceKey);
+
+  const authHeader = req.headers.get("Authorization") || "";
+  const bearer = authHeader.replace(/^Bearer\s+/i, "").trim();
+  if (!bearer) return reply({ success: false, error: "Unauthorized" }, 401);
+
+  const internalServiceCall = Boolean(serviceKey) && bearer === serviceKey;
+  if (!internalServiceCall) {
+    const publishableKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY") || "";
+    if (!publishableKey) return reply({ success: false, error: "Authentication is not configured" }, 500);
+
+    const userClient = createClient(supabaseUrl, publishableKey, {
+      global: { headers: { Authorization: `Bearer ${bearer}` } },
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const { data: { user }, error: userError } = await userClient.auth.getUser();
+    if (userError || !user) return reply({ success: false, error: "Unauthorized" }, 401);
+
+    const metadataRole = String(user.app_metadata?.role || user.user_metadata?.profile_role || "").toLowerCase();
+    let allowed = ["admin", "superadmin", "administrator"].includes(metadataRole);
+    if (!allowed) {
+      const { data: profile } = await central
+        .from("user_profiles")
+        .select("profile_role,is_active")
+        .eq("id", user.id)
+        .maybeSingle();
+      allowed = profile?.is_active !== false && ["admin", "superadmin", "administrator"].includes(String(profile?.profile_role || "").toLowerCase());
+    }
+    if (!allowed) return reply({ success: false, error: "Forbidden: admin only" }, 403);
+  }
 
   let orderId: string | undefined;
   const markSync = async (state: "synced" | "failed", error?: string | null) => {
