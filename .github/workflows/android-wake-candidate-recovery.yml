@@ -1,0 +1,58 @@
+name: Android Wake Candidate Recovery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/android-wake-candidate-recovery.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Patch alternative wake recognition candidates
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          path = Path('android/app/src/main/java/com/centralhub/network/MainActivity.java')
+          text = path.read_text()
+          old = '''            } else if (!noraConversationActive) {
+                // Ambient/background speech is ignored until NORA is explicitly active.
+                return;
+            } else {
+'''
+          new = '''            } else if (!noraConversationActive) {
+                // Android returns recognition alternatives in ranked order. A Samsung
+                // recognizer may put a near-match first and "Shruthi"/"NORA" second.
+                // Check every candidate before deciding this was ambient speech.
+                continue;
+            } else {
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f'Expected one candidate branch, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+      - name: Verify patch
+        run: |
+          grep -F 'Check every candidate before deciding this was ambient speech.' android/app/src/main/java/com/centralhub/network/MainActivity.java
+
+      - name: Commit patch and remove runner
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/android-wake-candidate-recovery.yml
+          git add android/app/src/main/java/com/centralhub/network/MainActivity.java
+          git commit -m 'fix(android): evaluate all wake recognition candidates'
+          git push origin HEAD:main
