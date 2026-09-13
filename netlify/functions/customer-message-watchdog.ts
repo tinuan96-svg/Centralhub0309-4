@@ -4,6 +4,9 @@ export const config = {
   schedule: '*/2 * * * *',
 };
 
+// Continuity migration note: the previous implementation used
+// `UNANSWERED_AFTER_MS = 45 * 1000`; the current notification policy intentionally
+// waits ten minutes so AI replies and ticket handoffs are not raced by a push.
 const UNANSWERED_AFTER_MS = 10 * 60 * 1000;
 
 type UnansweredConversation = {
