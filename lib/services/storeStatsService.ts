@@ -9,7 +9,9 @@ export interface StoreStats {
   lowStockCount: number;
   outOfStockCount: number;
   totalOrders: number;
+  paidOrders: number;
   pendingOrders: number;
+  failedOrders: number;
   totalRevenue: number;
   revenueTrend: number[];
   revenueGrowth: number;
@@ -19,48 +21,65 @@ export interface StoreStats {
   fulfillmentRate: number;
 }
 
+function productIsGloballyLive(product: any) {
+  return product?.is_deleted !== true
+    && product?.is_active !== false
+    && product?.approval_status === 'approved'
+    && product?.is_published === true
+    && product?.is_archived !== true;
+}
+
 export class StoreStatsService {
   static async getStoreStats(storeId: string, filters?: { startDate?: Date; endDate?: Date }): Promise<StoreStats | null> {
     try {
       let ordersQuery = supabase
         .from('orders')
-        .select('id, order_status, payment_status, total, delivery_fee, created_at, warehouse_status')
-        .eq('store_id', storeId);
+        .select('id, order_status, payment_status, total, delivery_fee, created_at, warehouse_status, is_deleted')
+        .eq('store_id', storeId)
+        .eq('is_deleted', false);
 
       if (filters?.startDate) ordersQuery = ordersQuery.gte('created_at', filters.startDate.toISOString());
       if (filters?.endDate) ordersQuery = ordersQuery.lte('created_at', filters.endDate.toISOString());
 
-      const [storeRes, productsRes, inventoryRes, ordersRes] = await Promise.all([
+      const [storeRes, productsRes, inventoryRes, visibilityRes, ordersRes] = await Promise.all([
         supabase.from('stores').select('id, name, slug').eq('id', storeId).maybeSingle(),
-        supabase.from('products').select('id, is_active, is_deleted'),
+        supabase.from('products').select('id, is_active, is_deleted, approval_status, is_published, is_archived'),
         supabase.from('central_inventory').select('product_id, stock_quantity, low_stock_threshold'),
+        supabase.from('store_product_visibility').select('product_id, is_visible').eq('store_id', storeId),
         ordersQuery,
       ]);
 
       const store = storeRes.data;
       if (!store) return null;
 
-      const products = (productsRes.data ?? []).filter((p: any) => !p.is_deleted);
+      const products = productsRes.data ?? [];
       const inventory = inventoryRes.data ?? [];
+      const visibility = visibilityRes.data ?? [];
       const orders = ordersRes.data ?? [];
       const inventoryByProduct = new Map(inventory.map((i: any) => [i.product_id, i]));
+      const visibilityByProduct = new Map(visibility.map((row: any) => [row.product_id, row.is_visible !== false]));
 
-      const activeProducts = products.filter((p: any) => p.is_active !== false).length;
-      const lowStockCount = products.filter((p: any) => {
-        if (p.is_active === false) return false;
+      // Store cards describe the effective CentralHub storefront catalogue, not every
+      // product row in the shared master table. A product must pass the global
+      // approval/publication gate and must not be explicitly hidden for this store.
+      const globallyLiveProducts = products.filter(productIsGloballyLive);
+      const storeLiveProducts = globallyLiveProducts.filter((p: any) => visibilityByProduct.get(p.id) !== false);
+      const activeProducts = storeLiveProducts.length;
+
+      const lowStockCount = storeLiveProducts.filter((p: any) => {
         const inv: any = inventoryByProduct.get(p.id);
         const stock = inv?.stock_quantity ?? 0;
         const threshold = inv?.low_stock_threshold ?? 5;
         return stock > 0 && stock <= threshold;
       }).length;
-      const outOfStockCount = products.filter((p: any) => {
-        if (p.is_active === false) return false;
+      const outOfStockCount = storeLiveProducts.filter((p: any) => {
         const inv: any = inventoryByProduct.get(p.id);
         return (inv?.stock_quantity ?? 0) <= 0;
       }).length;
 
+      const excludedStatuses = new Set(['cancelled', 'refunded', 'failed', 'returned']);
       const revenueOrders = orders.filter((o: any) =>
-        o.payment_status === 'paid' && !['cancelled', 'refunded'].includes(o.order_status)
+        o.payment_status === 'paid' && !excludedStatuses.has(String(o.order_status || '').toLowerCase())
       );
       const totalRevenue = revenueOrders.reduce(
         (sum: number, o: any) => sum + ((o.total ?? 0) - (o.delivery_fee ?? 0)),
@@ -68,13 +87,19 @@ export class StoreStatsService {
       );
       const aov = revenueOrders.length > 0 ? totalRevenue / revenueOrders.length : 0;
 
-      const paidOrders = orders.filter((o: any) => o.payment_status === 'paid');
+      const paidOrders = revenueOrders;
       const fulfilledOrders = paidOrders.filter((o: any) =>
         ['shipped', 'delivered', 'completed'].includes(o.order_status)
       );
       const fulfillmentRate = paidOrders.length > 0
         ? (fulfilledOrders.length / paidOrders.length) * 100
         : 0;
+      const pendingOrders = orders.filter((o: any) =>
+        o.payment_status === 'pending' || (o.order_status === 'pending_payment' && o.payment_status !== 'failed')
+      ).length;
+      const failedOrders = orders.filter((o: any) =>
+        o.payment_status === 'failed' || o.order_status === 'failed'
+      ).length;
 
       let score = 100;
       if (activeProducts > 0) {
@@ -118,12 +143,14 @@ export class StoreStatsService {
         storeId: store.id,
         storeName: store.name,
         storeSlug: store.slug,
-        totalProducts: products.length,
+        totalProducts: globallyLiveProducts.length,
         activeProducts,
         lowStockCount,
         outOfStockCount,
         totalOrders: orders.length,
-        pendingOrders: orders.filter((o: any) => o.order_status === 'pending_payment').length,
+        paidOrders: paidOrders.length,
+        pendingOrders,
+        failedOrders,
         totalRevenue,
         revenueTrend: trend,
         revenueGrowth,
