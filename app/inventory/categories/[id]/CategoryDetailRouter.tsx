@@ -13,9 +13,20 @@ export default function CategoryDetailRouter() {
 
   useEffect(() => {
     let active = true;
-    supabase.from('categories').select('id', { count: 'exact', head: true }).eq('parent_id', entityId)
-      .then(({ count }) => { if (active) setHasChildren((count || 0) > 0); })
-      .catch(() => { if (active) setHasChildren(false); });
+
+    async function loadCategoryShape() {
+      try {
+        const { count } = await supabase
+          .from('categories')
+          .select('id', { count: 'exact', head: true })
+          .eq('parent_id', entityId);
+        if (active) setHasChildren((count || 0) > 0);
+      } catch {
+        if (active) setHasChildren(false);
+      }
+    }
+
+    void loadCategoryShape();
     return () => { active = false; };
   }, [entityId]);
 
