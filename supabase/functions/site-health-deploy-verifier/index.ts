@@ -4,30 +4,31 @@ import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 const JSON_HEADERS = { "Content-Type": "application/json", "Cache-Control": "no-store" };
 const reply = (status: number, body: Record<string, unknown>) => new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
 const cleanHost = (value: unknown) => String(value ?? "").replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/$/, "").toLowerCase();
+const githubToken = () => (Deno.env.get("GITHUB_TOKEN") ?? Deno.env.get("GITHUB_PAT") ?? "").trim();
 const githubHeaders = () => ({
-  Authorization: `Bearer ${(Deno.env.get("GITHUB_TOKEN") ?? Deno.env.get("GITHUB_PAT") ?? "").trim()}`,
+  Authorization: `Bearer ${githubToken()}`,
   Accept: "application/vnd.github+json",
   "X-GitHub-Api-Version": "2022-11-28",
 });
 
-async function githubContains(repo: string, baseSha: string, headSha: string): Promise<boolean> {
-  if (!baseSha || !headSha) return false;
-  if (baseSha === headSha) return true;
-  const token = (Deno.env.get("GITHUB_TOKEN") ?? Deno.env.get("GITHUB_PAT") ?? "").trim();
-  if (!token || !repo) return false;
+async function githubCompare(repo: string, baseSha: string, headSha: string): Promise<"contains" | "not_contains" | "unavailable"> {
+  if (!baseSha || !headSha) return "not_contains";
+  if (baseSha === headSha) return "contains";
+  if (!githubToken() || !repo) return "unavailable";
   const r = await fetch(`https://api.github.com/repos/${repo}/compare/${encodeURIComponent(baseSha)}...${encodeURIComponent(headSha)}`, { headers: githubHeaders() });
-  if (!r.ok) return false;
+  if (r.status === 401 || r.status === 403 || r.status === 404) return "unavailable";
+  if (!r.ok) return "not_contains";
   const body = await r.json().catch(() => ({})) as Record<string, unknown>;
-  return body.status === "ahead" || body.status === "identical";
+  return body.status === "ahead" || body.status === "identical" ? "contains" : "not_contains";
 }
 
-async function githubBranchHead(repo: string, branch: string): Promise<string> {
-  const token = (Deno.env.get("GITHUB_TOKEN") ?? Deno.env.get("GITHUB_PAT") ?? "").trim();
-  if (!token || !repo) return "";
+async function githubBranchHead(repo: string, branch: string): Promise<{ sha: string; available: boolean }> {
+  if (!githubToken() || !repo) return { sha: "", available: false };
   const r = await fetch(`https://api.github.com/repos/${repo}/branches/${encodeURIComponent(branch)}`, { headers: githubHeaders() });
-  if (!r.ok) return "";
+  if (r.status === 401 || r.status === 403 || r.status === 404) return { sha: "", available: false };
+  if (!r.ok) return { sha: "", available: true };
   const body = await r.json().catch(() => ({})) as Record<string, any>;
-  return String(body?.commit?.sha ?? "");
+  return { sha: String(body?.commit?.sha ?? ""), available: true };
 }
 
 async function findNetlifySite(token: string, domain: string) {
@@ -56,6 +57,20 @@ async function triggerNetlifyBuild(token: string, siteId: string) {
   const body = await r.json().catch(() => ({})) as Record<string, any>;
   if (!r.ok) throw new Error(`netlify_build_trigger_${r.status}`);
   return body;
+}
+
+function deployTimestamp(deploy: Record<string, any>): number {
+  for (const value of [deploy.published_at, deploy.updated_at, deploy.created_at]) {
+    const parsed = Date.parse(String(value ?? ""));
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+function sameProductionStream(deploy: Record<string, any>, productionBranch: string): boolean {
+  const branch = String(deploy.branch ?? deploy.commit_ref_branch ?? "");
+  const context = String(deploy.context ?? "");
+  return !branch || branch === productionBranch || context === "production";
 }
 
 async function annotateBlocked(db: ReturnType<typeof createClient>, deployment: Record<string, any>, reason: string, extra: Record<string, unknown> = {}) {
@@ -87,7 +102,7 @@ async function markBuilding(db: ReturnType<typeof createClient>, deployment: Rec
 
 async function verifyOne(db: ReturnType<typeof createClient>, deployment: Record<string, any>, netlifyToken: string) {
   const { data: attempt } = await db.from("site_health_fix_attempts")
-    .select("id,issue_id,repository,base_branch,commit_sha")
+    .select("id,issue_id,repository,base_branch,commit_sha,status,completed_at")
     .eq("id", deployment.fix_attempt_id)
     .maybeSingle();
   if (!attempt?.issue_id || !attempt.commit_sha) return annotateBlocked(db, deployment, "attempt_incomplete");
@@ -115,15 +130,25 @@ async function verifyOne(db: ReturnType<typeof createClient>, deployment: Record
   const productionBranch = String(config.production_branch ?? attempt.base_branch ?? "main");
   const repo = String(config.github_repo ?? attempt.repository ?? "");
   let matched: Record<string, any> | null = null;
+  let ancestryMode = "github_compare";
+  let githubUnavailable = false;
 
   for (const d of deploys) {
-    const state = String(d.state ?? "");
-    const branch = String(d.branch ?? d.commit_ref_branch ?? "");
-    const context = String(d.context ?? "");
-    if (state !== "ready") continue;
-    if (branch && branch !== productionBranch && context !== "production") continue;
+    if (String(d.state ?? "") !== "ready" || !sameProductionStream(d, productionBranch)) continue;
     const headSha = String(d.commit_ref ?? d.commit_sha ?? "");
-    if (await githubContains(repo, String(attempt.commit_sha), headSha)) { matched = d; break; }
+    const comparison = await githubCompare(repo, String(attempt.commit_sha), headSha);
+    if (comparison === "contains") { matched = d; break; }
+    if (comparison === "unavailable") githubUnavailable = true;
+  }
+
+  if (!matched && githubUnavailable && attempt.status === "merged" && attempt.completed_at) {
+    const completedAt = Date.parse(String(attempt.completed_at));
+    if (Number.isFinite(completedAt)) {
+      matched = deploys
+        .filter((d) => String(d.state ?? "") === "ready" && sameProductionStream(d, productionBranch) && deployTimestamp(d) >= completedAt)
+        .sort((a, b) => deployTimestamp(b) - deployTimestamp(a))[0] ?? null;
+      if (matched) ancestryMode = "merged_main_time_fallback";
+    }
   }
 
   if (!matched) {
@@ -142,20 +167,21 @@ async function verifyOne(db: ReturnType<typeof createClient>, deployment: Record
     }
 
     const branchHead = await githubBranchHead(repo, productionBranch);
-    if (!branchHead || !(await githubContains(repo, String(attempt.commit_sha), branchHead))) {
-      return annotateBlocked(db, deployment, "fix_not_on_production_branch", { branch_head: branchHead || null });
+    const branchContains = branchHead.available && branchHead.sha ? await githubCompare(repo, String(attempt.commit_sha), branchHead.sha) : "unavailable";
+    const mergedMainFallback = attempt.status === "merged" && !branchHead.available;
+    if (!mergedMainFallback && branchContains !== "contains") {
+      return annotateBlocked(db, deployment, "fix_not_on_production_branch", { branch_head: branchHead.sha || null, github_private_repo_access: branchHead.available });
     }
 
     const inProgress = deploys.find((d) => {
       const state = String(d.state ?? "");
-      const branch = String(d.branch ?? d.commit_ref_branch ?? "");
-      return ["new", "pending_review", "accepted", "enqueued", "building", "uploading", "processing"].includes(state) && (!branch || branch === productionBranch);
+      return ["new", "pending_review", "accepted", "enqueued", "building", "uploading", "processing"].includes(state) && sameProductionStream(d, productionBranch);
     });
-    if (inProgress) return markBuilding(db, deployment, { netlify_site_id: String(site.id), netlify_deploy_id: inProgress.id ?? null, netlify_state: inProgress.state ?? null, production_head: branchHead });
+    if (inProgress) return markBuilding(db, deployment, { netlify_site_id: String(site.id), netlify_deploy_id: inProgress.id ?? null, netlify_state: inProgress.state ?? null, production_head: branchHead.sha || null, github_private_repo_access: branchHead.available });
 
     const previousTrigger = Date.parse(String(deployment.details?.build_triggered_at ?? ""));
     if (Number.isFinite(previousTrigger) && Date.now() - previousTrigger < 20 * 60 * 1000) {
-      return markBuilding(db, deployment, { netlify_site_id: String(site.id), build_triggered_at: deployment.details?.build_triggered_at, production_head: branchHead });
+      return markBuilding(db, deployment, { netlify_site_id: String(site.id), build_triggered_at: deployment.details?.build_triggered_at, production_head: branchHead.sha || null, github_private_repo_access: branchHead.available });
     }
 
     const build = await triggerNetlifyBuild(netlifyToken, String(site.id));
@@ -164,12 +190,14 @@ async function verifyOne(db: ReturnType<typeof createClient>, deployment: Record
       netlify_site_id: String(site.id),
       netlify_build_id: build.id ?? null,
       build_triggered_at: triggeredAt,
-      production_head: branchHead,
+      production_head: branchHead.sha || null,
+      github_private_repo_access: branchHead.available,
+      trigger_basis: mergedMainFallback ? "merged_main_record" : "github_ancestry",
     });
   }
 
   const liveUrl = `https://${cleanHost(config.domain)}/?centralhub_site_health_verify=${Date.now()}`;
-  const live = await fetch(liveUrl, { redirect: "follow", headers: { "User-Agent": "CentralHub-SiteHealth-Verifier/2.0", "Cache-Control": "no-cache" } });
+  const live = await fetch(liveUrl, { redirect: "follow", headers: { "User-Agent": "CentralHub-SiteHealth-Verifier/3.0", "Cache-Control": "no-cache" } });
   if (live.status >= 500) return annotateBlocked(db, deployment, `live_http_${live.status}`);
 
   const now = new Date().toISOString();
@@ -182,12 +210,14 @@ async function verifyOne(db: ReturnType<typeof createClient>, deployment: Record
     verified_at: now,
     details: {
       ...(deployment.details ?? {}),
-      verifier: "netlify_api+github_ancestry+live_http",
+      verifier: "netlify_api+production_stream+live_http",
       verifier_blocked: null,
       netlify_site_id: String(site.id),
       netlify_state: matched.state ?? null,
       deployed_commit: matched.commit_ref ?? matched.commit_sha ?? null,
       fix_commit: attempt.commit_sha,
+      ancestry_mode: ancestryMode,
+      github_private_repo_access: !githubUnavailable,
       live_http_status: live.status,
       live_final_url: live.url,
       verified_at: now,
@@ -198,16 +228,23 @@ async function verifyOne(db: ReturnType<typeof createClient>, deployment: Record
     deployment_id: deployment.id,
     source: "netlify",
     status: "pass",
-    details: { phase: "production_deployment", netlify_deploy_id: matched.id ?? null, fix_commit: attempt.commit_sha, deployed_commit: matched.commit_ref ?? matched.commit_sha ?? null, live_http_status: live.status },
+    details: {
+      phase: "production_deployment",
+      netlify_deploy_id: matched.id ?? null,
+      fix_commit: attempt.commit_sha,
+      deployed_commit: matched.commit_ref ?? matched.commit_sha ?? null,
+      ancestry_mode: ancestryMode,
+      live_http_status: live.status,
+    },
     checked_at: now,
   });
   await db.from("site_health_issues").update({ status: "resolved", resolved_at: now, last_seen_at: now }).eq("id", issue.id);
   await db.from("site_health_store_configs").update({ last_verified_at: now, updated_at: now }).eq("store_id", issue.store_id);
-  return { id: deployment.id, status: "verified", issue: issue.check_name, deployed_commit: matched.commit_ref ?? matched.commit_sha ?? null };
+  return { id: deployment.id, status: "verified", issue: issue.check_name, ancestry_mode: ancestryMode, deployed_commit: matched.commit_ref ?? matched.commit_sha ?? null };
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === "GET") return reply(200, { ok: true, service: "centralhub-site-health-deploy-verifier", version: 2 });
+  if (req.method === "GET") return reply(200, { ok: true, service: "centralhub-site-health-deploy-verifier", version: 3 });
   if (req.method !== "POST") return reply(405, { ok: false, error: "method_not_allowed" });
 
   const url = Deno.env.get("SUPABASE_URL");
@@ -233,5 +270,5 @@ Deno.serve(async (req: Request) => {
     try { results.push(await verifyOne(db, deployment, netlifyToken)); }
     catch (e) { results.push(await annotateBlocked(db, deployment, e instanceof Error ? e.message : "verification_error")); }
   }
-  return reply(200, { ok: true, checked: results.length, external_config: { netlify: Boolean(netlifyToken) }, results });
+  return reply(200, { ok: true, checked: results.length, external_config: { netlify: Boolean(netlifyToken), github_private_repo_access_required: false }, results });
 });
