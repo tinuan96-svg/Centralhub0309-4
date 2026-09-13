@@ -1,0 +1,84 @@
+name: One-time wake recognizer fallback
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/one-time-wake-recognizer-fallback.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Patch Android wake recognizer fallback
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          p = Path('android/app/src/main/java/com/centralhub/network/MainActivity.java')
+          s = p.read_text()
+
+          old = '''    private boolean taraPartialWakeDispatched = false;\n    private boolean taraSegmentedSession = false;\n    private boolean noraConversationActive = false;\n'''
+          new = '''    private boolean taraPartialWakeDispatched = false;\n    private boolean taraSegmentedSession = false;\n    private boolean taraUsingOnDeviceRecognizer = false;\n    private boolean taraForceNetworkRecognizer = false;\n    private boolean noraConversationActive = false;\n'''
+          if new not in s:
+              if old not in s: raise SystemExit('field anchor not found')
+              s = s.replace(old, new, 1)
+
+          old = '''        destroyTaraRecognizer();\n        taraSegmentedSession = false;\n        if (!isTaraVoiceAvailable()) return;\n\n        try {\n            taraRecognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(this);\n        } catch (Exception ignored) {\n            taraRecognizer = null;\n        }\n        if (taraRecognizer == null) return;\n'''
+          new = '''        destroyTaraRecognizer();\n        taraSegmentedSession = false;\n        taraUsingOnDeviceRecognizer = false;\n        if (!SpeechRecognizer.isRecognitionAvailable(this)) return;\n\n        if (!taraForceNetworkRecognizer\n                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S\n                && SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {\n            try {\n                taraRecognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(this);\n                taraUsingOnDeviceRecognizer = taraRecognizer != null;\n            } catch (Exception ignored) {\n                taraRecognizer = null;\n            }\n        }\n        if (taraRecognizer == null) {\n            try {\n                taraRecognizer = SpeechRecognizer.createSpeechRecognizer(this);\n                taraUsingOnDeviceRecognizer = false;\n            } catch (Exception ignored) {\n                taraRecognizer = null;\n            }\n        }\n        if (taraRecognizer == null) return;\n'''
+          if new not in s:
+              if old not in s: raise SystemExit('setup anchor not found')
+              s = s.replace(old, new, 1)
+
+          old = '''        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);\n        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getPackageName());\n        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);\n\n        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {\n            taraSegmentedSession = true;\n            taraRecognizerIntent.putStringArrayListExtra(\n                    RecognizerIntent.EXTRA_BIASING_STRINGS,\n                    new ArrayList<>(Arrays.asList(\n                            "Shruthi", "Sruthi", "Shruti", "Hey Shruthi", "Hey Sruthi", "Hey Shruti",\n                            "ശ്രുതി", "ஸ்ருதி",\n                            // NORA remains a narrow legacy alias only.\n                            "NORA", "Nora", "Norah", "Noora", "Noura", "Hey NORA", "Hey Nora",\n                            "നോറ", "നോറാ", "நோரா"\n                    ))\n            );\n            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_ENABLE_BIASING_DEVICE_CONTEXT, true);\n            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 300000L);\n            taraRecognizerIntent.putExtra(\n                    RecognizerIntent.EXTRA_SEGMENTED_SESSION,\n                    RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS\n            );\n        } else {\n            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 12000L);\n            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 9000L);\n            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 20000L);\n        }\n'''
+          new = '''        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);\n        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getPackageName());\n        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-GB");\n        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en-GB");\n        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, taraUsingOnDeviceRecognizer);\n\n        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {\n            taraRecognizerIntent.putStringArrayListExtra(\n                    RecognizerIntent.EXTRA_BIASING_STRINGS,\n                    new ArrayList<>(Arrays.asList(\n                            "Shruthi", "Sruthi", "Shruti", "Hey Shruthi", "Hey Sruthi", "Hey Shruti",\n                            "ശ്രുതി", "ஸ்ருதி",\n                            "NORA", "Nora", "Norah", "Noora", "Noura", "Hey NORA", "Hey Nora",\n                            "നോറ", "നോറാ", "நோரா"\n                    ))\n            );\n            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_ENABLE_BIASING_DEVICE_CONTEXT, true);\n        }\n\n        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && taraUsingOnDeviceRecognizer) {\n            taraSegmentedSession = true;\n            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 300000L);\n            taraRecognizerIntent.putExtra(\n                    RecognizerIntent.EXTRA_SEGMENTED_SESSION,\n                    RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS\n            );\n        } else {\n            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 12000L);\n            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 9000L);\n            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 20000L);\n        }\n'''
+          if new not in s:
+              if old not in s: raise SystemExit('intent anchor not found')
+              s = s.replace(old, new, 1)
+
+          old = '''                if (error == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED\n                        || error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE) {\n                    requestTaraLanguageModel();\n                    scheduleTaraRestart(6000L);\n                    return;\n                }\n'''
+          new = '''                if (error == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED\n                        || error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE) {\n                    if (taraUsingOnDeviceRecognizer) {\n                        taraForceNetworkRecognizer = true;\n                        destroyTaraRecognizer();\n                        scheduleTaraRestart(900L);\n                    } else {\n                        scheduleTaraRestart(6000L);\n                    }\n                    return;\n                }\n'''
+          if new not in s:
+              if old not in s: raise SystemExit('language error anchor not found')
+              s = s.replace(old, new, 1)
+
+          old = '''    public boolean isTaraVoiceAvailable() {\n        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S\n                && SpeechRecognizer.isRecognitionAvailable(this)\n                && SpeechRecognizer.isOnDeviceRecognitionAvailable(this);\n    }\n'''
+          new = '''    public boolean isTaraVoiceAvailable() {\n        return SpeechRecognizer.isRecognitionAvailable(this);\n    }\n'''
+          if new not in s:
+              if old not in s: raise SystemExit('availability anchor not found')
+              s = s.replace(old, new, 1)
+
+          old = '''    private void recoverStalledTaraStart() {\n        if (!taraEnabled || !taraResumed || taraSpeaking || !taraListening || taraReadyForSpeech) return;\n        taraConsecutiveErrors += 1;\n        destroyTaraRecognizer();\n        scheduleTaraRestart(noraConversationActive ? 700L : 1800L);\n    }\n'''
+          new = '''    private void recoverStalledTaraStart() {\n        if (!taraEnabled || !taraResumed || taraSpeaking || !taraListening || taraReadyForSpeech) return;\n        taraConsecutiveErrors += 1;\n        if (taraUsingOnDeviceRecognizer && taraConsecutiveErrors >= 2) {\n            taraForceNetworkRecognizer = true;\n        }\n        destroyTaraRecognizer();\n        scheduleTaraRestart(noraConversationActive ? 700L : 1800L);\n    }\n'''
+          if new not in s:
+              if old not in s: raise SystemExit('watchdog anchor not found')
+              s = s.replace(old, new, 1)
+
+          old = '''        taraRecognizer = null;\n        taraRecognizerIntent = null;\n        taraSegmentedSession = false;\n    }\n'''
+          new = '''        taraRecognizer = null;\n        taraRecognizerIntent = null;\n        taraSegmentedSession = false;\n        taraUsingOnDeviceRecognizer = false;\n    }\n'''
+          if new not in s:
+              if old not in s: raise SystemExit('destroy anchor not found')
+              s = s.replace(old, new, 1)
+
+          p.write_text(s)
+          PY
+      - name: Verify patch
+        run: |
+          grep -F 'createSpeechRecognizer(this)' android/app/src/main/java/com/centralhub/network/MainActivity.java
+          grep -F 'EXTRA_LANGUAGE, "en-GB"' android/app/src/main/java/com/centralhub/network/MainActivity.java
+          grep -F 'taraForceNetworkRecognizer = true;' android/app/src/main/java/com/centralhub/network/MainActivity.java
+      - name: Commit patch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add android/app/src/main/java/com/centralhub/network/MainActivity.java
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'fix(android): fallback wake recognition beyond offline model'
+          git push origin HEAD:main
