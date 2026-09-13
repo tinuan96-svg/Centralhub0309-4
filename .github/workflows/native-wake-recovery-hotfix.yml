@@ -23,24 +23,12 @@ jobs:
         run: |
           python3 <<'PY'
           from pathlib import Path
+          import re
+
           p = Path('android/app/src/main/java/com/centralhub/network/MainActivity.java')
           s = p.read_text()
 
-          old = """    public void setTaraEnabled(boolean enabled) {
-              taraEnabled = enabled;
-              if (!enabled) {
-                  noraConversationActive = false;
-                  stopTaraRecognizer();
-                  return;
-              }
-              if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                  requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_RECORD_AUDIO);
-                  return;
-              }
-              startTaraRecognizerIfReady();
-          }
-          """
-          new = """    public void setTaraEnabled(boolean enabled) {
+          new_method = '''    public void setTaraEnabled(boolean enabled) {
               boolean wasEnabled = taraEnabled;
               taraEnabled = enabled;
               if (!enabled) {
@@ -57,19 +45,18 @@ jobs:
               }
               scheduleTaraRestart(450L);
           }
-          """
-          if new not in s:
-              if old not in s:
-                  raise SystemExit('setTaraEnabled source block not found')
-              s = s.replace(old, new, 1)
 
-          old_resume = """    public void onResume() {
-              super.onResume();
-              taraResumed = true;
-              scheduleTaraRestart(noraConversationActive ? 600L : 1800L);
-          }
-          """
-          new_resume = """    public void onResume() {
+'''
+          method_pattern = re.compile(
+              r'    public void setTaraEnabled\(boolean enabled\) \{.*?\n    \}\n\n(?=    public void setNoraConversationActive)',
+              re.S,
+          )
+          if 'boolean wasEnabled = taraEnabled;' not in s:
+              s, count = method_pattern.subn(new_method, s, count=1)
+              if count != 1:
+                  raise SystemExit('Could not safely locate setTaraEnabled method')
+
+          new_resume = '''    public void onResume() {
               super.onResume();
               taraResumed = true;
               if (taraEnabled
@@ -79,11 +66,16 @@ jobs:
               }
               scheduleTaraRestart(noraConversationActive ? 600L : 1800L);
           }
-          """
-          if new_resume not in s:
-              if old_resume not in s:
-                  raise SystemExit('onResume source block not found')
-              s = s.replace(old_resume, new_resume, 1)
+
+'''
+          resume_pattern = re.compile(
+              r'    public void onResume\(\) \{.*?\n    \}\n\n(?=    @Override\n    public void onPause)',
+              re.S,
+          )
+          if '&& taraRecognizer == null' not in s[s.find('public void onResume()'):s.find('public void onPause()')]:
+              s, count = resume_pattern.subn(new_resume, s, count=1)
+              if count != 1:
+                  raise SystemExit('Could not safely locate onResume method')
 
           p.write_text(s)
           PY
@@ -91,6 +83,7 @@ jobs:
       - name: Verify native patch
         run: |
           grep -F "boolean wasEnabled = taraEnabled;" android/app/src/main/java/com/centralhub/network/MainActivity.java
+          grep -F "destroyTaraRecognizer();" android/app/src/main/java/com/centralhub/network/MainActivity.java
           grep -F "scheduleTaraRestart(450L);" android/app/src/main/java/com/centralhub/network/MainActivity.java
 
       - name: Commit native patch
