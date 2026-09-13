@@ -25,100 +25,136 @@ export interface StockAdjustment {
   notes?: string;
 }
 
+export interface InventoryPerformancePoint {
+  date: string;
+  stockUnits: number;
+  movedUnits: number;
+  inboundUnits: number;
+  outboundUnits: number;
+}
+
+const number = (value: unknown) => Number(value || 0);
+const dayKey = (value: string | Date) => {
+  const date = value instanceof Date ? value : new Date(value);
+  return date.toISOString().slice(0, 10);
+};
+
 export class InventoryManagementService {
   static async getDashboardStats() {
     try {
-      const { count: totalProducts, error: prodError } = await supabase
-        .from('products')
-        .select('*', { count: 'exact', head: true })
-        .or('is_deleted.is.null,is_deleted.eq.false');
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
 
-      if (prodError) console.warn('[InventoryManagementService] totalProducts error:', prodError.message);
-
-      const { data: inventoryData, error: invError } = await supabase
-        .from('central_inventory')
-        .select(`
-          stock_quantity,
-          low_stock_threshold,
-          products!product_id (
-            cost_price
-          )
-        `);
-
-      if (invError) {
-        console.error('[InventoryManagementService] inventoryData join error:', invError.message);
-        const { data: fallbackData, error: fallbackError } = await supabase
-          .from('central_inventory')
-          .select('stock_quantity, low_stock_threshold');
-
-        if (fallbackError) throw fallbackError;
-
-        let totalStockUnits = 0;
-        let lowStockCount = 0;
-        let outOfStockCount = 0;
-
-        fallbackData?.forEach((inv: any) => {
-          const stock = Number(inv.stock_quantity || 0);
-          const threshold = Number(inv.low_stock_threshold || 5);
-          totalStockUnits += stock;
-          if (stock <= 0) outOfStockCount++;
-          else if (stock <= threshold) lowStockCount++;
-        });
-
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const { count: movementsToday } = await supabase
-          .from('inventory_logs')
+      const [{ data: products, error: productsError }, movementsResult] = await Promise.all([
+        supabase
+          .from('products')
+          .select('id, stock, cost_price, low_stock_threshold, enable_stock_tracking')
+          .eq('is_active', true)
+          .or('is_deleted.is.null,is_deleted.eq.false'),
+        supabase
+          .from('inventory_movements')
           .select('*', { count: 'exact', head: true })
-          .gte('created_at', today.toISOString());
+          .gte('created_at', today.toISOString())
+      ]);
 
-        return {
-          totalProducts: totalProducts || 0,
-          totalStockUnits,
-          totalInventoryValue: 0,
-          lowStockCount,
-          outOfStockCount,
-          movementsToday: movementsToday || 0
-        };
-      }
+      if (productsError) throw productsError;
+      if (movementsResult.error) console.warn('[InventoryManagementService] movementsToday error:', movementsResult.error.message);
 
       let totalStockUnits = 0;
       let totalInventoryValue = 0;
       let lowStockCount = 0;
       let outOfStockCount = 0;
 
-      inventoryData?.forEach((inv: any) => {
-        const stock = Number(inv.stock_quantity || 0);
-        const productData = Array.isArray(inv.products) ? inv.products[0] : inv.products;
-        const threshold = Number(inv.low_stock_threshold || 5);
-
+      (products || []).forEach((product: any) => {
+        if (product.enable_stock_tracking === false) return;
+        const stock = number(product.stock);
+        const threshold = number(product.low_stock_threshold || 5);
         totalStockUnits += stock;
-        if (productData) totalInventoryValue += stock * (Number(productData.cost_price) || 0);
-
-        if (stock <= 0) outOfStockCount++;
-        else if (stock <= threshold) lowStockCount++;
+        totalInventoryValue += stock * number(product.cost_price);
+        if (stock <= 0) outOfStockCount += 1;
+        else if (stock <= threshold) lowStockCount += 1;
       });
 
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const { count: movementsToday, error: logsError } = await supabase
-        .from('inventory_logs')
-        .select('*', { count: 'exact', head: true })
-        .gte('created_at', today.toISOString());
-
-      if (logsError) console.warn('[InventoryManagementService] movementsToday error:', logsError.message);
-
       return {
-        totalProducts: totalProducts || 0,
+        totalProducts: products?.length || 0,
         totalStockUnits,
         totalInventoryValue,
         lowStockCount,
         outOfStockCount,
-        movementsToday: movementsToday || 0
+        movementsToday: movementsResult.count || 0
       };
     } catch (e) {
       console.error('[InventoryManagementService] getDashboardStats critical failure:', e);
       return null;
+    }
+  }
+
+  static async getPerformanceTrend(days = 30): Promise<InventoryPerformancePoint[]> {
+    try {
+      const safeDays = Math.max(7, Math.min(90, Math.round(days)));
+      const end = new Date();
+      const start = new Date(end);
+      start.setDate(start.getDate() - safeDays + 1);
+      start.setHours(0, 0, 0, 0);
+
+      const [{ data: products, error: productsError }, { data: movements, error: movementsError }] = await Promise.all([
+        supabase
+          .from('products')
+          .select('id, stock, enable_stock_tracking')
+          .eq('is_active', true)
+          .or('is_deleted.is.null,is_deleted.eq.false'),
+        supabase
+          .from('inventory_movements')
+          .select('change_amount, created_at, products!product_id(is_active, is_deleted)')
+          .gte('created_at', start.toISOString())
+          .order('created_at', { ascending: true })
+      ]);
+
+      if (productsError) throw productsError;
+      if (movementsError) throw movementsError;
+
+      const currentStock = (products || []).reduce((sum: number, product: any) => {
+        if (product.enable_stock_tracking === false) return sum;
+        return sum + number(product.stock);
+      }, 0);
+
+      const daily = new Map<string, { net: number; moved: number; inbound: number; outbound: number }>();
+      (movements || []).forEach((movement: any) => {
+        const product = Array.isArray(movement.products) ? movement.products[0] : movement.products;
+        if (product && (product.is_active === false || product.is_deleted === true)) return;
+        const key = dayKey(movement.created_at);
+        const change = number(movement.change_amount);
+        const row = daily.get(key) || { net: 0, moved: 0, inbound: 0, outbound: 0 };
+        row.net += change;
+        row.moved += Math.abs(change);
+        if (change > 0) row.inbound += change;
+        if (change < 0) row.outbound += Math.abs(change);
+        daily.set(key, row);
+      });
+
+      const dates: string[] = [];
+      for (let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
+        dates.push(dayKey(cursor));
+      }
+
+      let endingStock = currentStock;
+      const reversed = [...dates].reverse().map(date => {
+        const row = daily.get(date) || { net: 0, moved: 0, inbound: 0, outbound: 0 };
+        const point: InventoryPerformancePoint = {
+          date,
+          stockUnits: endingStock,
+          movedUnits: row.moved,
+          inboundUnits: row.inbound,
+          outboundUnits: row.outbound
+        };
+        endingStock -= row.net;
+        return point;
+      });
+
+      return reversed.reverse();
+    } catch (error) {
+      console.error('[InventoryManagementService] getPerformanceTrend failed:', error);
+      return [];
     }
   }
 
