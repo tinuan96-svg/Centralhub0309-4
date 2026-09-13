@@ -33,9 +33,9 @@
 
         </activity>
 
-        <!-- Isolated visible browser controlled by NORA with human takeover.
-             Not exported: it can only be launched from the authenticated
-             CentralHub app through the native bridge. -->
+        <!-- Isolated Live Web browser controlled by Shruthi/NORA with human takeover.
+             Not exported: third-party pages remain separated from the authenticated
+             CentralHub app and can only be launched through its native bridge. -->
         <activity
             android:name=".NoraComputerActivity"
             android:label="NORA Live Action"
