@@ -97,7 +97,7 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: userError } = await userClient.auth.getUser();
     if (userError || !user) return reply({ success: false, error: "Unauthorized" }, 401);
 
-    const metadataRole = String(user.app_metadata?.role || user.user_metadata?.profile_role || "").toLowerCase();
+    const metadataRole = String(user.app_metadata?.role || "").toLowerCase();
     let allowed = ["admin", "superadmin", "administrator"].includes(metadataRole);
     if (!allowed) {
       const { data: profile } = await central
