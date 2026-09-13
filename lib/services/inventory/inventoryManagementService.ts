@@ -40,6 +40,26 @@ const dayKey = (value: string | Date) => {
 };
 
 export class InventoryManagementService {
+  private static async getPrimaryWarehouseId(): Promise<string | null> {
+    try {
+      const { data, error } = await supabase
+        .from('warehouses')
+        .select('id')
+        .eq('is_active', true)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (error) {
+        console.warn('[InventoryManagementService] default warehouse lookup failed:', error.message);
+        return null;
+      }
+      return data?.id || null;
+    } catch (error) {
+      console.warn('[InventoryManagementService] default warehouse lookup failed:', error);
+      return null;
+    }
+  }
+
   static async getDashboardStats() {
     try {
       const today = new Date();
@@ -83,8 +103,8 @@ export class InventoryManagementService {
         outOfStockCount,
         movementsToday: movementsResult.count || 0
       };
-    } catch (e) {
-      console.error('[InventoryManagementService] getDashboardStats critical failure:', e);
+    } catch (error) {
+      console.error('[InventoryManagementService] getDashboardStats critical failure:', error);
       return null;
     }
   }
@@ -133,9 +153,7 @@ export class InventoryManagementService {
       });
 
       const dates: string[] = [];
-      for (let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
-        dates.push(dayKey(cursor));
-      }
+      for (let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) dates.push(dayKey(cursor));
 
       let endingStock = currentStock;
       const reversed = [...dates].reverse().map(date => {
@@ -150,7 +168,6 @@ export class InventoryManagementService {
         endingStock -= row.net;
         return point;
       });
-
       return reversed.reverse();
     } catch (error) {
       console.error('[InventoryManagementService] getPerformanceTrend failed:', error);
@@ -159,48 +176,31 @@ export class InventoryManagementService {
   }
 
   static async adjustStock(adj: StockAdjustment) {
-    console.log(`[InventoryManagementService] Adjusting stock for ${adj.productId} by ${adj.changeAmount}`);
-
-    if (!Number.isFinite(adj.changeAmount) || adj.changeAmount === 0) {
-      throw new Error('Stock change must be a non-zero number.');
-    }
+    if (!Number.isFinite(adj.changeAmount) || adj.changeAmount === 0) throw new Error('Stock change must be a non-zero number.');
 
     const { data: inventory, error: fetchError } = await supabase
       .from('central_inventory')
       .select('stock_quantity')
       .eq('product_id', adj.productId)
       .maybeSingle();
+    if (fetchError || !inventory) throw new Error('Product not found in the active inventory registry.');
 
-    if (fetchError || !inventory) {
-      console.error(`[InventoryManagementService] Product ${adj.productId} not found in inventory:`, fetchError);
-      throw new Error('Product not found in inventory. Please ensure it is registered in the catalog.');
-    }
-
-    const oldStock = Number(inventory.stock_quantity || 0);
+    const oldStock = number(inventory.stock_quantity);
     const newStock = oldStock + adj.changeAmount;
-    if (newStock < 0) {
-      throw new Error(`Stock adjustment would make inventory negative (${newStock}).`);
-    }
+    if (newStock < 0) throw new Error(`Stock adjustment would make inventory negative (${newStock}).`);
 
     const changedAt = new Date().toISOString();
-    const { error: ciError } = await supabase
+    const warehouseId = adj.warehouseId || await this.getPrimaryWarehouseId();
+    const { error: inventoryError } = await supabase
       .from('central_inventory')
-      .upsert({
-        product_id: adj.productId,
-        stock_quantity: newStock,
-        updated_at: changedAt
-      }, { onConflict: 'product_id' });
+      .upsert({ product_id: adj.productId, stock_quantity: newStock, updated_at: changedAt }, { onConflict: 'product_id' });
+    if (inventoryError) throw new Error(`Inventory update failed: ${inventoryError.message}`);
 
-    if (ciError) {
-      console.error('[InventoryManagementService] central_inventory update failed:', ciError);
-      throw new Error(`Inventory update failed: ${ciError.message}`);
-    }
-
-    const { error: moveError } = await supabase.from('inventory_movements').insert({
+    const { error: movementError } = await supabase.from('inventory_movements').insert({
       product_id: adj.productId,
       order_id: adj.orderId || null,
       supplier_id: adj.supplierId || null,
-      warehouse_id: adj.warehouseId || null,
+      warehouse_id: warehouseId,
       change_amount: adj.changeAmount,
       old_stock: oldStock,
       new_stock: newStock,
@@ -209,45 +209,26 @@ export class InventoryManagementService {
       created_at: changedAt
     });
 
-    if (moveError) {
-      console.error('[InventoryManagementService] inventory_movements insert failed; rolling stock back:', moveError);
+    if (movementError) {
       const { error: rollbackError } = await supabase
         .from('central_inventory')
-        .upsert({
-          product_id: adj.productId,
-          stock_quantity: oldStock,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'product_id' });
-
-      if (rollbackError) {
-        console.error('[InventoryManagementService] CRITICAL: stock rollback failed:', rollbackError);
-        throw new Error(`Audit ledger failed (${moveError.message}) and stock rollback also failed (${rollbackError.message}).`);
-      }
-      throw new Error(`Stock adjustment was rolled back because audit logging failed: ${moveError.message}`);
+        .upsert({ product_id: adj.productId, stock_quantity: oldStock, updated_at: new Date().toISOString() }, { onConflict: 'product_id' });
+      if (rollbackError) throw new Error(`Audit ledger failed (${movementError.message}) and stock rollback also failed (${rollbackError.message}).`);
+      throw new Error(`Stock adjustment was rolled back because audit logging failed: ${movementError.message}`);
     }
 
     return { success: true, newStock };
   }
 
-  static async bulkAdjustStock(params: {
-    items: { sku: string; count: number }[];
-    reason: string;
-    type: string;
-  }) {
+  static async bulkAdjustStock(params: { items: { sku: string; count: number }[]; reason: string; type: string }) {
     const { data: { user } } = await supabase.auth.getUser();
-
     const { data, error } = await supabase.rpc('process_bulk_physical_count', {
       p_items: params.items,
       p_reason: params.reason,
       p_adjustment_type: params.type,
       p_user_id: user?.id
     });
-
-    if (error) {
-      console.error('[InventoryManagementService] bulkAdjustStock RPC failed:', error);
-      throw new Error(error.message);
-    }
-
+    if (error) throw new Error(error.message);
     return data;
   }
 
@@ -262,7 +243,7 @@ export class InventoryManagementService {
   }) {
     let query = supabase
       .from('inventory_movements')
-      .select('*, products!product_id(name, sku)')
+      .select('*, products!product_id(name, sku, image_url)')
       .order('created_at', { ascending: false });
 
     if (filters?.productId) query = query.eq('product_id', filters.productId);
@@ -275,13 +256,8 @@ export class InventoryManagementService {
 
     const { data, error } = await query;
     if (error) {
-      console.error('Error fetching inventory movements:', {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code
-      });
-      return [];
+      console.error('[InventoryManagementService] movement query failed:', error);
+      throw new Error(error.message);
     }
 
     return (data || []).map((row: any) => {
@@ -289,8 +265,9 @@ export class InventoryManagementService {
       return {
         id: row.id,
         product_id: row.product_id,
-        product_name: product?.name || 'Unknown',
+        product_name: product?.name || 'Unknown Product',
         sku: product?.sku || null,
+        image_url: product?.image_url || null,
         warehouse_id: row.warehouse_id || null,
         supplier_id: row.supplier_id || null,
         change_amount: row.change_amount,
@@ -299,6 +276,7 @@ export class InventoryManagementService {
         action_type: row.action_type,
         notes: row.notes,
         order_number: row.order_number,
+        order_id: row.order_id || null,
         created_at: row.created_at,
       };
     });
@@ -309,8 +287,8 @@ export class InventoryManagementService {
       const { data, error } = await supabase.from('warehouses').select('*').order('name');
       if (error) throw error;
       return data || [];
-    } catch (e) {
-      console.error('[InventoryManagementService] Error fetching warehouses:', e);
+    } catch (error) {
+      console.error('[InventoryManagementService] Error fetching warehouses:', error);
       return [];
     }
   }
