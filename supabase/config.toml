@@ -31,3 +31,5 @@ verify_jwt = true
 [functions.dhl-ecommerce]
 verify_jwt = true
 
+[functions.boost-automation-worker]
+verify_jwt = true
