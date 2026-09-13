@@ -1,11 +1,11 @@
 import ProductWorkspaceNav from '@/components/products/ProductWorkspaceNav';
-import CategoriesClient from '@/app/settings/master-data/categories/CategoriesClient';
+import InventoryCategoriesClient from './InventoryCategoriesClient';
 
-export default function Page({ params, searchParams }: { params: any; searchParams: any }) {
+export default function Page() {
   return (
-    <div className="mx-auto max-w-[1800px] space-y-6 p-6">
+    <div className="mx-auto max-w-[1800px] space-y-6 p-4 fold-inner:p-5 lg:p-6">
       <ProductWorkspaceNav />
-      <CategoriesClient params={params} searchParams={searchParams} />
+      <InventoryCategoriesClient />
     </div>
   );
 }
