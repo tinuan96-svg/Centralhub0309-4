@@ -31,3 +31,7 @@ verify_jwt = true
 [functions.dhl-ecommerce]
 verify_jwt = true
 
+# Custom-auth internal function. It validates the existing Site Health worker
+# secret and only allows whitelisted Netlify site IDs.
+[functions.netlify-build-trigger]
+verify_jwt = false
