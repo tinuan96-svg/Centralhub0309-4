@@ -38,7 +38,7 @@
              CentralHub app and can only be launched through its native bridge. -->
         <activity
             android:name=".NoraComputerActivity"
-            android:label="NORA Live Action"
+            android:label="Shruthi Live Web"
             android:theme="@style/AppTheme.NoActionBar"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|screenLayout|uiMode|navigation|density"
             android:exported="false" />
