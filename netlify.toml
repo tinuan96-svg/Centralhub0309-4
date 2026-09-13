@@ -7,4 +7,4 @@
 
 [build.environment]
   NODE_VERSION = "22.23.1"
-  SECRETS_SCAN_ENABLED = "false"
+  SECRETS_SCAN_ENABLED = "true"

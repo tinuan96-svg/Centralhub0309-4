@@ -44,6 +44,9 @@ jobs:
       - name: Runtime compatibility audit
         run: npm run audit:runtime
 
+      - name: Order sync contract audit
+        run: npm run audit:order-sync
+
       - name: Typecheck
         run: npx tsc --noEmit
 
