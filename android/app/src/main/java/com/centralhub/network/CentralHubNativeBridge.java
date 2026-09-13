@@ -176,10 +176,7 @@ public final class CentralHubNativeBridge {
         TextToSpeech currentTts = taraTts;
         if (currentTts == null || !taraTtsReady) return false;
         final Locale selectedLocale = selectSupportedLocale(currentTts, locale);
-        if (findExecutiveVoice(currentTts, selectedLocale) == null) {
-            activity.runOnUiThread(() -> activity.setTaraSpeaking(false));
-            return false;
-        }
+
         activity.runOnUiThread(() -> {
             TextToSpeech tts = taraTts;
             if (tts == null || !taraTtsReady) {
@@ -192,10 +189,13 @@ public final class CentralHubNativeBridge {
             tts.setLanguage(selectedLocale);
             tts.setSpeechRate(0.93f);
             tts.setPitch(1.04f);
-            if (!selectExecutiveVoice(tts, selectedLocale)) {
-                activity.setTaraSpeaking(false);
-                return;
-            }
+
+            // Prefer the configured executive/female voice when the engine exposes
+            // one, but never make speech depend on a vendor-specific voice name.
+            // Samsung/Google TTS often expose names such as en-gb-x-* with no
+            // "female" marker; the system default is still a valid audible voice.
+            selectExecutiveVoice(tts, selectedLocale);
+
             int result = tts.speak(
                     speech,
                     TextToSpeech.QUEUE_FLUSH,
@@ -296,9 +296,13 @@ public final class CentralHubNativeBridge {
 
     private boolean selectExecutiveVoice(TextToSpeech tts, Locale locale) {
         Voice preferred = findExecutiveVoice(tts, locale);
-        if (preferred == null) return false;
-        try { return tts.setVoice(preferred) == TextToSpeech.SUCCESS; }
-        catch (Exception ignored) { return false; }
+        if (preferred == null) return true;
+        try {
+            tts.setVoice(preferred);
+            return true;
+        } catch (Exception ignored) {
+            return true;
+        }
     }
 
     public void shutdown() {
