@@ -63,6 +63,7 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
   const isListeningRef = useRef(false);
   const recognitionActiveRef = useRef(false);
   const isSpeakingRef = useRef(false);
+  const appBackgroundedRef = useRef(false);
   const restartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recognitionStartWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechCompletionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -103,6 +104,15 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
     const attemptStart = () => {
       if (!isListeningRef.current) return;
 
+      // Android tears down Web Speech when the WebView loses foreground. Never try
+      // to reopen the microphone while hidden; doing so produces a misleading
+      // SpeechRecognition "network" error and can leave the UI stuck OFF on resume.
+      if (appBackgroundedRef.current || (typeof document !== 'undefined' && document.visibilityState !== 'visible')) {
+        recognitionActiveRef.current = false;
+        setIsListening(false);
+        return;
+      }
+
       const browserSpeaking = Boolean(synthRef.current?.speaking);
       if (isSpeakingRef.current || browserSpeaking) {
         restartTimeoutRef.current = setTimeout(attemptStart, 250);
@@ -124,7 +134,7 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
 
       if (recognitionStartWatchdogRef.current) clearTimeout(recognitionStartWatchdogRef.current);
       recognitionStartWatchdogRef.current = setTimeout(() => {
-        if (!isListeningRef.current || recognitionActiveRef.current) return;
+        if (!isListeningRef.current || recognitionActiveRef.current || appBackgroundedRef.current) return;
         console.warn('[Voice] Recognition did not become active; recycling recognizer');
         setIsListening(false);
         try { recognition.abort?.(); } catch (e) {
@@ -199,7 +209,21 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
     recognition.onerror = (event: any) => {
       console.error('[Voice] Error:', event.error);
 
+      const backgrounded = appBackgroundedRef.current
+        || (typeof document !== 'undefined' && document.visibilityState !== 'visible');
+
       if (event.error === 'no-speech' || event.error === 'aborted') return;
+
+      // Chromium commonly reports "network" when Android suspends a foreground
+      // speech session during app switching. That is lifecycle noise, not a real
+      // connectivity failure, so keep the user's listening intent and recover when
+      // the app becomes visible again.
+      if (backgrounded && event.error === 'network') {
+        recognitionActiveRef.current = false;
+        setIsListening(false);
+        setError(null);
+        return;
+      }
 
       const errorMessages: Record<string, string> = {
         'not-allowed': 'Check microphone permissions',
@@ -220,7 +244,7 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
       console.log('[Voice] Recognition ended');
       recognitionActiveRef.current = false;
 
-      if (isListeningRef.current) {
+      if (isListeningRef.current && !appBackgroundedRef.current) {
         restartRecognitionAfterSpeech(350);
       } else {
         setIsListening(false);
@@ -258,16 +282,59 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
       }
     };
 
+    const suspendPickingForBackground = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') return;
+
+      appBackgroundedRef.current = true;
+      recognitionActiveRef.current = false;
+      setIsListening(false);
+      // Backgrounding a WebView may surface a synthetic "network" error from Web
+      // Speech. Clear it immediately so the warehouse operator never sees a false
+      // connectivity warning after switching back from another app.
+      setError(null);
+
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current);
+        restartTimeoutRef.current = null;
+      }
+      if (recognitionStartWatchdogRef.current) {
+        clearTimeout(recognitionStartWatchdogRef.current);
+        recognitionStartWatchdogRef.current = null;
+      }
+
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort?.(); } catch (e) {
+          try { recognitionRef.current.stop?.(); } catch (stopError) {}
+        }
+      }
+
+      if (wakeLockRef.current) {
+        try { void wakeLockRef.current.release?.(); } catch (e) {}
+        wakeLockRef.current = null;
+      }
+    };
+
     const resumePickingAfterVisibility = () => {
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+
+      const returningFromBackground = appBackgroundedRef.current;
+      appBackgroundedRef.current = false;
+      setError(null);
       void requestScreenWakeLock();
 
-      // Android suspends WebView speech recognition when the screen is explicitly
-      // locked. Preserve the session intent and resume the recognizer on unlock.
+      // Recreate Web Speech after an Android app switch. Reusing Chromium's stale
+      // recognition object is what caused the red NETWORK ERROR / OFF state shown on
+      // Samsung devices after returning to the picking screen.
       if (isListeningRef.current) {
-        if (!recognitionRef.current) initRecognition();
-        restartRecognitionAfterSpeech(700);
+        if (returningFromBackground || !recognitionRef.current) initRecognition();
+        setIsListening(false);
+        restartRecognitionAfterSpeech(returningFromBackground ? 850 : 500);
       }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') resumePickingAfterVisibility();
+      else suspendPickingForBackground();
     };
 
     if (typeof window !== 'undefined') {
@@ -290,9 +357,10 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
       }
 
       void requestScreenWakeLock();
-      document.addEventListener('visibilitychange', resumePickingAfterVisibility);
+      document.addEventListener('visibilitychange', handleVisibilityChange);
       window.addEventListener('focus', resumePickingAfterVisibility);
       window.addEventListener('pageshow', resumePickingAfterVisibility);
+      window.addEventListener('pagehide', suspendPickingForBackground);
     }
 
     return () => {
@@ -300,6 +368,7 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
       isListeningRef.current = false;
       recognitionActiveRef.current = false;
       isSpeakingRef.current = false;
+      appBackgroundedRef.current = false;
       if (recognitionRef.current) {
         try {
           recognitionRef.current.onend = null;
@@ -310,9 +379,10 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
       if (recognitionStartWatchdogRef.current) clearTimeout(recognitionStartWatchdogRef.current);
       if (speechCompletionTimerRef.current) clearTimeout(speechCompletionTimerRef.current);
       if (typeof window !== 'undefined') {
-        document.removeEventListener('visibilitychange', resumePickingAfterVisibility);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
         window.removeEventListener('focus', resumePickingAfterVisibility);
         window.removeEventListener('pageshow', resumePickingAfterVisibility);
+        window.removeEventListener('pagehide', suspendPickingForBackground);
         try { window.speechSynthesis?.cancel(); } catch (e) {}
         try { (window as any).CentralHubNative?.stopTaraTts?.(); } catch (e) {}
         if (nativePickingExclusiveRef.current) {
@@ -332,6 +402,7 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
     console.log('[Voice] startListening called');
     setError(null);
     isListeningRef.current = true;
+    appBackgroundedRef.current = typeof document !== 'undefined' && document.visibilityState !== 'visible';
 
     const rec = initRecognition();
     if (!rec) {
