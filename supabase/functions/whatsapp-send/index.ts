@@ -190,10 +190,15 @@ serve(async (req) => {
     if (!finalStoreId) return json({ error: 'Store ID missing' }, 400)
 
     if (!internal) {
-      const metadata = { ...(user.app_metadata || {}), ...(user.user_metadata || {}) }
-      let isAdmin = ['admin', 'superadmin', 'administrator'].includes(String(metadata.role || metadata.profile_role || '').toLowerCase())
-      if (!isAdmin && /@(keralagroceries\.com|keralagroceries\.co\.uk)$/i.test(user.email || '')) isAdmin = true
-      if (!isAdmin) { try { isAdmin = !!(await admin.rpc('is_admin', { user_id: user.id })).data } catch (_) {} }
+      const metadataRole = String(user.app_metadata?.role || '').toLowerCase()
+      let isAdmin = ['admin', 'superadmin', 'administrator'].includes(metadataRole)
+      if (!isAdmin) {
+        const { data: profile } = await admin.from('user_profiles')
+          .select('profile_role,is_active')
+          .eq('id', user.id)
+          .maybeSingle()
+        isAdmin = profile?.is_active !== false && ['admin', 'superadmin', 'administrator'].includes(String(profile?.profile_role || '').toLowerCase())
+      }
       if (!isAdmin) {
         const { count } = await admin.from('store_staff').select('user_id', { count: 'exact', head: true }).eq('store_id', finalStoreId).eq('user_id', user.id)
         if (!count) return json({ error: 'Forbidden: you do not have access to send messages for this store.' }, 403)
