@@ -45,6 +45,8 @@ public class MainActivity extends BridgeActivity {
     private boolean taraReadyForSpeech = false;
     private boolean taraPartialWakeDispatched = false;
     private boolean taraSegmentedSession = false;
+    private boolean taraUsingOnDeviceRecognizer = false;
+    private boolean taraForceNetworkRecognizer = false;
     private boolean noraConversationActive = false;
     private int taraConsecutiveErrors = 0;
     private long taraLastTranscriptAt = 0L;
@@ -158,12 +160,26 @@ public class MainActivity extends BridgeActivity {
     private void setupTaraRecognizer() {
         destroyTaraRecognizer();
         taraSegmentedSession = false;
-        if (!isTaraVoiceAvailable()) return;
+        taraUsingOnDeviceRecognizer = false;
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) return;
 
-        try {
-            taraRecognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(this);
-        } catch (Exception ignored) {
-            taraRecognizer = null;
+        if (!taraForceNetworkRecognizer
+                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                && SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
+            try {
+                taraRecognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(this);
+                taraUsingOnDeviceRecognizer = taraRecognizer != null;
+            } catch (Exception ignored) {
+                taraRecognizer = null;
+            }
+        }
+        if (taraRecognizer == null) {
+            try {
+                taraRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
+                taraUsingOnDeviceRecognizer = false;
+            } catch (Exception ignored) {
+                taraRecognizer = null;
+            }
         }
         if (taraRecognizer == null) return;
 
@@ -172,21 +188,25 @@ public class MainActivity extends BridgeActivity {
         taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
         taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);
         taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getPackageName());
-        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
+        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-GB");
+        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en-GB");
+        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, taraUsingOnDeviceRecognizer);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            taraSegmentedSession = true;
             taraRecognizerIntent.putStringArrayListExtra(
                     RecognizerIntent.EXTRA_BIASING_STRINGS,
                     new ArrayList<>(Arrays.asList(
                             "Shruthi", "Sruthi", "Shruti", "Hey Shruthi", "Hey Sruthi", "Hey Shruti",
                             "ശ്രുതി", "ஸ்ருதி",
-                            // NORA remains a narrow legacy alias only.
                             "NORA", "Nora", "Norah", "Noora", "Noura", "Hey NORA", "Hey Nora",
                             "നോറ", "നോറാ", "நோரா"
                     ))
             );
             taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_ENABLE_BIASING_DEVICE_CONTEXT, true);
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && taraUsingOnDeviceRecognizer) {
+            taraSegmentedSession = true;
             taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 300000L);
             taraRecognizerIntent.putExtra(
                     RecognizerIntent.EXTRA_SEGMENTED_SESSION,
@@ -233,8 +253,13 @@ public class MainActivity extends BridgeActivity {
                 }
                 if (error == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED
                         || error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE) {
-                    requestTaraLanguageModel();
-                    scheduleTaraRestart(6000L);
+                    if (taraUsingOnDeviceRecognizer) {
+                        taraForceNetworkRecognizer = true;
+                        destroyTaraRecognizer();
+                        scheduleTaraRestart(900L);
+                    } else {
+                        scheduleTaraRestart(6000L);
+                    }
                     return;
                 }
 
@@ -370,9 +395,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     public boolean isTaraVoiceAvailable() {
-        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-                && SpeechRecognizer.isRecognitionAvailable(this)
-                && SpeechRecognizer.isOnDeviceRecognitionAvailable(this);
+        return SpeechRecognizer.isRecognitionAvailable(this);
     }
 
     public void setTaraEnabled(boolean enabled) {
@@ -442,6 +465,9 @@ public class MainActivity extends BridgeActivity {
     private void recoverStalledTaraStart() {
         if (!taraEnabled || !taraResumed || taraSpeaking || !taraListening || taraReadyForSpeech) return;
         taraConsecutiveErrors += 1;
+        if (taraUsingOnDeviceRecognizer && taraConsecutiveErrors >= 2) {
+            taraForceNetworkRecognizer = true;
+        }
         destroyTaraRecognizer();
         scheduleTaraRestart(noraConversationActive ? 700L : 1800L);
     }
@@ -477,6 +503,7 @@ public class MainActivity extends BridgeActivity {
         taraRecognizer = null;
         taraRecognizerIntent = null;
         taraSegmentedSession = false;
+        taraUsingOnDeviceRecognizer = false;
     }
 
     private void dispatchTaraTranscriptDebounced(String text) {
