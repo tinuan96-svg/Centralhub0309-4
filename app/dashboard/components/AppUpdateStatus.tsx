@@ -10,6 +10,9 @@ type UpdateBridge = {
   getPlatform?: () => string;
   getVersionCode?: () => number;
   getVersionName?: () => string;
+  startAppUpdateDownload?: (url: string, versionName: string) => number;
+  getAppUpdateDownloadStatus?: (downloadId: number) => string;
+  installAppUpdate?: (downloadId: number) => boolean;
   openExternalUrl?: (url: string) => boolean;
 };
 
@@ -46,6 +49,9 @@ export default function AppUpdateStatus() {
   const [latest, setLatest] = useState<LatestUpdate | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [downloadId, setDownloadId] = useState<number | null>(null);
+  const [downloadStatus, setDownloadStatus] = useState('');
+  const [downloadProgress, setDownloadProgress] = useState(0);
 
   const check = async () => {
     const bridge = getUpdateBridge();
@@ -124,6 +130,35 @@ export default function AppUpdateStatus() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (!downloadId) return;
+    const bridge = getUpdateBridge();
+    if (!bridge?.getAppUpdateDownloadStatus) return;
+    let timer: number | undefined;
+    const poll = () => {
+      try {
+        const raw = bridge.getAppUpdateDownloadStatus?.(downloadId) || '';
+        const payload = JSON.parse(raw) as { status?: string; progress?: number };
+        const status = String(payload.status || 'unknown');
+        setDownloadStatus(status);
+        setDownloadProgress(Math.max(0, Math.min(100, Number(payload.progress || 0))));
+        if (status === 'successful') {
+          if (timer) window.clearInterval(timer);
+          const opened = bridge.installAppUpdate?.(downloadId) === true;
+          if (!opened) setError('Download complete. If Android opened “Install unknown apps”, allow CentralHub, return here, and tap Update Android app again.');
+        } else if (status === 'failed' || status === 'missing') {
+          if (timer) window.clearInterval(timer);
+          setError('Android update download failed. Tap again to retry.');
+        }
+      } catch {
+        // Keep polling transient native status failures.
+      }
+    };
+    poll();
+    timer = window.setInterval(poll, 700);
+    return () => { if (timer) window.clearInterval(timer); };
+  }, [downloadId]);
+
   const updateRequired = useMemo(() => {
     if (mode !== 'native' || !latest) return false;
     return nativeVersion.legacy || latest.versionCode > nativeVersion.versionCode;
@@ -131,9 +166,33 @@ export default function AppUpdateStatus() {
 
   const openUpdate = () => {
     if (!latest?.downloadUrl) return;
-    const opened = getUpdateBridge()?.openExternalUrl?.(latest.downloadUrl);
+    const bridge = getUpdateBridge();
+
+    if (mode === 'native' && bridge?.startAppUpdateDownload) {
+      if (downloadStatus === 'successful' && downloadId && bridge.installAppUpdate) {
+        const opened = bridge.installAppUpdate(downloadId);
+        if (!opened) setError('Allow CentralHub to install app updates in Android settings, then return and tap again.');
+        return;
+      }
+      const id = Number(bridge.startAppUpdateDownload(latest.downloadUrl, latest.versionName) || -1);
+      if (id > 0) {
+        setError('');
+        setDownloadId(id);
+        setDownloadStatus('pending');
+        setDownloadProgress(0);
+        return;
+      }
+      setError('Could not start the in-app Android download.');
+      return;
+    }
+
+    // Existing app shells need one final external download. After the native
+    // updater is installed, future APK updates stay inside CentralHub.
+    const opened = bridge?.openExternalUrl?.(latest.downloadUrl);
     if (!opened) window.open(latest.downloadUrl, '_blank', 'noopener,noreferrer');
   };
+
+  const downloading = downloadStatus === 'pending' || downloadStatus === 'running' || downloadStatus === 'paused';
 
   const handleClick = () => {
     if (!loading && latest && (updateRequired || mode === 'web')) {
@@ -143,8 +202,10 @@ export default function AppUpdateStatus() {
     if (!loading) void check();
   };
 
-  const label = loading
-    ? 'Checking Android app…'
+  const label = downloading
+    ? `Downloading ${downloadProgress}%`
+    : loading
+      ? 'Checking Android app…'
     : updateRequired
       ? 'Update Android app'
       : error
@@ -171,7 +232,7 @@ export default function AppUpdateStatus() {
         ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-200'
         : 'border-cyan-400/35 bg-cyan-500/10 text-cyan-200';
 
-  const Icon = loading
+  const Icon = downloading || loading
     ? RefreshCw
     : updateRequired
       ? Download
@@ -187,12 +248,12 @@ export default function AppUpdateStatus() {
         <button
           type="button"
           onClick={handleClick}
-          disabled={loading}
+          disabled={loading || downloading}
           title={title}
           aria-label={label}
           className={`inline-flex min-h-10 items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-black shadow-lg transition-all active:scale-[0.98] disabled:cursor-wait disabled:opacity-70 ${tone}`}
         >
-          <Icon size={15} className={loading ? 'animate-spin' : ''} />
+          <Icon size={15} className={loading || downloading ? 'animate-spin' : ''} />
           <span>{label}</span>
         </button>
       </div>

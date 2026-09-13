@@ -9,16 +9,6 @@ const CORS = {
 const JSON_HEADERS = { ...CORS, "Content-Type": "application/json", "Cache-Control": "no-store" };
 const MODEL = Deno.env.get("NORA_COMPUTER_MODEL")?.trim() || "gpt-5.6-sol";
 const ALLOWED_ACTIONS = new Set(["click", "double_click", "drag", "move", "scroll", "keypress", "type", "wait", "screenshot"]);
-const ALLOWED_ROOTS = [
-  "facebook.com",
-  "meta.com",
-  "google.com",
-  "google.co.uk",
-  "github.com",
-  "netlify.com",
-  "supabase.com",
-  "centralhub.network",
-];
 const MAX_TURNS = 40;
 
 function json(status: number, body: Record<string, unknown>) {
@@ -72,7 +62,14 @@ function allowedTarget(value: string) {
     const u = new URL(value);
     if (u.protocol !== "https:") return false;
     const host = u.hostname.toLowerCase();
-    return ALLOWED_ROOTS.some((root) => host === root || host.endsWith(`.${root}`));
+    if (!host || host === "localhost" || host.endsWith(".local") || host === "::1") return false;
+    if (/^(127\.|10\.|192\.168\.|169\.254\.)/.test(host)) return false;
+    const private172 = host.match(/^172\.(\d{1,3})\./);
+    if (private172) {
+      const second = Number(private172[1]);
+      if (second >= 16 && second <= 31) return false;
+    }
+    return true;
   } catch {
     return false;
   }

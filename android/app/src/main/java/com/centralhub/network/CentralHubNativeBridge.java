@@ -1,10 +1,14 @@
 package com.centralhub.network;
 
+import android.app.DownloadManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Environment;
+import android.provider.Settings;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import android.speech.tts.Voice;
@@ -312,6 +316,91 @@ public final class CentralHubNativeBridge {
             try { taraTts.stop(); } catch (Exception ignored) { }
             try { taraTts.shutdown(); } catch (Exception ignored) { }
             taraTts = null;
+        }
+    }
+
+    /** Download CentralHub APK updates without handing the URL to Chrome. */
+    @JavascriptInterface
+    public long startAppUpdateDownload(String value, String versionName) {
+        if (value == null || value.trim().isEmpty()) return -1L;
+        try {
+            Uri uri = Uri.parse(value.trim());
+            String host = uri.getHost();
+            if (!"https".equalsIgnoreCase(uri.getScheme()) || host == null) return -1L;
+            String normalizedHost = host.toLowerCase(Locale.ROOT);
+            boolean allowed = normalizedHost.equals("github.com")
+                    || normalizedHost.endsWith(".githubusercontent.com")
+                    || normalizedHost.equals("centralhub.network");
+            if (!allowed) return -1L;
+
+            String safeVersion = versionName == null ? "latest" : versionName.replaceAll("[^A-Za-z0-9._-]", "-");
+            DownloadManager.Request request = new DownloadManager.Request(uri)
+                    .setTitle("CentralHub " + safeVersion)
+                    .setDescription("Downloading Android update")
+                    .setMimeType("application/vnd.android.package-archive")
+                    .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    .setAllowedOverMetered(true)
+                    .setAllowedOverRoaming(false);
+            request.setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, "centralhub-" + safeVersion + ".apk");
+            DownloadManager manager = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
+            return manager == null ? -1L : manager.enqueue(request);
+        } catch (Exception ignored) {
+            return -1L;
+        }
+    }
+
+    @JavascriptInterface
+    public String getAppUpdateDownloadStatus(long downloadId) {
+        if (downloadId <= 0) return "{\"status\":\"invalid\",\"progress\":0}";
+        DownloadManager manager = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
+        if (manager == null) return "{\"status\":\"failed\",\"progress\":0}";
+        Cursor cursor = null;
+        try {
+            cursor = manager.query(new DownloadManager.Query().setFilterById(downloadId));
+            if (cursor == null || !cursor.moveToFirst()) return "{\"status\":\"missing\",\"progress\":0}";
+            int status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
+            int reason = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON));
+            long soFar = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
+            long total = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES));
+            int progress = total > 0 ? (int) Math.min(100L, Math.max(0L, (soFar * 100L) / total)) : 0;
+            String state;
+            switch (status) {
+                case DownloadManager.STATUS_PENDING: state = "pending"; break;
+                case DownloadManager.STATUS_RUNNING: state = "running"; break;
+                case DownloadManager.STATUS_PAUSED: state = "paused"; break;
+                case DownloadManager.STATUS_SUCCESSFUL: state = "successful"; progress = 100; break;
+                case DownloadManager.STATUS_FAILED: state = "failed"; break;
+                default: state = "unknown"; break;
+            }
+            return "{\"status\":\"" + state + "\",\"progress\":" + progress + ",\"reason\":" + reason + "}";
+        } catch (Exception ignored) {
+            return "{\"status\":\"failed\",\"progress\":0}";
+        } finally {
+            if (cursor != null) cursor.close();
+        }
+    }
+
+    /** Opens only Android's package installer. Chrome is not involved. */
+    @JavascriptInterface
+    public boolean installAppUpdate(long downloadId) {
+        if (downloadId <= 0) return false;
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.getPackageManager().canRequestPackageInstalls()) {
+                Intent permission = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + context.getPackageName()));
+                activity.startActivity(permission);
+                return false;
+            }
+            DownloadManager manager = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
+            if (manager == null) return false;
+            Uri apk = manager.getUriForDownloadedFile(downloadId);
+            if (apk == null) return false;
+            Intent install = new Intent(Intent.ACTION_VIEW)
+                    .setDataAndType(apk, "application/vnd.android.package-archive")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            activity.startActivity(install);
+            return true;
+        } catch (Exception ignored) {
+            return false;
         }
     }
 

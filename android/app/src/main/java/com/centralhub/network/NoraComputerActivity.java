@@ -60,6 +60,7 @@ public final class NoraComputerActivity extends android.app.Activity {
 
     private WebView webView;
     private TextView statusView;
+    private EditText addressView;
     private Button takeoverButton;
     private Button closeButton;
     private String sessionId;
@@ -110,11 +111,11 @@ public final class NoraComputerActivity extends android.app.Activity {
         bar.setBackgroundColor(Color.rgb(5, 13, 26));
 
         TextView brand = new TextView(this);
-        brand.setText("NORA · LIVE ACTION");
+        brand.setText("SHRUTHI · LIVE WEB");
         brand.setTextColor(Color.rgb(98, 211, 255));
         brand.setTextSize(12f);
         brand.setGravity(Gravity.CENTER_VERTICAL);
-        bar.addView(brand, new LinearLayout.LayoutParams(dp(128), dp(46)));
+        bar.addView(brand, new LinearLayout.LayoutParams(dp(142), dp(46)));
 
         statusView = new TextView(this);
         statusView.setText("Preparing…");
@@ -125,24 +126,133 @@ public final class NoraComputerActivity extends android.app.Activity {
         statusView.setGravity(Gravity.CENTER_VERTICAL);
         bar.addView(statusView, statusParams);
 
-        takeoverButton = new Button(this);
-        takeoverButton.setAllCaps(false);
-        takeoverButton.setText("Take over");
-        takeoverButton.setTextSize(11f);
+        takeoverButton = browserButton("Take over");
         takeoverButton.setOnClickListener(v -> toggleTakeover());
         bar.addView(takeoverButton, new LinearLayout.LayoutParams(dp(104), dp(44)));
 
-        closeButton = new Button(this);
-        closeButton.setAllCaps(false);
-        closeButton.setText("End");
-        closeButton.setTextSize(11f);
+        closeButton = browserButton("End");
         closeButton.setOnClickListener(v -> cancelAndClose());
         bar.addView(closeButton, new LinearLayout.LayoutParams(dp(68), dp(44)));
 
+        LinearLayout nav = new LinearLayout(this);
+        nav.setOrientation(LinearLayout.HORIZONTAL);
+        nav.setGravity(Gravity.CENTER_VERTICAL);
+        nav.setPadding(dp(8), dp(4), dp(8), dp(6));
+        nav.setBackgroundColor(Color.rgb(4, 10, 20));
+
+        Button back = browserButton("‹");
+        back.setOnClickListener(v -> { takeOverForBrowser(); if (webView != null && webView.canGoBack()) webView.goBack(); });
+        nav.addView(back, new LinearLayout.LayoutParams(dp(44), dp(42)));
+
+        Button forward = browserButton("›");
+        forward.setOnClickListener(v -> { takeOverForBrowser(); if (webView != null && webView.canGoForward()) webView.goForward(); });
+        nav.addView(forward, new LinearLayout.LayoutParams(dp(44), dp(42)));
+
+        Button refresh = browserButton("↻");
+        refresh.setOnClickListener(v -> { takeOverForBrowser(); if (webView != null) webView.reload(); });
+        nav.addView(refresh, new LinearLayout.LayoutParams(dp(44), dp(42)));
+
+        Button home = browserButton("⌂");
+        home.setOnClickListener(v -> { takeOverForBrowser(); if (webView != null) webView.loadUrl(targetUrl); });
+        nav.addView(home, new LinearLayout.LayoutParams(dp(44), dp(42)));
+
+        addressView = new EditText(this);
+        addressView.setSingleLine(true);
+        addressView.setText(targetUrl);
+        addressView.setTextColor(Color.WHITE);
+        addressView.setHintTextColor(Color.rgb(104, 124, 148));
+        addressView.setHint("Search or enter website");
+        addressView.setTextSize(12f);
+        addressView.setPadding(dp(12), 0, dp(10), 0);
+        addressView.setBackgroundColor(Color.rgb(12, 22, 38));
+        addressView.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_GO);
+        addressView.setOnEditorActionListener((v, actionId, event) -> {
+            navigateAddress(addressView.getText().toString());
+            return true;
+        });
+        nav.addView(addressView, new LinearLayout.LayoutParams(0, dp(42), 1f));
+
+        Button go = browserButton("Go");
+        go.setOnClickListener(v -> navigateAddress(addressView.getText().toString()));
+        nav.addView(go, new LinearLayout.LayoutParams(dp(52), dp(42)));
+
+        Button check = browserButton("Check");
+        check.setOnClickListener(v -> askShruthi("Check the current page for meaningful changes, risks, unusual information, or anything relevant to CentralHub. Summarize what matters."));
+        nav.addView(check, new LinearLayout.LayoutParams(dp(70), dp(42)));
+
+        Button ask = browserButton("Ask");
+        ask.setOnClickListener(v -> askShruthi(null));
+        nav.addView(ask, new LinearLayout.LayoutParams(dp(58), dp(42)));
+
         webView = new WebView(this);
         root.addView(bar, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(62)));
+        root.addView(nav, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(52)));
         root.addView(webView, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
         setContentView(root);
+    }
+
+    private Button browserButton(String label) {
+        Button button = new Button(this);
+        button.setAllCaps(false);
+        button.setText(label);
+        button.setTextSize(11f);
+        button.setMinWidth(0);
+        button.setMinimumWidth(0);
+        button.setPadding(dp(3), 0, dp(3), 0);
+        return button;
+    }
+
+    private void takeOverForBrowser() {
+        if (!manualControl) {
+            manualControl = true;
+            if (takeoverButton != null) takeoverButton.setText("Continue NORA");
+            setStatus("You have control · Shruthi is paused");
+            requestAgent("pause", null);
+        }
+    }
+
+    private void navigateAddress(String raw) {
+        takeOverForBrowser();
+        String value = raw == null ? "" : raw.trim();
+        if (value.isEmpty()) return;
+        if (value.contains(" ") || (!value.contains(".") && !value.startsWith("https://"))) {
+            value = "https://www.google.com/search?q=" + Uri.encode(value);
+        } else if (!value.startsWith("https://")) {
+            value = "https://" + value.replaceFirst("^http://", "");
+        }
+        if (!isAllowedUrl(value)) {
+            Toast.makeText(this, "Only public HTTPS websites can open in Live Web.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        webView.loadUrl(value);
+    }
+
+    private void askShruthi(String preset) {
+        if (lastResponseId.isEmpty()) {
+            Toast.makeText(this, "Shruthi is still connecting to this page. Try again in a moment.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        takeOverForBrowser();
+        if (preset != null && !preset.isEmpty()) {
+            setManualControl(false, "Shruthi is checking this page…");
+            requestResume(false, preset + " Current page: " + safe(webView.getUrl()));
+            return;
+        }
+        EditText input = new EditText(this);
+        input.setSingleLine(false);
+        input.setHint("Ask Shruthi about this page…");
+        new AlertDialog.Builder(this)
+                .setTitle("Ask Shruthi")
+                .setMessage("Shruthi can inspect the visible page. Login secrets, OTPs and CAPTCHA stay manual.")
+                .setView(input)
+                .setPositiveButton("Ask", (dialog, which) -> {
+                    String question = input.getText().toString().trim();
+                    if (question.isEmpty()) return;
+                    setManualControl(false, "Shruthi is checking this page…");
+                    requestResume(false, question + " Current page: " + safe(webView.getUrl()));
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     private void configureWebView() {
@@ -169,13 +279,14 @@ public final class NoraComputerActivity extends android.app.Activity {
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 String value = request.getUrl().toString();
                 if (isAllowedUrl(value)) return false;
-                setStatus("Blocked navigation outside NORA's approved sites");
+                setStatus("Blocked unsafe or non-HTTPS navigation");
                 return true;
             }
 
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
+                if (addressView != null) addressView.setText(url);
                 if (!isAllowedUrl(url)) return;
                 if (!agentStarted) {
                     agentStarted = true;
@@ -551,12 +662,19 @@ public final class NoraComputerActivity extends android.app.Activity {
             String host = uri.getHost();
             if (host == null) return false;
             host = host.toLowerCase(Locale.ROOT);
-            String[] roots = new String[]{
-                    "facebook.com", "meta.com", "google.com", "google.co.uk",
-                    "github.com", "netlify.com", "supabase.com", "centralhub.network"
-            };
-            for (String root : roots) if (host.equals(root) || host.endsWith("." + root)) return true;
-            return false;
+            if (host.equals("localhost") || host.endsWith(".local") || host.equals("::1")
+                    || host.startsWith("127.") || host.startsWith("10.") || host.startsWith("192.168.")
+                    || host.startsWith("169.254.")) return false;
+            if (host.startsWith("172.")) {
+                String[] parts = host.split("\\.");
+                if (parts.length > 1) {
+                    try {
+                        int second = Integer.parseInt(parts[1]);
+                        if (second >= 16 && second <= 31) return false;
+                    } catch (Exception ignored) { }
+                }
+            }
+            return true;
         } catch (Exception ignored) {
             return false;
         }
