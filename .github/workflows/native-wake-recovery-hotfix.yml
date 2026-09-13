@@ -1,0 +1,120 @@
+name: Native wake-listener recovery hotfix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/native-wake-recovery-hotfix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Harden Android wake recognizer lifecycle
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('android/app/src/main/java/com/centralhub/network/MainActivity.java')
+          text = path.read_text()
+
+          old = '''    public void setTaraEnabled(boolean enabled) {
+        taraEnabled = enabled;
+        if (!enabled) {
+            noraConversationActive = false;
+            stopTaraRecognizer();
+            return;
+        }
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_RECORD_AUDIO);
+            return;
+        }
+        startTaraRecognizerIfReady();
+    }
+'''
+
+          new = '''    public void setTaraEnabled(boolean enabled) {
+        boolean wasEnabled = taraEnabled;
+        taraEnabled = enabled;
+        if (!enabled) {
+            noraConversationActive = false;
+            // Picking temporarily owns Android's speech recognizer. Samsung devices
+            // can leave a cancelled on-device recognizer in a dead-but-listening
+            // state, so release it completely instead of trying to reuse it later.
+            destroyTaraRecognizer();
+            return;
+        }
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_RECORD_AUDIO);
+            return;
+        }
+        // A false -> true hand-off means picking has released the microphone.
+        // Always recreate the native recognizer before restoring passive wake.
+        if (!wasEnabled || taraRecognizer == null || taraRecognizerIntent == null) {
+            setupTaraRecognizer();
+        }
+        scheduleTaraRestart(450L);
+    }
+'''
+
+          if new not in text:
+              if old not in text:
+                  raise SystemExit('Expected setTaraEnabled block not found; refusing unsafe patch.')
+              text = text.replace(old, new, 1)
+
+          old_resume = '''    public void onResume() {
+        super.onResume();
+        taraResumed = true;
+        scheduleTaraRestart(noraConversationActive ? 600L : 1800L);
+    }
+'''
+
+          new_resume = '''    public void onResume() {
+        super.onResume();
+        taraResumed = true;
+        if (taraEnabled
+                && taraRecognizer == null
+                && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            setupTaraRecognizer();
+        }
+        scheduleTaraRestart(noraConversationActive ? 600L : 1800L);
+    }
+'''
+
+          if new_resume not in text:
+              if old_resume not in text:
+                  raise SystemExit('Expected onResume block not found; refusing unsafe patch.')
+              text = text.replace(old_resume, new_resume, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Verify patch
+        shell: bash
+        run: |
+          grep -F 'boolean wasEnabled = taraEnabled;' android/app/src/main/java/com/centralhub/network/MainActivity.java
+          grep -F 'destroyTaraRecognizer();' android/app/src/main/java/com/centralhub/network/MainActivity.java
+          grep -F 'scheduleTaraRestart(450L);' android/app/src/main/java/com/centralhub/network/MainActivity.java
+
+      - name: Commit native fix
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'Native wake recovery already applied.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add android/app/src/main/java/com/centralhub/network/MainActivity.java
+          git commit -m 'fix(android): recreate wake listener after picking'
+          git push origin HEAD:main
