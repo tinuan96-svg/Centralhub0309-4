@@ -15,6 +15,25 @@ const EMPTY_CASHFLOW: CashflowSummary = {
   unreconciledCount: 0,
 };
 
+function hasKnownBalance(account: BankAccount): boolean {
+  if (account.current_balance == null || !Number.isFinite(Number(account.current_balance))) return false;
+  if (account.balance_source === 'not_provided') return false;
+  return Boolean(account.last_synced_at || account.balance_source);
+}
+
+function getBalanceNote(account: BankAccount): string {
+  if (hasKnownBalance(account)) {
+    if (!account.last_synced_at) return 'Balance available';
+    const synced = new Date(account.last_synced_at);
+    return Number.isNaN(synced.getTime())
+      ? 'Balance synced'
+      : `Synced ${synced.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}`;
+  }
+  if (account.balance_source === 'not_provided') return 'Balance not supplied by source';
+  if (account.google_sheet_id || account.sync_source) return 'Balance not synced yet';
+  return 'Balance source not connected';
+}
+
 export default function BankingPage({ params, searchParams }: { params: any; searchParams: any }) {
   const { stores } = useStore();
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
@@ -125,13 +144,22 @@ export default function BankingPage({ params, searchParams }: { params: any; sea
   };
 
   const selectedAccount = accounts.find((account) => account.id === selectedAccountId);
-  const totalCash = accounts.reduce((sum, account) => sum + (Number(account.current_balance) || 0), 0);
+  const activeAccounts = accounts.filter((account) => account.is_active);
+  const knownBalanceAccounts = activeAccounts.filter(hasKnownBalance);
+  const unknownBalanceCount = Math.max(0, activeAccounts.length - knownBalanceAccounts.length);
+  const hasAnyKnownBalance = knownBalanceAccounts.length > 0;
+  const balanceCoverageComplete = activeAccounts.length > 0 && unknownBalanceCount === 0;
+  const totalCash = knownBalanceAccounts.reduce((sum, account) => sum + Number(account.current_balance || 0), 0);
   const netCashflow = cashflowSummary.incoming - cashflowSummary.outgoing;
-  const cashHealth = totalCash <= 0
-    ? { label: 'No Available Cash', dot: 'bg-amber-500', text: 'text-amber-300' }
-    : netCashflow < 0
-      ? { label: 'Cashflow Pressure', dot: 'bg-rose-500', text: 'text-rose-300' }
-      : { label: 'Healthy Balance', dot: 'bg-emerald-500', text: 'text-emerald-300' };
+  const cashHealth = activeAccounts.length === 0
+    ? { label: 'No Active Accounts', dot: 'bg-slate-500', text: 'text-slate-300' }
+    : !balanceCoverageComplete
+      ? { label: 'Balance Coverage Incomplete', dot: 'bg-cyan-500', text: 'text-cyan-300' }
+      : totalCash <= 0
+        ? { label: 'No Available Cash', dot: 'bg-amber-500', text: 'text-amber-300' }
+        : netCashflow < 0
+          ? { label: 'Cashflow Pressure', dot: 'bg-rose-500', text: 'text-rose-300' }
+          : { label: 'Healthy Balance', dot: 'bg-emerald-500', text: 'text-emerald-300' };
   const accountLabel = selectedAccount
     ? `${selectedAccount.bank_name || 'Bank'} - ${selectedAccount.account_name || 'Account'}`
     : 'Select a bank account';
@@ -156,27 +184,35 @@ export default function BankingPage({ params, searchParams }: { params: any; sea
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {accounts.map((account) => (
-                <button
-                  key={account.id}
-                  type="button"
-                  onClick={() => setSelectedAccountId(account.id)}
-                  className={`text-left p-5 rounded-2xl border transition-all cursor-pointer ${selectedAccountId === account.id ? 'bg-blue-500/10 border-blue-500/50 shadow-lg shadow-blue-500/10' : 'bg-slate-800/40 border-slate-700 hover:border-slate-600'}`}
-                >
-                  <div className="flex justify-between items-start mb-3">
-                    <span className="text-2xl">🏦</span>
-                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${account.is_active ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700 text-slate-400'}`}>
-                      {account.is_active ? 'Active' : 'Inactive'}
-                    </span>
-                  </div>
-                  <h3 className="font-black text-white text-lg tracking-tight">{account.bank_name || 'Generic Bank'}</h3>
-                  <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">{account.account_name}</p>
-                  <div className="mt-4 pt-4 border-t border-slate-700/50">
-                    <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Current Balance</p>
-                    <p className="text-xl font-black text-white">{formatCurrency(account.current_balance)}</p>
-                  </div>
-                </button>
-              ))}
+              {accounts.map((account) => {
+                const balanceKnown = hasKnownBalance(account);
+                return (
+                  <button
+                    key={account.id}
+                    type="button"
+                    onClick={() => setSelectedAccountId(account.id)}
+                    className={`text-left p-5 rounded-2xl border transition-all cursor-pointer ${selectedAccountId === account.id ? 'bg-blue-500/10 border-blue-500/50 shadow-lg shadow-blue-500/10' : 'bg-slate-800/40 border-slate-700 hover:border-slate-600'}`}
+                  >
+                    <div className="flex justify-between items-start mb-3">
+                      <span className="text-2xl">🏦</span>
+                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${account.is_active ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700 text-slate-400'}`}>
+                        {account.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                    <h3 className="font-black text-white text-lg tracking-tight">{account.bank_name || 'Generic Bank'}</h3>
+                    <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">{account.account_name}</p>
+                    <div className="mt-4 pt-4 border-t border-slate-700/50">
+                      <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Current Balance</p>
+                      <p className={`text-xl font-black ${balanceKnown ? 'text-white' : 'text-slate-400'}`}>
+                        {balanceKnown ? formatCurrency(account.current_balance) : 'Unavailable'}
+                      </p>
+                      <p className={`mt-1 text-[9px] font-bold uppercase tracking-wider ${balanceKnown ? 'text-emerald-500/70' : 'text-amber-400/70'}`}>
+                        {getBalanceNote(account)}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
               {accounts.length === 0 && !isLoading && (
                 <div className="col-span-2 py-12 text-center border-2 border-dashed border-slate-800 rounded-3xl">
                   <p className="text-slate-500 italic">No bank accounts linked yet.</p>
@@ -185,34 +221,48 @@ export default function BankingPage({ params, searchParams }: { params: any; sea
             </div>
           </div>
 
-          <div className="bg-gradient-to-br from-indigo-900/40 to-slate-900 border border-slate-800 rounded-3xl p-6">
+          <div className="min-w-0 bg-gradient-to-br from-indigo-900/40 to-slate-900 border border-slate-800 rounded-3xl p-6">
             <div className="flex items-start justify-between gap-3 mb-6">
               <h2 className="text-lg font-bold text-white uppercase tracking-tight text-indigo-400">Cashflow Overview</h2>
-              <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Last 30 days</span>
+              <span className="shrink-0 text-[9px] font-black uppercase tracking-widest text-slate-500">Last 30 days</span>
             </div>
             <div className="space-y-6">
               <div className="p-4 bg-slate-800/50 rounded-2xl border border-slate-700">
-                <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mb-1">Total Available Cash</p>
-                <p className="text-2xl font-black text-white">{formatCurrency(totalCash)}</p>
+                <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mb-1">
+                  {balanceCoverageComplete ? 'Total Available Cash' : 'Known Available Cash'}
+                </p>
+                <p className="text-2xl font-black text-white">{hasAnyKnownBalance ? formatCurrency(totalCash) : '—'}</p>
+                <p className={`mt-1 text-[9px] font-bold uppercase tracking-wider ${balanceCoverageComplete ? 'text-emerald-500/70' : 'text-cyan-400/70'}`}>
+                  {activeAccounts.length === 0
+                    ? 'No active bank accounts'
+                    : `${knownBalanceAccounts.length} of ${activeAccounts.length} active balances available`}
+                </p>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 bg-emerald-500/5 rounded-2xl border border-emerald-500/20">
+              <div className="grid grid-cols-1 2xl:grid-cols-2 gap-3">
+                <div className="min-w-0 p-4 bg-emerald-500/5 rounded-2xl border border-emerald-500/20">
                   <p className="text-[10px] text-emerald-500/70 uppercase font-black tracking-widest mb-1">Incoming</p>
-                  <p className="text-lg font-black text-emerald-400">{formatCurrency(cashflowSummary.incoming)}</p>
+                  <p className="text-lg font-black text-emerald-400 tabular-nums whitespace-nowrap">{formatCurrency(cashflowSummary.incoming)}</p>
                 </div>
-                <div className="p-4 bg-rose-500/5 rounded-2xl border border-rose-500/20">
+                <div className="min-w-0 p-4 bg-rose-500/5 rounded-2xl border border-rose-500/20">
                   <p className="text-[10px] text-rose-500/70 uppercase font-black tracking-widest mb-1">Outgoing</p>
-                  <p className="text-lg font-black text-rose-400">{formatCurrency(cashflowSummary.outgoing)}</p>
+                  <p className="text-lg font-black text-rose-400 tabular-nums whitespace-nowrap">{formatCurrency(cashflowSummary.outgoing)}</p>
                 </div>
               </div>
               <div className="p-5 bg-slate-800/50 rounded-2xl border border-slate-700">
-                <div className="flex items-center justify-between gap-3 mb-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                   <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Health Status</p>
-                  <p className={`text-[10px] font-black ${netCashflow >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{netCashflow >= 0 ? '+' : ''}{formatCurrency(netCashflow)} net</p>
+                  <p className={`text-[10px] font-black whitespace-nowrap ${netCashflow >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{netCashflow >= 0 ? '+' : ''}{formatCurrency(netCashflow)} net</p>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className={`w-3 h-3 rounded-full ${cashHealth.dot}`} />
-                  <p className={`text-sm font-bold uppercase tracking-tighter ${cashHealth.text}`}>{cashHealth.label}</p>
+                <div className="flex items-start gap-3">
+                  <div className={`mt-1 w-3 h-3 shrink-0 rounded-full ${cashHealth.dot}`} />
+                  <div className="min-w-0">
+                    <p className={`text-sm font-bold uppercase tracking-tighter ${cashHealth.text}`}>{cashHealth.label}</p>
+                    {!balanceCoverageComplete && activeAccounts.length > 0 && (
+                      <p className="mt-1 text-[9px] leading-4 text-slate-500 font-bold uppercase tracking-wider">
+                        {unknownBalanceCount} active {unknownBalanceCount === 1 ? 'account has' : 'accounts have'} no reliable live balance
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
