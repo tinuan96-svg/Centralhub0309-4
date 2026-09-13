@@ -34,6 +34,7 @@ public class MainActivity extends BridgeActivity {
     // overlap during rollout. NORA is now the primary product name and wake phrase.
     private final Handler taraHandler = new Handler(Looper.getMainLooper());
     private final Runnable taraRestartRunnable = this::startTaraRecognizerIfReady;
+    private final Runnable taraStartWatchdogRunnable = this::recoverStalledTaraStart;
     private SpeechRecognizer taraRecognizer;
     private Intent taraRecognizerIntent;
     private CentralHubNativeBridge nativeBridge;
@@ -41,6 +42,7 @@ public class MainActivity extends BridgeActivity {
     private boolean taraSpeaking = false;
     private boolean taraResumed = false;
     private boolean taraListening = false;
+    private boolean taraReadyForSpeech = false;
     private boolean taraPartialWakeDispatched = false;
     private boolean taraSegmentedSession = false;
     private boolean noraConversationActive = false;
@@ -197,7 +199,13 @@ public class MainActivity extends BridgeActivity {
         }
 
         taraRecognizer.setRecognitionListener(new RecognitionListener() {
-            @Override public void onReadyForSpeech(Bundle params) { taraListening = true; }
+            @Override
+            public void onReadyForSpeech(Bundle params) {
+                taraHandler.removeCallbacks(taraStartWatchdogRunnable);
+                taraReadyForSpeech = true;
+                taraListening = true;
+                taraConsecutiveErrors = 0;
+            }
             @Override public void onBeginningOfSpeech() { }
             @Override public void onRmsChanged(float rmsdB) { }
             @Override public void onBufferReceived(byte[] buffer) { }
@@ -205,11 +213,24 @@ public class MainActivity extends BridgeActivity {
 
             @Override
             public void onError(int error) {
+                taraHandler.removeCallbacks(taraStartWatchdogRunnable);
                 taraListening = false;
+                taraReadyForSpeech = false;
                 taraPartialWakeDispatched = false;
                 if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) return;
 
                 taraConsecutiveErrors += 1;
+                if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY
+                        || error == SpeechRecognizer.ERROR_CLIENT
+                        || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                        && error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED)) {
+                    // Samsung/Bixby can leave Android SpeechRecognizer bound to a stale
+                    // recognition service after audio focus or app lifecycle changes.
+                    // Recreate the native recognizer instead of retrying the dead instance.
+                    destroyTaraRecognizer();
+                    scheduleTaraRestart(noraConversationActive ? 700L : 1800L);
+                    return;
+                }
                 if (error == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED
                         || error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE) {
                     requestTaraLanguageModel();
@@ -229,8 +250,10 @@ public class MainActivity extends BridgeActivity {
 
             @Override
             public void onResults(Bundle results) {
+                taraHandler.removeCallbacks(taraStartWatchdogRunnable);
                 processNoraRecognitionBundle(results);
                 taraListening = false;
+                taraReadyForSpeech = false;
                 taraConsecutiveErrors = 0;
                 taraPartialWakeDispatched = false;
                 scheduleTaraRestart(noraConversationActive ? 900L : (taraSegmentedSession ? 2600L : 1800L));
@@ -263,7 +286,9 @@ public class MainActivity extends BridgeActivity {
 
             @Override
             public void onEndOfSegmentedSession() {
+                taraHandler.removeCallbacks(taraStartWatchdogRunnable);
                 taraListening = false;
+                taraReadyForSpeech = false;
                 taraConsecutiveErrors = 0;
                 taraPartialWakeDispatched = false;
                 scheduleTaraRestart(noraConversationActive ? 900L : 2600L);
@@ -349,17 +374,21 @@ public class MainActivity extends BridgeActivity {
     }
 
     public void setTaraEnabled(boolean enabled) {
+        boolean wasEnabled = taraEnabled;
         taraEnabled = enabled;
         if (!enabled) {
             noraConversationActive = false;
-            stopTaraRecognizer();
+            destroyTaraRecognizer();
             return;
         }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_RECORD_AUDIO);
             return;
         }
-        startTaraRecognizerIfReady();
+        if (!wasEnabled || taraRecognizer == null || taraRecognizerIntent == null) {
+            setupTaraRecognizer();
+        }
+        scheduleTaraRestart(450L);
     }
 
     public void setNoraConversationActive(boolean active) {
@@ -390,14 +419,29 @@ public class MainActivity extends BridgeActivity {
 
         try {
             taraHandler.removeCallbacks(taraRestartRunnable);
+            taraHandler.removeCallbacks(taraStartWatchdogRunnable);
             taraPartialWakeDispatched = false;
+            taraReadyForSpeech = false;
             taraRecognizer.startListening(taraRecognizerIntent);
             taraListening = true;
+            // startListening() can return successfully even when Samsung has handed
+            // us a stale recognizer after an app switch. If onReadyForSpeech never
+            // arrives, recycle the recognizer instead of remaining silently stuck.
+            taraHandler.postDelayed(taraStartWatchdogRunnable, 3500L);
         } catch (Exception ignored) {
             taraListening = false;
+            taraReadyForSpeech = false;
             taraConsecutiveErrors += 1;
+            destroyTaraRecognizer();
             scheduleTaraRestart(Math.min(12000L, 2800L + (taraConsecutiveErrors * 1200L)));
         }
+    }
+
+    private void recoverStalledTaraStart() {
+        if (!taraEnabled || !taraResumed || taraSpeaking || !taraListening || taraReadyForSpeech) return;
+        taraConsecutiveErrors += 1;
+        destroyTaraRecognizer();
+        scheduleTaraRestart(noraConversationActive ? 700L : 1800L);
     }
 
     private void scheduleTaraRestart(long delayMs) {
@@ -409,7 +453,9 @@ public class MainActivity extends BridgeActivity {
 
     private void stopTaraRecognizer() {
         taraHandler.removeCallbacks(taraRestartRunnable);
+        taraHandler.removeCallbacks(taraStartWatchdogRunnable);
         taraListening = false;
+        taraReadyForSpeech = false;
         taraPartialWakeDispatched = false;
         if (taraRecognizer != null) {
             try { taraRecognizer.cancel(); } catch (Exception ignored) { }
@@ -418,7 +464,9 @@ public class MainActivity extends BridgeActivity {
 
     private void destroyTaraRecognizer() {
         taraHandler.removeCallbacks(taraRestartRunnable);
+        taraHandler.removeCallbacks(taraStartWatchdogRunnable);
         taraListening = false;
+        taraReadyForSpeech = false;
         taraPartialWakeDispatched = false;
         if (taraRecognizer != null) {
             try { taraRecognizer.cancel(); } catch (Exception ignored) { }
@@ -435,9 +483,9 @@ public class MainActivity extends BridgeActivity {
         long now = System.currentTimeMillis();
         long elapsed = now - taraLastTranscriptAt;
         boolean sameTranscript = clean.equalsIgnoreCase(taraLastTranscriptText);
-        boolean expandsPartialWake = "NORA".equalsIgnoreCase(taraLastTranscriptText)
-                && clean.length() > 5
-                && clean.regionMatches(true, 0, "NORA ", 0, 5);
+        boolean expandsPartialWake = "SHRUTHI".equalsIgnoreCase(taraLastTranscriptText)
+                && clean.length() > 8
+                && clean.regionMatches(true, 0, "SHRUTHI ", 0, 8);
 
         // Suppress duplicate callbacks, but never drop a full "NORA <command>"
         // result merely because the partial wake "NORA" arrived milliseconds first.
@@ -460,15 +508,22 @@ public class MainActivity extends BridgeActivity {
     public void onResume() {
         super.onResume();
         taraResumed = true;
+        if (taraEnabled
+                && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                && (taraRecognizer == null || taraRecognizerIntent == null)) {
+            setupTaraRecognizer();
+        }
         scheduleTaraRestart(noraConversationActive ? 600L : 1800L);
     }
 
     @Override
     public void onPause() {
         taraResumed = false;
-        // Keep the conversation state while the app is backgrounded or temporarily
-        // covered by NORA Computer Mode. The microphone itself is always paused.
-        stopTaraRecognizer();
+        // Android only grants this app microphone access while it is foregrounded.
+        // Destroy the recognizer here so Samsung/Bixby cannot leave a cancelled,
+        // non-responsive SpeechRecognizer instance behind for the next resume.
+        // Conversation state is preserved and the recognizer is rebuilt on resume.
+        destroyTaraRecognizer();
         super.onPause();
     }
 
@@ -489,7 +544,8 @@ public class MainActivity extends BridgeActivity {
         if (requestCode == REQUEST_RECORD_AUDIO
                 && grantResults.length > 0
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            scheduleTaraRestart(1800L);
+            if (taraEnabled && taraResumed) setupTaraRecognizer();
+            scheduleTaraRestart(900L);
         }
     }
 
