@@ -34,8 +34,9 @@
         </activity>
 
         <!-- Isolated Live Web browser controlled by Shruthi/NORA with human takeover.
-             Not exported: third-party pages remain separated from the authenticated
-             CentralHub app and can only be launched through its native bridge. -->
+             Native baseline includes persistent tabs, bookmarks/history, monitoring,
+             and fresh Shruthi page sessions. Third-party pages remain separated from
+             the authenticated CentralHub app and can only launch through its bridge. -->
         <activity
             android:name=".NoraComputerActivity"
             android:label="Shruthi Live Web"
