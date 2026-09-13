@@ -23,6 +23,11 @@ CentralHub owns the canonical product master in its own Supabase/PostgreSQL data
 - Financial and competitor analytics based on CentralHub master data.
 - AI-powered product image processing.
 
+## Assistant UI
+
+- SHRUTHI can be minimized to a compact floating voice bar without ending the active assistant session, microphone state, response state, or conversation context.
+- The compact bar shows the current Listening, Processing, or Speaking state and can be expanded back to the full assistant immediately.
+
 ## Getting Started
 
 1. Install dependencies with `npm install`.
