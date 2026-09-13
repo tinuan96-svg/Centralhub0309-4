@@ -237,6 +237,15 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
     const isConfirm = /\b(confirm|complete|finish|close|end|save|yes|done|final)\b/i.test(command);
 
     // 2. Action Execution
+    if (showSummary && isBack) {
+      lastActionTimeRef.current = now;
+      setShowSummary(false);
+      const reviewIndex = Math.max(0, Math.min(currentIndex, groupedItems.length - 1));
+      if (reviewIndex !== currentIndex) updateCurrentIndex(reviewIndex);
+      speakRef.current('Going back to the previous item.');
+      return;
+    }
+
     if (showSummary && isConfirm) {
       lastActionTimeRef.current = now;
       speakRef.current('Finishing session. Good job.');
