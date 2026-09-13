@@ -1,3 +1,0 @@
-CentralHub feature continuity audit checked 71 files, 50 behaviour groups and 4 regression bans.
-Passed groups: 50
-Feature continuity audit: PASS
