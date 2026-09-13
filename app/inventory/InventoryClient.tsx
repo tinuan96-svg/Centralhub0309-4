@@ -22,6 +22,10 @@ function escapeFilter(value: string) {
   return value.replace(/[%,]/g, '');
 }
 
+function relationOne(value: any) {
+  return Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
+}
+
 export default function InventoryClient() {
   const [products, setProducts] = useState<InventoryProduct[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,7 +45,7 @@ export default function InventoryClient() {
       const to = from + pageSize - 1;
       let query = supabase
         .from('products')
-        .select('id,name,sku,product_type,brand,department,category,subcategory,price,cost_price,is_active,image_url,gallery_images,enable_stock_tracking,backorder,allow_backorder,is_deleted,central_inventory!inner(stock_quantity,low_stock_threshold)', { count: 'exact' })
+        .select('id,name,sku,product_type,brand,department,category,subcategory,price,cost_price,stock,low_stock_threshold,is_active,image_url,gallery_images,enable_stock_tracking,backorder,allow_backorder,is_deleted,central_inventory!inner(stock_quantity,low_stock_threshold)', { count: 'exact' })
         .eq('is_deleted', false);
 
       const q = escapeFilter(search.trim().toLowerCase());
@@ -52,25 +56,40 @@ export default function InventoryClient() {
       if (status === 'out') query = query.eq('is_active', true).lte('central_inventory.stock_quantity', 0);
       if (status === 'low') query = query.eq('is_active', true).gt('central_inventory.stock_quantity', 0).lte('central_inventory.stock_quantity', 5);
 
-      const { data, count, error } = await query
-        .order('name')
-        .range(from, to);
+      const { data, count, error } = await query.order('name').range(from, to);
       if (error) throw error;
-      setProducts((data || []).map((p: any) => ({
-        id: p.id, name: p.name, sku: p.sku, product_type: p.product_type, brand: p.brand,
-        department: p.department, category: p.category, subcategory: p.subcategory,
-        price: Number(p.price || 0), cost_price: p.cost_price == null ? null : Number(p.cost_price),
-        stock_quantity: Number(p.central_inventory?.[0]?.stock_quantity ?? p.stock ?? 0),
-        low_stock_threshold: Number(p.central_inventory?.[0]?.low_stock_threshold ?? 5),
-        is_active: p.is_active !== false && !p.is_deleted, image_url: p.image_url,
-        gallery_images: p.gallery_images, enable_stock_tracking: p.enable_stock_tracking !== false,
-        backorder: p.backorder === true, allow_backorder: p.allow_backorder === true,
-      })));
+
+      setProducts((data || []).map((p: any) => {
+        const inventory = relationOne(p.central_inventory);
+        return {
+          id: p.id,
+          name: p.name,
+          sku: p.sku,
+          product_type: p.product_type,
+          brand: p.brand,
+          department: p.department,
+          category: p.category,
+          subcategory: p.subcategory,
+          price: Number(p.price || 0),
+          cost_price: p.cost_price == null ? null : Number(p.cost_price),
+          stock_quantity: Number(inventory?.stock_quantity ?? p.stock ?? 0),
+          low_stock_threshold: Number(inventory?.low_stock_threshold ?? p.low_stock_threshold ?? 5),
+          is_active: p.is_active !== false && !p.is_deleted,
+          image_url: p.image_url,
+          gallery_images: p.gallery_images,
+          enable_stock_tracking: p.enable_stock_tracking !== false,
+          backorder: p.backorder === true,
+          allow_backorder: p.allow_backorder === true,
+        };
+      }));
       setTotal(count || 0);
     } catch (error) {
       console.error('Error loading central inventory:', error);
-      setProducts([]); setTotal(0);
-    } finally { setLoading(false); }
+      setProducts([]);
+      setTotal(0);
+    } finally {
+      setLoading(false);
+    }
   }, [page, search, status]);
 
   useEffect(() => { loadProducts(); }, [loadProducts]);
@@ -80,17 +99,39 @@ export default function InventoryClient() {
   const softDelete = async () => {
     if (!deleteTarget) return;
     await ProductService.updateProduct(deleteTarget.id, { is_deleted: true, is_active: false });
-    setDeleteTarget(null); await loadProducts();
+    setDeleteTarget(null);
+    await loadProducts();
   };
 
-  return <div className="p-6 max-w-[1800px] mx-auto space-y-6">
-    <div><h1 className="text-2xl font-bold text-white">Central Inventory</h1><p className="text-sm text-slate-400 mt-1">Canonical products and inventory. Store databases receive product changes through the database-level sync.</p></div>
-    <div className="flex gap-3 flex-wrap"><input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search products, SKU, brand or category..." className="flex-1 min-w-[260px] px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white" /><select value={status} onChange={e => { setStatus(e.target.value as any); setPage(1); }} className="px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white"><option value="all">All live products</option><option value="active">Active</option><option value="low">Low stock</option><option value="out">Out of stock</option></select></div>
-    <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-4 py-3 text-xs text-cyan-100/80">Search and status filters now run against the database before pagination, so results are not limited to the first 50 products.</div>
-    <div className="ch-card bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-      {loading ? <div className="p-12 text-center text-slate-400">Loading central inventory…</div> : visibleProducts.length === 0 ? <div className="p-12 text-center text-slate-400">No products found.</div> : <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-slate-800/70 text-slate-400 uppercase text-[11px] tracking-wider"><tr><th className="px-4 py-3 text-left">Product</th><th className="px-4 py-3 text-left">Category</th><th className="px-4 py-3 text-right">Price</th><th className="px-4 py-3 text-right">Cost</th><th className="px-4 py-3 text-right">Central stock</th><th className="px-4 py-3 text-left">Status</th><th className="px-4 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-slate-800">{visibleProducts.map(p => { const stockClass = p.stock_quantity <= 0 ? 'text-red-400' : p.stock_quantity <= p.low_stock_threshold ? 'text-amber-400' : 'text-emerald-400'; return <tr key={p.id} className="hover:bg-slate-800/40"><td className="px-4 py-3"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-slate-800 overflow-hidden"><ProductImage imageUrl={p.image_url} galleryImages={p.gallery_images} alt={p.name} className="w-full h-full object-cover" /></div><div><button onClick={() => setViewingProductId(p.id)} className="text-left font-medium text-white hover:text-cyan-400">{p.name}</button><div className="text-xs text-slate-500">{p.sku || 'No SKU'} · {p.brand || 'No brand'}</div></div></div></td><td className="px-4 py-3 text-slate-400">{p.category || p.department || '—'}{p.subcategory ? ` / ${p.subcategory}` : ''}</td><td className="px-4 py-3 text-right text-white">{formatCurrency(p.price)}</td><td className="px-4 py-3 text-right text-slate-400">{p.cost_price == null ? '—' : formatCurrency(p.cost_price)}</td><td className={`px-4 py-3 text-right font-bold ${stockClass}`}>{p.enable_stock_tracking ? p.stock_quantity : '—'}</td><td className="px-4 py-3">{!p.is_active ? <span className="text-slate-500">Inactive</span> : p.stock_quantity <= 0 ? <span className="text-red-400">Out</span> : p.stock_quantity <= p.low_stock_threshold ? <span className="text-amber-400">Low</span> : <span className="text-emerald-400">OK</span>}</td><td className="px-4 py-3 text-right"><div className="flex justify-end gap-2"><button onClick={() => setEditingProduct(p)} className="px-2 py-1 text-xs rounded bg-slate-800 text-cyan-400 hover:bg-slate-700">Edit</button><button onClick={() => setDeleteTarget({ id: p.id, name: p.name })} className="px-2 py-1 text-xs rounded bg-slate-800 text-red-400 hover:bg-slate-700">Delete</button></div></td></tr>; })}</tbody></table></div>}
+  return <div className="p-4 fold-inner:p-5 lg:p-6 pb-24 fold-inner:pb-8 max-w-[1800px] mx-auto space-y-5 min-w-0">
+    <div><h1 className="text-2xl font-bold text-white">Central Inventory</h1><p className="text-sm text-slate-400 mt-1">Canonical products and shared warehouse stock. Store databases receive product changes through the database-level sync.</p></div>
+    <div className="flex gap-3 flex-wrap min-w-0"><input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search products, SKU, brand or category..." className="flex-1 min-w-[220px] px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white" /><select value={status} onChange={e => { setStatus(e.target.value as any); setPage(1); }} className="px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white"><option value="all">All central products</option><option value="active">Active</option><option value="low">Low stock</option><option value="out">Out of stock</option></select></div>
+    <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-4 py-3 text-xs text-cyan-100/80">Central stock is read from the canonical inventory relation with the product stock field as a safe fallback. Search and status filters run before pagination.</div>
+    <div className="ch-card bg-slate-900 border border-slate-800 rounded-xl overflow-hidden min-w-0">
+      {loading ? <div className="p-12 text-center text-slate-400">Loading central inventory…</div> : visibleProducts.length === 0 ? <div className="p-12 text-center text-slate-400">No products found.</div> : <>
+        <div className="fold-inner:hidden divide-y divide-slate-800">
+          {visibleProducts.map(p => {
+            const stockClass = p.stock_quantity <= 0 ? 'text-red-400' : p.stock_quantity <= p.low_stock_threshold ? 'text-amber-400' : 'text-emerald-400';
+            return <div key={p.id} className="p-4 space-y-3">
+              <div className="flex gap-3 items-start">
+                <div className="w-11 h-11 rounded-lg bg-slate-800 overflow-hidden shrink-0"><ProductImage imageUrl={p.image_url} galleryImages={p.gallery_images} alt={p.name} className="w-full h-full object-cover" /></div>
+                <div className="min-w-0 flex-1"><button onClick={() => setViewingProductId(p.id)} className="font-semibold text-white hover:text-cyan-400 truncate block max-w-full">{p.name}</button><p className="text-xs text-slate-500 truncate">{p.sku || 'No SKU'} · {p.brand || 'No brand'}</p><p className="text-xs text-slate-500 truncate mt-1">{p.category || p.department || 'No category'}{p.subcategory ? ` / ${p.subcategory}` : ''}</p></div>
+                <div className="text-right shrink-0"><p className={`text-lg font-black ${stockClass}`}>{p.enable_stock_tracking ? p.stock_quantity : '—'}</p><p className="text-[9px] uppercase text-slate-500">stock</p></div>
+              </div>
+              <div className="flex items-center justify-between gap-2 border-t border-slate-800 pt-3"><div className="text-xs"><span className="text-slate-400">{formatCurrency(p.price)}</span><span className="mx-2 text-slate-700">·</span><span className="text-slate-500">Cost {p.cost_price == null ? '—' : formatCurrency(p.cost_price)}</span></div><div className="flex gap-2"><button onClick={() => setEditingProduct(p)} className="px-2.5 py-1.5 text-xs rounded bg-slate-800 text-cyan-400">Edit</button><button onClick={() => setDeleteTarget({ id: p.id, name: p.name })} className="px-2.5 py-1.5 text-xs rounded bg-slate-800 text-red-400">Delete</button></div></div>
+            </div>;
+          })}
+        </div>
+        <div className="hidden fold-inner:block overflow-hidden">
+          <table className="w-full table-fixed text-sm">
+            <colgroup><col className="w-[27%]" /><col className="w-[18%]" /><col className="w-[10%]" /><col className="w-[10%]" /><col className="w-[11%]" /><col className="w-[10%]" /><col className="w-[14%]" /></colgroup>
+            <thead className="bg-slate-800/70 text-slate-400 uppercase text-[10px] tracking-wider"><tr><th className="px-3 py-3 text-left">Product</th><th className="px-3 py-3 text-left">Category</th><th className="px-3 py-3 text-right">Price</th><th className="px-3 py-3 text-right">Cost</th><th className="px-3 py-3 text-right">Central stock</th><th className="px-3 py-3 text-left">Status</th><th className="px-3 py-3 text-right">Actions</th></tr></thead>
+            <tbody className="divide-y divide-slate-800">{visibleProducts.map(p => { const stockClass = p.stock_quantity <= 0 ? 'text-red-400' : p.stock_quantity <= p.low_stock_threshold ? 'text-amber-400' : 'text-emerald-400'; return <tr key={p.id} className="hover:bg-slate-800/40"><td className="px-3 py-3 min-w-0"><div className="flex items-center gap-2 min-w-0"><div className="w-9 h-9 rounded-lg bg-slate-800 overflow-hidden shrink-0"><ProductImage imageUrl={p.image_url} galleryImages={p.gallery_images} alt={p.name} className="w-full h-full object-cover" /></div><div className="min-w-0"><button onClick={() => setViewingProductId(p.id)} className="text-left font-medium text-white hover:text-cyan-400 truncate block w-full">{p.name}</button><div className="text-[10px] text-slate-500 truncate">{p.sku || 'No SKU'} · {p.brand || 'No brand'}</div></div></div></td><td className="px-3 py-3 text-slate-400 truncate" title={`${p.category || p.department || '—'}${p.subcategory ? ` / ${p.subcategory}` : ''}`}>{p.category || p.department || '—'}{p.subcategory ? ` / ${p.subcategory}` : ''}</td><td className="px-3 py-3 text-right text-white">{formatCurrency(p.price)}</td><td className="px-3 py-3 text-right text-slate-400">{p.cost_price == null ? '—' : formatCurrency(p.cost_price)}</td><td className={`px-3 py-3 text-right font-bold ${stockClass}`}>{p.enable_stock_tracking ? p.stock_quantity : '—'}</td><td className="px-3 py-3">{!p.is_active ? <span className="text-slate-500">Inactive</span> : p.stock_quantity <= 0 ? <span className="text-red-400">Out</span> : p.stock_quantity <= p.low_stock_threshold ? <span className="text-amber-400">Low</span> : <span className="text-emerald-400">OK</span>}</td><td className="px-3 py-3"><div className="flex justify-end gap-1.5"><button onClick={() => setEditingProduct(p)} className="px-2 py-1 text-xs rounded bg-slate-800 text-cyan-400 hover:bg-slate-700">Edit</button><button onClick={() => setDeleteTarget({ id: p.id, name: p.name })} className="px-2 py-1 text-xs rounded bg-slate-800 text-red-400 hover:bg-slate-700">Delete</button></div></td></tr>; })}</tbody>
+          </table>
+        </div>
+      </>}
     </div>
-    <div className="flex items-center justify-between text-sm text-slate-400"><span>{total} matching central products</span><div className="flex items-center gap-2"><button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1.5 rounded bg-slate-800 disabled:opacity-40">Previous</button><span>Page {page} of {totalPages}</span><button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="px-3 py-1.5 rounded bg-slate-800 disabled:opacity-40">Next</button></div></div>
+    <div className="flex items-center justify-between gap-3 text-sm text-slate-400"><span>{total} matching central products</span><div className="flex items-center gap-2"><button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1.5 rounded bg-slate-800 disabled:opacity-40">Previous</button><span className="whitespace-nowrap">Page {page} of {totalPages}</span><button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="px-3 py-1.5 rounded bg-slate-800 disabled:opacity-40">Next</button></div></div>
     <InventoryActivityLog />
     {editingProduct && <ProductEditModal product={editingProduct} onClose={() => setEditingProduct(null)} onSave={async () => { setEditingProduct(null); await loadProducts(); }} />}
     <ProductViewPanel productId={viewingProductId} onClose={() => setViewingProductId(null)} onEdit={id => { setViewingProductId(null); const p = products.find(x => x.id === id); if (p) setEditingProduct(p); }} />
