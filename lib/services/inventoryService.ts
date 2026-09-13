@@ -78,42 +78,62 @@ export class InventoryService {
     return data;
   }
 
+  private static async writeInventoryView(
+    productId: string,
+    values: Record<string, unknown>
+  ): Promise<void> {
+    // central_inventory is a compatibility VIEW over products. It is writable via
+    // an INSTEAD OF trigger, but PostgreSQL cannot perform UPSERT/ON CONFLICT against
+    // this view because it has no unique constraint of its own. Always use UPDATE.
+    const { data, error } = await supabase
+      .from('central_inventory')
+      .update(values)
+      .eq('product_id', productId)
+      .select('product_id')
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) throw new Error('Product is not registered in the inventory master.');
+  }
+
   static async initializeInventory(
     productId: string,
     initialStock: number = 0,
     lowStockThreshold: number = 5,
     storeId: string | null = null
   ): Promise<CentralInventory | null> {
-    const { data, error } = await supabase
-      .from('central_inventory')
-      .upsert({
-        product_id: productId,
+    const current = await this.getInventoryForProduct(productId);
+    const oldQuantity = current?.stock_quantity ?? 0;
+    const change = initialStock - oldQuantity;
+
+    try {
+      await this.writeInventoryView(productId, {
         stock_quantity: initialStock,
         reserved_quantity: 0,
         low_stock_threshold: lowStockThreshold,
         updated_at: new Date().toISOString()
-      }, { onConflict: 'product_id' })
-      .select()
-      .single();
-
-    if (error) {
+      });
+    } catch (error) {
       console.error('Error initializing inventory:', error);
       return null;
     }
 
     await this.logInventoryChange(
       productId,
-      initialStock,
+      change,
       'MANUAL',
       null,
       'Initial inventory setup',
-      storeId
+      storeId,
+      undefined,
+      undefined,
+      undefined,
+      oldQuantity,
+      initialStock
     );
 
-    // Sync to websites
     await StockSyncService.syncStockToAllWebsites(productId, initialStock);
-
-    return data;
+    return this.getInventoryForProduct(productId);
   }
 
   static async updateStock(
@@ -126,33 +146,28 @@ export class InventoryService {
     storeId: string | null = null
   ): Promise<void> {
     const current = await this.getInventoryForProduct(productId);
-    const oldQuantity = current?.stock_quantity ?? 0;
+    if (!current) throw new Error('Product is not registered in the inventory master.');
+
+    const oldQuantity = current.stock_quantity ?? 0;
     const change = newQuantity - oldQuantity;
 
-    // Update Central Ledger (Source of Truth)
-    // Rule: Backend stock sync handles products.stock enforcement
-    const { error } = await supabase
-      .from('central_inventory')
-      .upsert({
-        product_id: productId,
+    try {
+      await this.writeInventoryView(productId, {
         stock_quantity: newQuantity,
         reserved_quantity: 0,
         updated_at: new Date().toISOString()
-      }, { onConflict: 'product_id' });
-
-    if (error) {
+      });
+    } catch (error) {
       console.error('Error updating stock in central_inventory:', error);
       throw error;
     }
 
-    // Attempt to get user if not provided
     let effectiveUserId = userId;
     if (!effectiveUserId) {
       const { data: { user } } = await supabase.auth.getUser();
-      effectiveUserId = user?.id || 'system';
+      effectiveUserId = user?.id;
     }
 
-    // Detailed audit logging
     const { error: logError } = await supabase.from('inventory_logs').insert([
       {
         product_id: productId,
@@ -160,9 +175,10 @@ export class InventoryService {
         old_quantity: oldQuantity,
         new_quantity: newQuantity,
         type: 'ADJUSTMENT',
-        reason: reason,
-        notes: notes || `Manual adjustment by ${effectiveUserId}`,
-        edited_by: effectiveUserId,
+        movement_type: 'ADJUSTMENT',
+        reason,
+        notes: notes || `Manual adjustment by ${effectiveUserId || 'system'}`,
+        edited_by: effectiveUserId || null,
         device_name: deviceName,
         store_id: storeId,
         created_at: new Date().toISOString()
@@ -173,7 +189,6 @@ export class InventoryService {
       console.error('Error logging inventory adjustment:', logError);
     }
 
-    // Sync updated stock to websites
     await StockSyncService.syncStockToAllWebsites(productId, newQuantity);
   }
 
@@ -184,20 +199,18 @@ export class InventoryService {
     store_id: string | null = null
   ): Promise<boolean> {
     const inventory = await this.getInventoryForProduct(productId);
-    const currentStock = inventory?.stock_quantity ?? 0;
+    if (!inventory) return false;
+
+    const currentStock = inventory.stock_quantity ?? 0;
     const newStockQuantity = currentStock - quantity;
 
-    // Update Central Ledger (Source of Truth)
-    const { error } = await supabase
-      .from('central_inventory')
-      .upsert({
-        product_id: productId,
+    try {
+      await this.writeInventoryView(productId, {
         stock_quantity: newStockQuantity,
         reserved_quantity: 0,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'product_id' });
-
-    if (error) {
+        updated_at: new Date().toISOString()
+      });
+    } catch (error) {
       console.error('Error deducting stock:', error);
       return false;
     }
@@ -208,11 +221,15 @@ export class InventoryService {
       'ORDER',
       orderId,
       `Deducted ${quantity} units — payment confirmed`,
-      store_id
+      store_id,
+      undefined,
+      undefined,
+      undefined,
+      currentStock,
+      newStockQuantity
     );
 
     await StockSyncService.syncStockToAllWebsites(productId, newStockQuantity);
-
     return true;
   }
 
@@ -233,20 +250,18 @@ export class InventoryService {
     skipRemoteSync: boolean = false
   ): Promise<boolean> {
     const inventory = await this.getInventoryForProduct(productId);
-    const currentStock = inventory?.stock_quantity ?? 0;
+    if (!inventory) return false;
+
+    const currentStock = inventory.stock_quantity ?? 0;
     const newStockQuantity = currentStock - quantity;
 
-    // Update Central Ledger (Source of Truth)
-    const { error } = await supabase
-      .from('central_inventory')
-      .upsert({
-        product_id: productId,
+    try {
+      await this.writeInventoryView(productId, {
         stock_quantity: newStockQuantity,
         reserved_quantity: 0,
         updated_at: new Date().toISOString()
-      }, { onConflict: 'product_id' });
-
-    if (error) {
+      });
+    } catch (error) {
       console.error('Error committing stock:', error);
       return false;
     }
@@ -257,7 +272,12 @@ export class InventoryService {
       'ORDER',
       orderId,
       `Committed ${quantity} units for order completion`,
-      store_id
+      store_id,
+      undefined,
+      undefined,
+      undefined,
+      currentStock,
+      newStockQuantity
     );
 
     if (!skipRemoteSync) {
@@ -284,20 +304,18 @@ export class InventoryService {
     storeId: string | null = null
   ): Promise<boolean> {
     const inventory = await this.getInventoryForProduct(productId);
-    const currentStock = inventory?.stock_quantity ?? 0;
+    if (!inventory) return false;
+
+    const currentStock = inventory.stock_quantity ?? 0;
     const newStockQuantity = currentStock + quantity;
 
-    // Update Central Ledger (Source of Truth)
-    const { error } = await supabase
-      .from('central_inventory')
-      .upsert({
-        product_id: productId,
+    try {
+      await this.writeInventoryView(productId, {
         stock_quantity: newStockQuantity,
         reserved_quantity: 0,
         updated_at: new Date().toISOString()
-      }, { onConflict: 'product_id' });
-
-    if (error) {
+      });
+    } catch (error) {
       console.error('Error returning stock:', error);
       return false;
     }
@@ -308,11 +326,15 @@ export class InventoryService {
       'RETURN',
       orderId,
       notes || `Returned ${quantity} units from order`,
-      storeId
+      storeId,
+      undefined,
+      undefined,
+      undefined,
+      currentStock,
+      newStockQuantity
     );
 
     await StockSyncService.syncStockToAllWebsites(productId, newStockQuantity);
-
     return true;
   }
 
@@ -429,9 +451,11 @@ export class InventoryService {
     storeId: string | null = null,
     movementType?: MovementType,
     referenceType?: string,
-    referenceNumber?: string
+    referenceNumber?: string,
+    oldQuantityOverride?: number,
+    newQuantityOverride?: number
   ): Promise<void> {
-    let oldQuantity = 0;
+    let currentQuantity = 0;
     let product_name = 'System Sync';
     let sku = null;
 
@@ -442,12 +466,13 @@ export class InventoryService {
         .eq('id', productId)
         .single();
 
-      oldQuantity = product?.stock || 0;
+      currentQuantity = product?.stock || 0;
       product_name = product?.name || 'Unknown Product';
       sku = product?.sku || null;
     }
 
-    const newQuantity = oldQuantity + change;
+    const oldQuantity = oldQuantityOverride ?? currentQuantity;
+    const newQuantity = newQuantityOverride ?? (oldQuantity + change);
 
     const { error } = await supabase.from('inventory_logs').insert([
       {
@@ -458,7 +483,7 @@ export class InventoryService {
         old_quantity: oldQuantity,
         new_quantity: newQuantity,
         type: type === 'TRANSFER' ? 'ADJUSTMENT' : type,
-        movement_type: movementType || (change > 0 ? 'IN' : 'OUT'),
+        movement_type: movementType || (change > 0 ? 'IN' : change < 0 ? 'OUT' : 'ADJUSTMENT'),
         reference_id: referenceId,
         reference_type: referenceType || (type === 'ORDER' ? 'Customer Order' : type === 'RETURN' ? 'Return' : type === 'SYNC' ? 'System Sync' : 'Manual'),
         reference_number: referenceNumber || referenceId,
