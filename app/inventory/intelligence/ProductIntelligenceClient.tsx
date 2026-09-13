@@ -2,13 +2,14 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { BarChart3, Boxes, CircleAlert, LineChart, PackageSearch, TrendingUp } from 'lucide-react';
+import { BarChart3, Boxes, CircleAlert, PackageSearch, TrendingUp } from 'lucide-react';
 import StoreScopeSelector from '@/components/StoreScopeSelector';
 import TimeSeriesChart from '@/components/TimeSeriesChart';
 import { EmptyState, MetricBars, Panel } from '@/components/dashboard/Charts';
 import { VisualMetric } from '@/components/dashboard/VisualMetric';
 import ProductWorkspaceNav from '@/components/products/ProductWorkspaceNav';
-import { IntelligenceService, ProductIntelligenceReport } from '@/lib/services/intelligenceService';
+import { ProductIntelligenceService as IntelligenceService } from '@/lib/services/productIntelligenceService';
+import type { ProductIntelligenceReport } from '@/lib/services/intelligenceService';
 import { formatCurrency } from '@/lib/utils/currency';
 
 type TimeRange = '7days' | '30days' | '90days' | '6months' | '12months' | 'all';
@@ -34,7 +35,7 @@ function comparisonTone(value: number) {
 function DataQualityNotice({ report }: { report: ProductIntelligenceReport }) {
   const issues = [
     report.quality.unmappedItems ? `${report.quality.unmappedItems} sold item rows have no current product mapping` : null,
-    report.quality.zeroCostItems ? `${report.quality.zeroCostItems} sold item rows have zero cost snapshots` : null,
+    report.quality.zeroCostItems ? `${report.quality.zeroCostItems} cost snapshots missing · current product cost fallback used where available` : null,
     report.quality.productsWithoutBrand ? `${report.quality.productsWithoutBrand} sold products are missing brand mapping` : null,
     report.quality.productsWithoutCategory ? `${report.quality.productsWithoutCategory} sold products are missing category mapping` : null
   ].filter(Boolean);
@@ -48,7 +49,7 @@ function DataQualityNotice({ report }: { report: ProductIntelligenceReport }) {
           <CircleAlert className="mt-0.5 text-amber-300" size={20} />
           <div>
             <h2 className="text-sm font-black uppercase tracking-widest text-amber-200">Sales data quality checks</h2>
-            <p className="mt-1 text-sm text-amber-100/70">Figures use paid order items. These mapping gaps can affect brand, category and profit accuracy.</p>
+            <p className="mt-1 text-sm text-amber-100/70">Figures use valid paid order items. Current product metadata repairs missing category/brand joins, and current product cost is only used as a reporting fallback when the historical cost snapshot is empty.</p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -100,7 +101,7 @@ export default function ProductIntelligenceClient() {
   const brandCategoryRows = report?.current.brandCategory.slice(0, 14) || [];
 
   return (
-    <main className="mx-auto max-w-[1800px] space-y-6 p-6">
+    <main className="mx-auto max-w-[1800px] space-y-6 p-4 fold-inner:p-5 lg:p-6 pb-24 fold-inner:pb-8 min-w-0">
       <ProductWorkspaceNav />
 
       <section className="rounded-2xl border border-slate-800 bg-slate-900/55 p-4 lg:p-5">
@@ -115,16 +116,9 @@ export default function ProductIntelligenceClient() {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <StoreScopeSelector value={storeId} onStoreChange={setStoreId} />
-            <div className="flex rounded-xl border border-slate-800 bg-slate-950/70 p-1">
+            <div className="flex rounded-xl border border-slate-800 bg-slate-950/70 p-1 overflow-x-auto no-scrollbar max-w-full">
               {ranges.map(range => (
-                <button
-                  key={range}
-                  type="button"
-                  onClick={() => setTimeRange(range)}
-                  className={`rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-wide ${timeRange === range ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-                >
-                  {range}
-                </button>
+                <button key={range} type="button" onClick={() => setTimeRange(range)} className={`rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-wide whitespace-nowrap ${timeRange === range ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>{range}</button>
               ))}
             </div>
           </div>
@@ -132,9 +126,7 @@ export default function ProductIntelligenceClient() {
       </section>
 
       {loading && !report ? (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 8 }, (_, index) => <div key={index} className="h-36 animate-pulse rounded-2xl border border-slate-800 bg-slate-900/50" />)}
-        </div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 8 }, (_, index) => <div key={index} className="h-36 animate-pulse rounded-2xl border border-slate-800 bg-slate-900/50" />)}</div>
       ) : report ? (
         <section className="ch-model-shell ch-visual-console ch-rich-console space-y-6" data-appearance="dark">
           <DataQualityNotice report={report} />
@@ -180,69 +172,27 @@ export default function ProductIntelligenceClient() {
           <div className="grid gap-4 xl:grid-cols-2">
             <Panel title="Brand by category performance" subtitle="Which brand wins inside each category">
               {brandCategoryRows.length ? (
-                <div className="overflow-x-auto">
-                  <table className="ch-data-table">
-                    <thead><tr><th>Brand</th><th>Category</th><th>Revenue</th><th>Units</th><th>Margin</th><th>Orders</th></tr></thead>
-                    <tbody>
-                      {brandCategoryRows.map(row => (
-                        <tr key={`${row.brandId}-${row.categoryId}`}>
-                          <td>{row.brandName}</td>
-                          <td>{row.categoryName}</td>
-                          <td>{formatCurrency(row.revenue)}</td>
-                          <td>{number(row.units)}</td>
-                          <td>{row.margin.toFixed(1)}%</td>
-                          <td>{number(row.orderCount)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <div className="overflow-x-auto"><table className="ch-data-table"><thead><tr><th>Brand</th><th>Category</th><th>Revenue</th><th>Units</th><th>Margin</th><th>Orders</th></tr></thead><tbody>{brandCategoryRows.map(row => (<tr key={`${row.brandId}-${row.categoryId}`}><td>{row.brandName}</td><td>{row.categoryName}</td><td>{formatCurrency(row.revenue)}</td><td>{number(row.units)}</td><td>{row.margin.toFixed(1)}%</td><td>{number(row.orderCount)}</td></tr>))}</tbody></table></div>
               ) : <EmptyState>No brand/category sales in this selection.</EmptyState>}
             </Panel>
 
             <Panel title="Double Horse across categories" subtitle="Category-level sales for Double Horse products">
-              {report.current.doubleHorseCategories.length ? (
-                <MetricBars data={report.current.doubleHorseCategories.slice(0, 10).map((row, index) => ({ label: row.name, value: row.revenue, color: colors[index % colors.length] }))} format={formatCurrency} />
-              ) : <EmptyState>No Double Horse paid item sales in this selection.</EmptyState>}
+              {report.current.doubleHorseCategories.length ? <MetricBars data={report.current.doubleHorseCategories.slice(0, 10).map((row, index) => ({ label: row.name, value: row.revenue, color: colors[index % colors.length] }))} format={formatCurrency} /> : <EmptyState>No Double Horse paid item sales in this selection.</EmptyState>}
             </Panel>
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <TimeSeriesChart compact dense timeRange={timeRange} title="Rice brand trends" subtitle="Matta, Ponni, Palakkadan and rice-related products by brand" series={riceSeries} />
-            <Panel title="Brand leaderboard" subtitle="Revenue, units and product margin">
-              <MetricBars data={(report.current.brands || []).slice(0, 10).map((row, index) => ({ label: `${row.name} (${number(row.units)} units)`, value: row.revenue, color: colors[index % colors.length] }))} format={formatCurrency} />
-            </Panel>
+            <Panel title="Brand leaderboard" subtitle="Revenue, units and product margin"><MetricBars data={(report.current.brands || []).slice(0, 10).map((row, index) => ({ label: `${row.name} (${number(row.units)} units)`, value: row.revenue, color: colors[index % colors.length] }))} format={formatCurrency} /></Panel>
           </div>
 
           <Panel title="Item-level sales intelligence" subtitle="Top selling products with SKU, brand, category, stock and margin">
             {topProducts.length ? (
-              <div className="overflow-x-auto">
-                <table className="ch-data-table">
-                  <thead><tr><th>Product</th><th>SKU</th><th>Brand</th><th>Category</th><th>Revenue</th><th>Units</th><th>Orders</th><th>Profit</th><th>Margin</th><th>Stock</th></tr></thead>
-                  <tbody>
-                    {topProducts.map(product => (
-                      <tr key={product.id}>
-                        <td><Link className="text-cyan-200 hover:text-white" href={`/inventory-management/stock/${product.id}`}>{product.name}</Link></td>
-                        <td>{product.sku || '-'}</td>
-                        <td>{product.brand_name || 'No Brand'}</td>
-                        <td>{product.category_name || 'Uncategorized'}</td>
-                        <td>{formatCurrency(product.revenue)}</td>
-                        <td>{number(product.unitsSold)}</td>
-                        <td>{number(product.orderCount)}</td>
-                        <td>{formatCurrency(product.grossProfit)}</td>
-                        <td>{product.margin.toFixed(1)}%</td>
-                        <td>{number(product.stock)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <div className="overflow-x-auto"><table className="ch-data-table"><thead><tr><th>Product</th><th>SKU</th><th>Brand</th><th>Category</th><th>Revenue</th><th>Units</th><th>Orders</th><th>Profit</th><th>Margin</th><th>Stock</th></tr></thead><tbody>{topProducts.map(product => (<tr key={product.id}><td><Link className="text-cyan-200 hover:text-white" href={`/inventory-management/stock/${product.id}`}>{product.name}</Link></td><td>{product.sku || '-'}</td><td>{product.brand_name || 'No Brand'}</td><td>{product.category_name || 'Uncategorized'}</td><td>{formatCurrency(product.revenue)}</td><td>{number(product.unitsSold)}</td><td>{number(product.orderCount)}</td><td>{formatCurrency(product.grossProfit)}</td><td>{product.margin.toFixed(1)}%</td><td>{number(product.stock)}</td></tr>))}</tbody></table></div>
             ) : <EmptyState>No item-level sales for this selection.</EmptyState>}
           </Panel>
         </section>
-      ) : (
-        <section className="rounded-2xl border border-rose-500/25 bg-rose-500/10 p-6 text-rose-100">Unable to load product intelligence.</section>
-      )}
+      ) : <section className="rounded-2xl border border-rose-500/25 bg-rose-500/10 p-6 text-rose-100">Unable to load product intelligence.</section>}
     </main>
   );
 }
