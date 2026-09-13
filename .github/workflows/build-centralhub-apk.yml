@@ -145,4 +145,4 @@ jobs:
 # Normal UI, dashboard, database and API changes therefore arrive through the
 # live deployment and must not trigger another APK build/install cycle.
 # This workflow is reserved for actual Android shell/config/dependency changes.
-# Wake-listener lifecycle recovery is native Android code, so it must publish a new signed APK.
+# Wake-listener lifecycle recovery and alternative-candidate handling are native Android fixes.
