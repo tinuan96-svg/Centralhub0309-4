@@ -18,8 +18,8 @@ export default function ProductWorkspaceNav() {
     exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
 
   return (
-    <section className="rounded-2xl border border-slate-800 bg-slate-900/55 p-4 lg:p-5 shadow-xl">
-      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+    <section className="rounded-2xl border border-slate-800 bg-slate-900/55 p-4 lg:p-5 shadow-xl min-w-0">
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 min-w-0">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-xl lg:text-2xl font-black tracking-tight text-white">Products</h1>
@@ -36,19 +36,19 @@ export default function ProductWorkspaceNav() {
           </div>
         </div>
 
-        <nav className="flex max-w-full gap-1 overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/70 p-1" aria-label="Product workspace">
+        <nav className="flex max-w-full gap-1 overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/70 p-1 fold-inner:grid fold-inner:grid-cols-5 fold-inner:overflow-visible xl:min-w-[650px]" aria-label="Product workspace">
           {tabs.map(tab => {
             const active = isActive(tab.href, tab.exact);
             return (
               <Link
                 key={tab.href}
                 href={tab.href}
-                className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-wide transition-colors ${
+                className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-wide transition-colors fold-inner:min-w-0 fold-inner:justify-center fold-inner:px-2 ${
                   active ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
                 }`}
               >
-                <span>{tab.icon}</span>
-                <span>{tab.label}</span>
+                <span className="shrink-0">{tab.icon}</span>
+                <span className="whitespace-nowrap fold-inner:truncate">{tab.label}</span>
               </Link>
             );
           })}
