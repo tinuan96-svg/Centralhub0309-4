@@ -137,7 +137,6 @@ export class InventoryManagementService {
         if (product.enable_stock_tracking === false) return sum;
         return sum + number(product.stock);
       }, 0);
-
       const daily = new Map<string, { net: number; moved: number; inbound: number; outbound: number }>();
       (movements || []).forEach((movement: any) => {
         const product = Array.isArray(movement.products) ? movement.products[0] : movement.products;
@@ -193,7 +192,8 @@ export class InventoryManagementService {
     const warehouseId = adj.warehouseId || await this.getPrimaryWarehouseId();
     const { error: inventoryError } = await supabase
       .from('central_inventory')
-      .upsert({ product_id: adj.productId, stock_quantity: newStock, updated_at: changedAt }, { onConflict: 'product_id' });
+      .update({ stock_quantity: newStock, updated_at: changedAt })
+      .eq('product_id', adj.productId);
     if (inventoryError) throw new Error(`Inventory update failed: ${inventoryError.message}`);
 
     const { error: movementError } = await supabase.from('inventory_movements').insert({
@@ -212,7 +212,8 @@ export class InventoryManagementService {
     if (movementError) {
       const { error: rollbackError } = await supabase
         .from('central_inventory')
-        .upsert({ product_id: adj.productId, stock_quantity: oldStock, updated_at: new Date().toISOString() }, { onConflict: 'product_id' });
+        .update({ stock_quantity: oldStock, updated_at: new Date().toISOString() })
+        .eq('product_id', adj.productId);
       if (rollbackError) throw new Error(`Audit ledger failed (${movementError.message}) and stock rollback also failed (${rollbackError.message}).`);
       throw new Error(`Stock adjustment was rolled back because audit logging failed: ${movementError.message}`);
     }
