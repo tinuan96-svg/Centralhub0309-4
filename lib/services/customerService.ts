@@ -16,18 +16,22 @@ export interface CustomerSummary {
   last_store_name: string;
 }
 
+const EXCLUDED_BUSINESS_STATUSES = ['cancelled', 'refunded', 'failed', 'returned'];
+
 export class CustomerService {
   static async getAllCustomers(storeId?: string | null): Promise<CustomerSummary[]> {
     try {
-      // Customer counts, value, profit and "recent order" must be based on money actually received.
-      // Pending/failed/cancelled checkout attempts stay in the order ledger but never inflate customer KPIs.
+      // Customer counts, revenue, profit and recency describe valid paid business orders only.
+      // Pending/failed checkout attempts and paid rows later cancelled/refunded/returned remain
+      // available in the order ledger, but must not inflate customer performance KPIs.
       let query = supabase
         .from('orders')
         .select(
           'id, customer_name, customer_email, customer_phone, delivery_address, delivery_city, delivery_postcode, total, gross_profit, order_status, store_id, created_at'
         )
         .eq('payment_status', 'paid')
-        .eq('is_deleted', false);
+        .eq('is_deleted', false)
+        .not('order_status', 'in', `(${EXCLUDED_BUSINESS_STATUSES.map(status => `"${status}"`).join(',')})`);
 
       if (storeId) {
         query = query.eq('store_id', storeId);
