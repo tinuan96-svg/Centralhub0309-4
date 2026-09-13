@@ -1,0 +1,150 @@
+name: One-off CentralHub audit hardening patch
+
+on:
+  push:
+    branches:
+      - audit/centralhub-cleanup-20260913
+    paths:
+      - '.github/workflows/audit-hardening-patch.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout audit branch
+        uses: actions/checkout@v4
+        with:
+          ref: audit/centralhub-cleanup-20260913
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.1'
+          cache: npm
+
+      - name: Apply audited hardening changes
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          # 1. Retire the unsafe bootstrap endpoint completely.
+          setup = Path('supabase/functions/setup-admin/index.ts')
+          setup.write_text('''import "jsr:@supabase/functions-js/edge-runtime.d.ts";\n\nconst jsonHeaders = {\n  "Content-Type": "application/json",\n  "Cache-Control": "no-store",\n};\n\nDeno.serve(async (_req: Request) => {\n  return new Response(\n    JSON.stringify({\n      success: false,\n      error: "This bootstrap endpoint has been retired. Use the authenticated CentralHub admin workflow instead.",\n    }),\n    { status: 410, headers: jsonHeaders },\n  );\n});\n''')
+
+          # 2. Add explicit admin/service-role authorization to update-order-status.
+          p = Path('supabase/functions/update-order-status/index.ts')
+          s = p.read_text()
+          old = '''  const central = createClient(\n    Deno.env.get("SUPABASE_URL") || "",\n    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "",\n  );\n\n  let orderId: string | undefined;'''
+          new = '''  const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";\n  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";\n  const central = createClient(supabaseUrl, serviceKey);\n\n  const authHeader = req.headers.get("Authorization") || "";\n  const bearer = authHeader.replace(/^Bearer\\s+/i, "").trim();\n  if (!bearer) return reply({ success: false, error: "Unauthorized" }, 401);\n\n  const internalServiceCall = Boolean(serviceKey) && bearer === serviceKey;\n  if (!internalServiceCall) {\n    const publishableKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY") || "";\n    if (!publishableKey) return reply({ success: false, error: "Authentication is not configured" }, 500);\n\n    const userClient = createClient(supabaseUrl, publishableKey, {\n      global: { headers: { Authorization: `Bearer ${bearer}` } },\n      auth: { autoRefreshToken: false, persistSession: false },\n    });\n    const { data: { user }, error: userError } = await userClient.auth.getUser();\n    if (userError || !user) return reply({ success: false, error: "Unauthorized" }, 401);\n\n    const metadataRole = String(user.app_metadata?.role || user.user_metadata?.profile_role || "").toLowerCase();\n    let allowed = ["admin", "superadmin", "administrator"].includes(metadataRole);\n    if (!allowed) {\n      const { data: profile } = await central\n        .from("user_profiles")\n        .select("profile_role,is_active")\n        .eq("id", user.id)\n        .maybeSingle();\n      allowed = profile?.is_active !== false && ["admin", "superadmin", "administrator"].includes(String(profile?.profile_role || "").toLowerCase());\n    }\n    if (!allowed) return reply({ success: false, error: "Forbidden: admin only" }, 403);\n  }\n\n  let orderId: string | undefined;'''
+          if old not in s:
+            raise SystemExit('update-order-status insertion marker not found')
+          p.write_text(s.replace(old, new, 1))
+
+          # 3. Harden DHL endpoint: remove source-embedded UAT credentials and require admin/service auth.
+          p = Path('supabase/functions/dhl-ecommerce/index.ts')
+          s = p.read_text()
+          if 'createClient' not in s.split('\n', 4)[0:4]:
+            s = s.replace('import "jsr:@supabase/functions-js/edge-runtime.d.ts";\n', 'import "jsr:@supabase/functions-js/edge-runtime.d.ts";\nimport { createClient } from "npm:@supabase/supabase-js@2.45.4";\n', 1)
+
+          old_creds = '''// UAT fallback credentials — used when DHL_ENV=uat and no secrets are set\nconst UAT_CLIENT_ID = "9d350864-e5e3-4582-9bc7-181fbf44ab78";\nconst UAT_CLIENT_SECRET = ".Vo8Q~ib4Ub-qjAU6bnvIsUr47R.YXv~.66qmb0W";\nconst UAT_PICKUP_ACCOUNT = "F020579";\nconst UAT_ORDERED_PRODUCT = "220";\n\nfunction getCredentials() {\n  if (DHL_ENV === "uat") {\n    return {\n      clientId: DHL_CLIENT_ID || UAT_CLIENT_ID,\n      clientSecret: DHL_CLIENT_SECRET || UAT_CLIENT_SECRET,\n      pickupAccount: DHL_PICKUP_ACCOUNT || UAT_PICKUP_ACCOUNT,\n      accountNumber: DHL_ACCOUNT_NUMBER || UAT_PICKUP_ACCOUNT,\n      orderedProduct: UAT_ORDERED_PRODUCT,\n    };\n  }'''
+          new_creds = '''const UAT_ORDERED_PRODUCT = Deno.env.get("DHL_UAT_ORDERED_PRODUCT") || "220";\n\nfunction getCredentials() {\n  if (DHL_ENV === "uat") {\n    return {\n      clientId: DHL_CLIENT_ID,\n      clientSecret: DHL_CLIENT_SECRET,\n      pickupAccount: DHL_PICKUP_ACCOUNT,\n      accountNumber: DHL_ACCOUNT_NUMBER || DHL_PICKUP_ACCOUNT,\n      orderedProduct: UAT_ORDERED_PRODUCT,\n    };\n  }'''
+          if old_creds not in s:
+            raise SystemExit('DHL embedded credential marker not found')
+          s = s.replace(old_creds, new_creds, 1)
+
+          auth_helper = '''\nasync function authorizeAdmin(req: Request) {\n  const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";\n  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";\n  const authHeader = req.headers.get("Authorization") || "";\n  const token = authHeader.replace(/^Bearer\\s+/i, "").trim();\n  if (!token) return false;\n  if (serviceKey && token === serviceKey) return true;\n\n  const db = createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });\n  const { data: { user }, error } = await db.auth.getUser(token);\n  if (error || !user) return false;\n\n  const metadataRole = String(user.app_metadata?.role || user.user_metadata?.profile_role || "").toLowerCase();\n  if (["admin", "superadmin", "administrator"].includes(metadataRole)) return true;\n\n  const { data: profile } = await db\n    .from("user_profiles")\n    .select("profile_role,is_active")\n    .eq("id", user.id)\n    .maybeSingle();\n  return profile?.is_active !== false && ["admin", "superadmin", "administrator"].includes(String(profile?.profile_role || "").toLowerCase());\n}\n'''
+          marker = 'let cachedToken: { token: string; expiresAt: number } | null = null;\n'
+          if marker not in s:
+            raise SystemExit('DHL auth helper marker not found')
+          s = s.replace(marker, auth_helper + '\n' + marker, 1)
+
+          serve_marker = '''Deno.serve(async (req: Request) => {\n  if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });\n\n  try {'''
+          serve_repl = '''Deno.serve(async (req: Request) => {\n  if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });\n\n  if (!(await authorizeAdmin(req))) {\n    return new Response(JSON.stringify({ success: false, error: "Unauthorized: admin access required" }), {\n      status: 401,\n      headers: { ...corsHeaders, "Content-Type": "application/json" },\n    });\n  }\n\n  try {'''
+          if serve_marker not in s:
+            raise SystemExit('DHL serve marker not found')
+          p.write_text(s.replace(serve_marker, serve_repl, 1))
+
+          # 4. Make Supabase function JWT policy explicit in source control.
+          p = Path('supabase/config.toml')
+          config = p.read_text().rstrip() + '\n\n'
+          blocks = {
+            'setup-admin': True,
+            'create-user': True,
+            'update-order-status': True,
+            'dhl-ecommerce': True,
+          }
+          for name, enabled in blocks.items():
+            header = f'[functions.{name}]'
+            if header not in config:
+              config += f'{header}\nverify_jwt = {str(enabled).lower()}\n\n'
+          p.write_text(config)
+
+          # 5. Diagnostic button uses the same authenticated DHL client helper.
+          p = Path('app/shipping/ShippingClient.tsx')
+          s = p.read_text()
+          pattern = re.compile(
+            r"\s*const SUPABASE_URL = process\.env\.NEXT_PUBLIC_SUPABASE_URL \|\| '';\s*"
+            r"const SUPABASE_ANON_KEY = process\.env\.NEXT_PUBLIC_SUPABASE_ANON_KEY \|\| '';\s*"
+            r"const resp = await fetch\(`\$\{SUPABASE_URL\}/functions/v1/dhl-ecommerce/diagnose`, \{\s*"
+            r"headers: \{ Authorization: `Bearer \$\{SUPABASE_ANON_KEY\}` \}\s*"
+            r"\}\);\s*const data = await resp\.json\(\);",
+            re.S,
+          )
+          s2, count = pattern.subn("\n      const data = await DHLService.diagnose();", s, count=1)
+          if count != 1:
+            raise SystemExit(f'Shipping diagnose replacement count={count}')
+          p.write_text(s2)
+          PY
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Dependency security gate
+        run: npm audit --audit-level=high
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Route integrity audit
+        run: npm run audit:routes
+
+      - name: Feature continuity audit
+        run: npm run audit:features
+
+      - name: Runtime compatibility audit
+        run: npm run audit:runtime
+
+      - name: Order sync contract audit
+        run: npm run audit:order-sync
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Production build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://icnvrpnzjjcbvgcqgiua.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: Smoke audit
+        run: npm run audit:smoke
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://icnvrpnzjjcbvgcqgiua.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: Commit validated hardening and remove one-off workflow
+        shell: bash
+        run: |
+          rm -f .github/workflows/audit-hardening-patch.yml
+          git config user.name "centralhub-audit"
+          git config user.email "centralhub-audit@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: harden privileged CentralHub integrations"
+          git push origin HEAD:audit/centralhub-cleanup-20260913
