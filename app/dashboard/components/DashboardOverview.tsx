@@ -77,10 +77,11 @@ const SYSTEM_WIDGET_IDS = new Set([
 ]);
 
 function detailSpan(widget: DashboardWidget) {
-  const span = widget.desktop ?? 4;
-  if (span >= 12) return '2xl:col-span-3';
-  if (span >= 8) return '2xl:col-span-2';
-  return '2xl:col-span-1';
+  const tabletSpan = widget.tablet ?? 12;
+  const desktopSpan = widget.desktop ?? 4;
+  const tabletClass = tabletSpan >= 12 ? 'fold-inner:col-span-2' : 'fold-inner:col-span-1';
+  const desktopClass = desktopSpan >= 12 ? '2xl:col-span-3' : desktopSpan >= 8 ? '2xl:col-span-2' : '2xl:col-span-1';
+  return `${tabletClass} ${desktopClass}`;
 }
 
 function DashboardDetailGroup({ title, description, widgets }: { title: string; description: string; widgets: DashboardWidget[] }) {

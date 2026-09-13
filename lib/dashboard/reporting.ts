@@ -21,6 +21,7 @@ export async function readReportRows<T = any>(query: () => any, label: string): 
 }
 
 export type DashboardReport = { current: PeriodSummary; previous: PeriodSummary | null; orders: ReportOrder[]; inventory: InventoryRow[]; stores: ReportStore[]; products: { id: string; name: string; revenue: number; units: number }[]; start: Date; end: Date; loadedAt: Date };
+type DashboardInventoryProduct = { id: string; stock: number | null; low_stock_threshold: number | null; cost_price: number | null };
 
 export async function loadDashboardReport(filters: { timeRange: TimeRange; comparisonType: ComparisonType; selectedStoreId: string; customStartDate: string | null; customEndDate: string | null }): Promise<DashboardReport> {
   if (filters.timeRange === 'custom' && (!filters.customStartDate || !filters.customEndDate)) throw new Error('Select both a start date and an end date.');
@@ -39,12 +40,12 @@ export async function loadDashboardReport(filters: { timeRange: TimeRange; compa
     if (storeId) q = q.eq('store_id', storeId);
     return q;
   }, 'Paid expenses');
-  const [orders, priorOrders, expenses, priorExpenses, costs, priorCosts, inventory, stores, items] = await Promise.all([
+  const [orders, priorOrders, expenses, priorExpenses, costs, priorCosts, inventoryProducts, stores, items] = await Promise.all([
     ordersFor(start, end), filters.comparisonType === 'none' ? Promise.resolve([]) : ordersFor(previous.start, previous.end),
     expensesFor(start, end), filters.comparisonType === 'none' ? Promise.resolve([]) : expensesFor(previous.start, previous.end),
     ProfitAnalysisService.getAllProfitOrders({ startDate: start, endDate: end, storeId }),
     filters.comparisonType === 'none' ? Promise.resolve([]) : ProfitAnalysisService.getAllProfitOrders({ startDate: previous.start, endDate: previous.end, storeId }),
-    readReportRows<InventoryRow>(() => supabase.from('central_inventory').select('id,product_id,stock_quantity,low_stock_threshold,cost_price').order('id'), 'Warehouse stock'),
+    readReportRows<DashboardInventoryProduct>(() => supabase.from('products').select('id,stock,low_stock_threshold,cost_price').or('is_deleted.is.null,is_deleted.eq.false').or('is_archived.is.null,is_archived.eq.false').order('id'), 'Warehouse stock'),
     readReportRows<ReportStore>(() => supabase.from('stores').select('id,name,slug').order('id'), 'Stores'),
     readReportRows(() => {
       let q = supabase.from('order_items').select('id,product_id,product_name,total_price,quantity,orders!inner(created_at,store_id,payment_status,order_status,is_deleted)').eq('orders.payment_status', 'paid').eq('orders.is_deleted', false).not('orders.order_status', 'in', '("cancelled","refunded","failed")').gte('orders.created_at', start.toISOString()).lte('orders.created_at', end.toISOString()).order('id');
@@ -52,6 +53,13 @@ export async function loadDashboardReport(filters: { timeRange: TimeRange; compa
       return q;
     }, 'Product sales'),
   ]);
+  const inventory: InventoryRow[] = inventoryProducts.map(row => ({
+    id: row.id,
+    product_id: row.id,
+    stock_quantity: numeric(row.stock),
+    low_stock_threshold: row.low_stock_threshold,
+    cost_price: row.cost_price,
+  }));
   const productMap = new Map<string, { id: string; name: string; revenue: number; units: number }>();
   for (const item of items) {
     const key = item.product_id || item.product_name || 'unknown';
