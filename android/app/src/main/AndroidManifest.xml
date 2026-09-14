@@ -2,8 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- Android 11+ package visibility: SpeechRecognizer must be allowed to
-         discover the installed recognition service or NORA can appear ready
-         in the WebView while the native listener never actually starts. -->
+         discover the installed recognition service or Shruthi can appear ready
+         while the native listener never actually starts. -->
     <queries>
         <intent>
             <action android:name="android.speech.RecognitionService" />
@@ -33,10 +33,29 @@
 
         </activity>
 
-        <!-- Isolated Live Web browser controlled by Shruthi/NORA with human takeover.
-             Native baseline includes persistent tabs, bookmarks/history, monitoring,
-             and fresh Shruthi page sessions. Third-party pages remain separated from
-             the authenticated CentralHub app and can only launch through its bridge. -->
+        <!-- Android system-assistant integration. Once the user selects CentralHub
+             as the Digital assistant app, Android keeps this lightweight service bound
+             even when the visible CentralHub activity is closed/swiped away. -->
+        <service
+            android:name=".ShruthiVoiceInteractionService"
+            android:label="Shruthi"
+            android:permission="android.permission.BIND_VOICE_INTERACTION"
+            android:exported="true">
+            <meta-data
+                android:name="android.voice_interaction"
+                android:resource="@xml/shruthi_voice_interaction_service" />
+            <intent-filter>
+                <action android:name="android.service.voice.VoiceInteractionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".ShruthiVoiceInteractionSessionService"
+            android:label="Shruthi"
+            android:permission="android.permission.BIND_VOICE_INTERACTION"
+            android:exported="true" />
+
+        <!-- Isolated Live Web browser controlled by Shruthi/NORA with human takeover. -->
         <activity
             android:name=".NoraComputerActivity"
             android:label="Shruthi Live Web"
@@ -62,8 +81,6 @@
             </intent-filter>
         </service>
     </application>
-
-    <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
