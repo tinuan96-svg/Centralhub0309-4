@@ -47,6 +47,27 @@ function domain(url:string){try{return new URL(url).hostname.replace(/^www\./,""
 function confidence(value:any){const n=Number(value);return Number.isFinite(n)?Math.max(0,Math.min(1,n)):0.72;}
 async function sha256(value:string){const bytes=new TextEncoder().encode(value);const digest=await crypto.subtle.digest("SHA-256",bytes);return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,"0")).join("");}
 
+function safeModel(value:string|null|undefined) {
+  const model=String(value||"").trim();
+  if(!model || model.length>120 || /^sk-/i.test(model)) return "";
+  if(!/^[a-z0-9][a-z0-9._:-]*$/i.test(model)) return "";
+  return model;
+}
+function redactSecrets(value:unknown) {
+  return String(value??"")
+    .replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g,"[redacted]")
+    .replace(/\bBearer\s+[A-Za-z0-9._~-]{10,}\b/gi,"Bearer [redacted]")
+    .slice(0,2000);
+}
+function upstreamCode(payload:any) {
+  return String(payload?.error?.code||payload?.error?.type||payload?.code||"").toLowerCase();
+}
+function isModelAvailabilityFailure(response:Response,payload:any) {
+  const code=upstreamCode(payload);
+  const message=redactSecrets(payload?.error?.message||"").toLowerCase();
+  return response.status===404 || code.includes("model_not_found") || message.includes("model") && (message.includes("does not exist") || message.includes("do not have access") || message.includes("not found"));
+}
+
 async function businessSnapshot(db:any){
   const since30=new Date(Date.now()-30*86400000).toISOString();
   const [storesRes,ordersRes,productsRes,knowledgeRes]=await Promise.all([
@@ -90,16 +111,26 @@ Deno.serve(async(req:Request)=>{
   const last=current.last_run_at?new Date(current.last_run_at).getTime():0;
   if(source==="scheduled"&&last&&Date.now()-last<cadence*3600000*0.8) return respond(200,{success:true,skipped:true,reason:"cadence_guard"});
   const selected=TRACKS.find(t=>t.key===String(body?.track||""))||TRACKS[Math.max(0,Number(current.total_runs||0))%TRACKS.length];
-  const model=String(Deno.env.get("CENTRALHUB_LEARNING_MODEL")||Deno.env.get("OPENAI_MODEL_FAST")||"gpt-5.6-luna").trim();
+  const configured=safeModel(Deno.env.get("CENTRALHUB_LEARNING_MODEL"))||safeModel(Deno.env.get("OPENAI_MODEL_FAST"));
+  const modelCandidates=[...new Set([configured,"gpt-5.6-luna","gpt-5.6-terra"].filter(Boolean))];
+  const initialModel=modelCandidates[0]||"gpt-5.6-luna";
   const snapshot=await businessSnapshot(db);
-  const {data:run,error:runError}=await db.from("shruthi_learning_runs").insert({source,track:selected.key,query:selected.query,model,status:"running",metadata:{business_snapshot_at:new Date().toISOString()}}).select("id").single();
-  if(runError||!run?.id) return respond(500,{success:false,error:runError?.message||"run_create_failed"});
+  const {data:run,error:runError}=await db.from("shruthi_learning_runs").insert({source,track:selected.key,query:selected.query,model:initialModel,status:"running",metadata:{business_snapshot_at:new Date().toISOString()}}).select("id").single();
+  if(runError||!run?.id) return respond(500,{success:false,error:redactSecrets(runError?.message||"run_create_failed")});
   await db.from("shruthi_learning_state").update({current_track:selected.key,last_error:null,updated_at:new Date().toISOString()}).eq("id","primary");
   const prompt=`You are Shruthi's continuous research engine for a UK multi-store Kerala/South-Indian grocery ecommerce business. Research track: ${selected.label}. Goal: ${selected.query}\nBUSINESS CONTEXT:${JSON.stringify(snapshot)}\nUse web search. Prefer first-party/official platform documentation, regulators, primary industry sources and strong evidence. Prioritise the last 90 days for fast-changing topics. Reject SEO spam, affiliate listicles, copied news, unsupported social claims and generic filler. Connect each finding specifically to this business. Recommendations are advisory only; never claim they were implemented. Return JSON only: {"summary":"executive summary","insights":[{"title":"short title","summary":"what changed/learned","why_it_matters":"business relevance","recommended_action":"safe next step","confidence":0.0,"impact":"low|medium|high|critical","source_urls":["https://..."],"tags":["seo"]}]}. Return 0-5 insights; no insight is better than a weak one.`;
   try{
-    const response=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:{Authorization:`Bearer ${openai}`,"Content-Type":"application/json"},body:JSON.stringify({model,store:false,reasoning:{effort:"low"},tools:[{type:"web_search"}],input:prompt,max_output_tokens:2200})});
-    const payload=await response.json().catch(()=>null);
-    if(!response.ok) throw new Error(payload?.error?.message||payload?.error?.code||`research_http_${response.status}`);
+    let response:Response|null=null,payload:any=null,model=initialModel;
+    for(let i=0;i<modelCandidates.length;i++){
+      model=modelCandidates[i];
+      response=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:{Authorization:`Bearer ${openai}`,"Content-Type":"application/json"},body:JSON.stringify({model,store:false,reasoning:{effort:"low"},tools:[{type:"web_search"}],input:prompt,max_output_tokens:2200})});
+      payload=await response.json().catch(()=>null);
+      if(response.ok) break;
+      if(i<modelCandidates.length-1&&isModelAvailabilityFailure(response,payload)) continue;
+      throw new Error(redactSecrets(payload?.error?.message||payload?.error?.code||`research_http_${response.status}`));
+    }
+    if(!response?.ok) throw new Error("research_model_unavailable");
+    await db.from("shruthi_learning_runs").update({model}).eq("id",run.id);
     const parsed=safeJson(textOut(payload))||{summary:textOut(payload).slice(0,1200),insights:[]};
     const fallback=urlsFrom(payload), raw=Array.isArray(parsed?.insights)?parsed.insights.slice(0,5):[];
     const rows:any[]=[];
@@ -112,12 +143,12 @@ Deno.serve(async(req:Request)=>{
     let inserted=0; for(const row of rows){const r=await db.from("shruthi_learning_insights").upsert(row,{onConflict:"fingerprint",ignoreDuplicates:true});if(!r.error) inserted++;}
     const summary=String(parsed?.summary||`Shruthi reviewed ${selected.label}.`).trim().slice(0,4000), completed=new Date().toISOString();
     const sourceDomains=new Set(rows.flatMap((r:any)=>r.source_domains||[]));
-    await db.from("shruthi_learning_runs").update({status:"completed",summary,findings_count:rows.length,sources_count:sourceDomains.size,completed_at:completed,metadata:{inserted_new:inserted,annotation_sources:fallback.length}}).eq("id",run.id);
+    await db.from("shruthi_learning_runs").update({status:"completed",summary,findings_count:rows.length,sources_count:sourceDomains.size,completed_at:completed,error:null,metadata:{inserted_new:inserted,annotation_sources:fallback.length,model}}).eq("id",run.id);
     const countRes=await db.from("shruthi_learning_insights").select("id",{count:"exact",head:true}).neq("status","dismissed");
     await db.from("shruthi_learning_state").update({current_track:selected.key,last_run_at:completed,next_run_at:new Date(Date.now()+cadence*3600000).toISOString(),latest_summary:summary,total_runs:Number(current.total_runs||0)+1,total_insights:countRes.count||0,last_error:null,updated_at:completed}).eq("id","primary");
     return respond(200,{success:true,run_id:run.id,track:selected.key,summary,findings:rows.length,inserted,sources:sourceDomains.size,model});
   }catch(error:any){
-    const message=String(error?.message||"learning_failed").slice(0,2000),completed=new Date().toISOString();
+    const message=redactSecrets(error?.message||"learning_failed"),completed=new Date().toISOString();
     await db.from("shruthi_learning_runs").update({status:"failed",error:message,completed_at:completed}).eq("id",run.id);
     await db.from("shruthi_learning_state").update({last_error:message,next_run_at:new Date(Date.now()+Math.min(2,cadence)*3600000).toISOString(),updated_at:completed}).eq("id","primary");
     return respond(502,{success:false,run_id:run.id,track:selected.key,error:message});
