@@ -1,9 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Android 11+ package visibility: SpeechRecognizer must be allowed to
-         discover the installed recognition service or Shruthi can appear ready
-         while the native listener never actually starts. -->
     <queries>
         <intent>
             <action android:name="android.speech.RecognitionService" />
@@ -25,25 +22,23 @@
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
             android:exported="true">
-
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-
-            <!-- Explicit ASSIST capability qualifies CentralHub for Android's
-                 ROLE_ASSISTANT picker on devices that enumerate assist activities
-                 in addition to VoiceInteractionService implementations. -->
             <intent-filter>
                 <action android:name="android.intent.action.ASSIST" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
-
         </activity>
 
-        <!-- Android system-assistant integration. Once the user selects CentralHub
-             as the Digital assistant app, Android keeps this lightweight service bound
-             even when the visible CentralHub activity is closed/swiped away. -->
+        <activity
+            android:name=".ShruthiSecurityActivity"
+            android:label="Shruthi Security"
+            android:theme="@style/AppTheme.NoActionBar"
+            android:excludeFromRecents="true"
+            android:exported="false" />
+
         <service
             android:name=".ShruthiVoiceInteractionService"
             android:label="Shruthi"
@@ -63,7 +58,6 @@
             android:permission="android.permission.BIND_VOICE_INTERACTION"
             android:exported="true" />
 
-        <!-- Isolated Live Web browser controlled by Shruthi/NORA with human takeover. -->
         <activity
             android:name=".NoraComputerActivity"
             android:label="Shruthi Live Web"
@@ -94,6 +88,7 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>
