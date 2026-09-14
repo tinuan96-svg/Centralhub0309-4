@@ -19,7 +19,12 @@ type NativeSecurityBridge = {
 type TranscriptEvent = CustomEvent<{ text?: string }>;
 
 const RELOCK_AFTER_MS = 30_000;
-const IDENTITY_PHRASE = /(?:shruthi|shruti|sruthi|sruti|ശ്രുതി|ശ്രൂതി|ஸ்ருதி|ஸ்ரூதி).*?(?:this\s+is|i\s+am|i'?m|its|it's)\s+tinu\b|(?:this\s+is|i\s+am|i'?m|its|it's)\s+tinu\b.*?(?:shruthi|shruti|sruthi|sruti|ശ്രുതി|ശ്രൂതി|ஸ்ருதி|ஸ்ரூதி)/iu;
+const IDENTITY_WINDOW_MS = 8_000;
+const SHRUTHI_NAME = '(?:shruthi|shruti|sruthi|sruti|shrudhi|shroothi|shrooti|ശ്രുതി|ശ്രൂതി|ஸ்ருதி|ஸ்ரூதி)';
+const TINU_NAME = '(?:tinu|tino|teenu|tenu)';
+const SELF_IDENTITY_PHRASE = new RegExp(`(?:this\\s+is|i\\s+am|i'?m|its|it's)\\s+${TINU_NAME}\\b`, 'iu');
+const FULL_IDENTITY_PHRASE = new RegExp(`${SHRUTHI_NAME}.*?(?:this\\s+is|i\\s+am|i'?m|its|it's)\\s+${TINU_NAME}\\b|(?:this\\s+is|i\\s+am|i'?m|its|it's)\\s+${TINU_NAME}\\b.*?${SHRUTHI_NAME}`, 'iu');
+const WAKE_ONLY = new RegExp(`^(?:hi\\s+|hello\\s+|hey\\s+)?${SHRUTHI_NAME}[.!?\\s]*$`, 'iu');
 const STOP_PHRASE = /^(?:(?:ok|okay|please|hey)\s+)?(?:stop|stop it|wait|pause|hold on|enough|quiet|shh)(?:\s+(?:please|now))?[.!?\s]*$|^(?:മതി|നിർത്തു|നിർത്തൂ|സ്റ്റോപ്പ്|போதும்|நிறுத்து|ஸ்டாப்)[.!?\s]*$/iu;
 
 function nativeBridge(): NativeSecurityBridge | undefined {
@@ -34,6 +39,8 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
   const hiddenAtRef = useRef<number | null>(null);
   const verifyTimerRef = useRef<number | null>(null);
   const verifyStartedAtRef = useRef(0);
+  const rearmTimerRef = useRef<number | null>(null);
+  const identityArmedUntilRef = useRef(0);
   const [status, setStatus] = useState('Voice activation required');
   const [heard, setHeard] = useState('');
   const [fallback, setFallback] = useState(false);
@@ -50,14 +57,43 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
     verifyStartedAtRef.current = 0;
   }, []);
 
+  const clearRearmTimer = useCallback(() => {
+    if (rearmTimerRef.current) window.clearTimeout(rearmTimerRef.current);
+    rearmTimerRef.current = null;
+  }, []);
+
   const setGlobalLock = useCallback((value: boolean) => {
     lockedRef.current = value;
     setLocked(value);
     if (typeof window !== 'undefined') (window as any).__centralHubSecurityLocked = value;
   }, []);
 
+  const hardRearmVoice = useCallback((delay = 0) => {
+    clearRearmTimer();
+    rearmTimerRef.current = window.setTimeout(() => {
+      if (!lockedRef.current) return;
+      const bridge = nativeBridge();
+      if (bridge?.getPlatform?.() !== 'android') return;
+      try {
+        bridge.stopTaraTts?.();
+        bridge.setTaraEnabled?.(false);
+        window.setTimeout(() => {
+          if (!lockedRef.current) return;
+          try {
+            const latest = nativeBridge();
+            latest?.setTaraEnabled?.(true);
+            latest?.setNoraConversationActive?.(true);
+            setStatus((current) => current.includes('verif') ? current : 'Listening for your security phrase…');
+          } catch { }
+        }, 180);
+      } catch { }
+    }, delay);
+  }, [clearRearmTimer]);
+
   const lock = useCallback(() => {
     clearVerifyPoll();
+    clearRearmTimer();
+    identityArmedUntilRef.current = 0;
     const bridge = nativeBridge();
     if (!user || bridge?.getPlatform?.() !== 'android') {
       setGlobalLock(false);
@@ -72,13 +108,19 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
       bridge.setTaraEnabled?.(true);
       bridge.setNoraConversationActive?.(true);
       window.setTimeout(() => {
-        try { bridge.speakTara?.('Security check. Please identify yourself to continue.', 'en-GB'); } catch { }
-      }, 220);
+        if (!lockedRef.current) return;
+        try { bridge.speakTara?.('Voice activation required.', 'en-GB'); } catch { }
+      }, 140);
+      // NoraWakeListenerRecovery lives behind this gate and is not mounted while
+      // locked, so perform the Samsung hard re-arm here after the short prompt.
+      hardRearmVoice(1050);
     } catch { }
-  }, [clearVerifyPoll, setGlobalLock, user]);
+  }, [clearRearmTimer, clearVerifyPoll, hardRearmVoice, setGlobalLock, user]);
 
   const unlock = useCallback(() => {
     clearVerifyPoll();
+    clearRearmTimer();
+    identityArmedUntilRef.current = 0;
     const bridge = nativeBridge();
     setGlobalLock(false);
     setFallback(false);
@@ -91,17 +133,19 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
       bridge?.setNoraConversationActive?.(false);
       bridge?.setTaraEnabled?.(true);
     } catch { }
-  }, [clearVerifyPoll, setGlobalLock]);
+  }, [clearRearmTimer, clearVerifyPoll, setGlobalLock]);
 
   const beginSecureVerification = useCallback(() => {
     clearVerifyPoll();
+    clearRearmTimer();
     setError('');
-    setStatus('Waiting for secure device verification…');
+    setStatus('Voice accepted · verify your device identity…');
     const bridge = nativeBridge();
     let started = false;
     try { started = bridge?.requestSecureUnlock?.() === true; } catch { started = false; }
     if (!started) {
       setStatus('Secure device verification unavailable');
+      setError('Use Login ID & password, or tap Verify securely after updating the Android app.');
       setFallback(true);
       return;
     }
@@ -114,8 +158,9 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
         if (Date.now() - verifyStartedAtRef.current > 60_000) {
           clearVerifyPoll();
           setStatus('Identity verification timed out');
-          setError('Try again or use login ID and password.');
+          setError('Try again or use Login ID & password.');
           setFallback(true);
+          hardRearmVoice(250);
         }
         return;
       }
@@ -126,10 +171,11 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
         return;
       }
       setStatus('Identity verification not completed');
-      setError(result === 'cancelled' ? 'Verification cancelled. Try again or use secure login.' : 'Device identity did not verify. Try again or use secure login.');
+      setError(result === 'cancelled' ? 'Verification cancelled. Say “Shruthi” to retry or use secure login.' : 'Device identity did not verify. Try again or use secure login.');
       setFallback(true);
-    }, 300);
-  }, [clearVerifyPoll, unlock]);
+      hardRearmVoice(350);
+    }, 250);
+  }, [clearRearmTimer, clearVerifyPoll, hardRearmVoice, unlock]);
 
   useEffect(() => {
     if (!user) {
@@ -137,8 +183,11 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
       return;
     }
     lock();
-    return () => clearVerifyPoll();
-  }, [clearVerifyPoll, lock, setGlobalLock, user?.id]);
+    return () => {
+      clearVerifyPoll();
+      clearRearmTimer();
+    };
+  }, [clearRearmTimer, clearVerifyPoll, lock, setGlobalLock, user?.id]);
 
   useEffect(() => {
     const onVisibility = () => {
@@ -149,10 +198,16 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
       const hiddenAt = hiddenAtRef.current;
       hiddenAtRef.current = null;
       if (hiddenAt && Date.now() - hiddenAt >= RELOCK_AFTER_MS) lock();
+      else if (lockedRef.current) hardRearmVoice(180);
     };
+    const onFocus = () => { if (lockedRef.current) hardRearmVoice(180); };
     document.addEventListener('visibilitychange', onVisibility);
-    return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, [lock]);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [hardRearmVoice, lock]);
 
   useEffect(() => {
     const onTranscript = (event: Event) => {
@@ -162,16 +217,42 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
 
       if (lockedRef.current) {
         event.stopImmediatePropagation();
-        setHeard(text.replace(/^SHRUTHI\s*/i, '').trim() || text);
-        if (!IDENTITY_PHRASE.test(text)) {
-          setStatus('Voice phrase not recognised');
-          setError('Say: “Hi Shruthi, this is Tinu.” Or use secure login.');
+        const body = text.replace(/^SHRUTHI\s*/i, '').trim();
+        setHeard(body || text);
+
+        const now = Date.now();
+        const wakeOnly = /^SHRUTHI[.!?\s]*$/i.test(text) || WAKE_ONLY.test(text);
+        const fullIdentity = FULL_IDENTITY_PHRASE.test(text);
+        const followUpIdentity = now < identityArmedUntilRef.current && SELF_IDENTITY_PHRASE.test(body || text);
+
+        if (wakeOnly) {
+          identityArmedUntilRef.current = now + IDENTITY_WINDOW_MS;
+          setError('');
+          setFallback(false);
+          setStatus('Shruthi heard · now say “This is Tinu”');
           return;
         }
 
-        setError('');
-        setStatus('Voice phrase accepted · verifying device identity…');
-        beginSecureVerification();
+        if (fullIdentity || followUpIdentity) {
+          identityArmedUntilRef.current = 0;
+          setError('');
+          setStatus('Voice phrase accepted · starting secure verification…');
+          beginSecureVerification();
+          return;
+        }
+
+        // If Android delivered a wake-containing partial first, keep the identity
+        // window open rather than treating that useful partial as a failed login.
+        if (/SHRUTHI/i.test(text) || new RegExp(SHRUTHI_NAME, 'iu').test(text)) {
+          identityArmedUntilRef.current = now + IDENTITY_WINDOW_MS;
+          setError('');
+          setStatus('Shruthi heard · say “This is Tinu”');
+          return;
+        }
+
+        setStatus('Voice phrase not recognised');
+        setError('Say “Shruthi” then “This is Tinu”, or say the full phrase naturally.');
+        hardRearmVoice(350);
         return;
       }
 
@@ -186,7 +267,7 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
 
     window.addEventListener('centralhub:tara-transcript', onTranscript as EventListener, true);
     return () => window.removeEventListener('centralhub:tara-transcript', onTranscript as EventListener, true);
-  }, [beginSecureVerification]);
+  }, [beginSecureVerification, hardRearmVoice]);
 
   const passwordLogin = async (event: FormEvent) => {
     event.preventDefault();
@@ -223,8 +304,9 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
           <div className="flex items-center justify-center gap-2 text-cyan-200"><Mic className="h-5 w-5" /><span className="font-semibold">{status}</span></div>
           <p className="mt-3 text-sm text-slate-400">Say naturally:</p>
           <p className="mt-1 text-lg font-medium text-white">“Hi Shruthi, this is Tinu.”</p>
+          <p className="mt-1 text-xs text-slate-500">You can also say “Shruthi” → “This is Tinu”.</p>
           {heard && <p className="mt-3 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2 text-xs text-slate-400">Heard: {heard}</p>}
-          <p className="mt-4 text-[11px] leading-relaxed text-slate-500">The spoken phrase starts the security flow. Android biometric/device credential performs the actual identity verification; speech-to-text alone is never treated as a secure voiceprint.</p>
+          <p className="mt-4 text-[11px] leading-relaxed text-slate-500">Voice starts the security flow. Android biometric/device credential performs the actual identity verification; speech-to-text alone is never treated as a secure voiceprint.</p>
           {error && <p className="mt-3 text-sm text-rose-300">{error}</p>}
 
           <div className="mt-5 grid gap-2 sm:grid-cols-2">
