@@ -1,8 +1,10 @@
 package com.centralhub.network;
 
+import android.Manifest;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -10,12 +12,14 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.speech.tts.TextToSpeech;
 import android.util.Base64;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.webkit.CookieManager;
+import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -44,11 +48,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Visible, human-supervised browser for NORA Computer Mode.
+ * Visible, human-supervised browser for Shruthi Live Web.
  *
- * NORA can operate ordinary browser UI through structured screenshot-coordinate
+ * Shruthi can operate ordinary browser UI through structured screenshot-coordinate
  * actions. Authentication secrets, OTP/2FA, CAPTCHA and identity verification are
- * always handed back to the human. Consequential actions are approved before NORA
+ * always handed back to the human. Consequential actions are approved before Shruthi
  * continues. Nothing here attempts to bypass a site's security controls.
  */
 public final class NoraComputerActivity extends android.app.Activity {
@@ -59,6 +63,7 @@ public final class NoraComputerActivity extends android.app.Activity {
 
     private static final String BROWSER_PREFS = "centralhub_live_web_browser";
     private static final int MAX_TABS = 8;
+    private static final int WEB_PERMISSION_REQUEST_CODE = 4517;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
@@ -85,6 +90,9 @@ public final class NoraComputerActivity extends android.app.Activity {
     private String lastResponseId = "";
     private String lastCallId = "";
     private String lastStepId = "";
+    private PermissionRequest pendingWebPermissionRequest;
+    private TextToSpeech liveWebTts;
+    private volatile boolean liveWebTtsReady = false;
 
     private static final class BrowserTab {
         String title;
@@ -109,16 +117,35 @@ public final class NoraComputerActivity extends android.app.Activity {
         controlEndpoint = supabaseUrl + "/functions/v1/live-web-control";
 
         if (sessionId.isEmpty() || accessToken.isEmpty() || supabaseUrl.isEmpty() || !isAllowedUrl(targetUrl)) {
-            Toast.makeText(this, "NORA Computer Mode could not start safely.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Shruthi Live Web could not start safely.", Toast.LENGTH_LONG).show();
             finish();
             return;
         }
 
         buildUi();
+        initializeLiveWebTts();
         configureWebView();
         restoreTabs();
         setManualControl(false, "Shruthi is opening Live Web…");
         webView.loadUrl(targetUrl);
+    }
+
+    private void initializeLiveWebTts() {
+        liveWebTts = new TextToSpeech(getApplicationContext(), status -> {
+            liveWebTtsReady = status == TextToSpeech.SUCCESS;
+            if (liveWebTtsReady && liveWebTts != null) {
+                liveWebTts.setLanguage(Locale.UK);
+                liveWebTts.setSpeechRate(0.96f);
+                liveWebTts.setPitch(1.03f);
+            }
+        });
+    }
+
+    private void speakPrompt(String text) {
+        if (!liveWebTtsReady || liveWebTts == null || text == null || text.trim().isEmpty()) return;
+        try {
+            liveWebTts.speak(text.trim(), TextToSpeech.QUEUE_FLUSH, null, "shruthi-live-web");
+        } catch (Exception ignored) { }
     }
 
     private void buildUi() {
@@ -163,7 +190,15 @@ public final class NoraComputerActivity extends android.app.Activity {
         nav.setBackgroundColor(Color.rgb(4, 10, 20));
 
         Button back = browserButton("‹");
-        back.setOnClickListener(v -> { takeOverForBrowser(); if (webView != null && webView.canGoBack()) webView.goBack(); });
+        back.setOnClickListener(v -> {
+            takeOverForBrowser();
+            if (webView != null && webView.canGoBack()) {
+                webView.goBack();
+            } else {
+                requestAgent("pause", null);
+                finish();
+            }
+        });
         nav.addView(back, new LinearLayout.LayoutParams(dp(44), dp(42)));
 
         Button forward = browserButton("›");
@@ -560,7 +595,12 @@ public final class NoraComputerActivity extends android.app.Activity {
         cookies.setAcceptCookie(true);
         cookies.setAcceptThirdPartyCookies(webView, true);
 
-        webView.setWebChromeClient(new WebChromeClient());
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onPermissionRequest(PermissionRequest request) {
+                runOnUiThread(() -> handleWebPermissionRequest(request));
+            }
+        });
         webView.setOnTouchListener((v, event) -> !manualControl && !syntheticInput);
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -589,9 +629,79 @@ public final class NoraComputerActivity extends android.app.Activity {
         });
     }
 
+    private void handleWebPermissionRequest(PermissionRequest request) {
+        if (request == null) return;
+        ArrayList<String> supportedResources = new ArrayList<>();
+        boolean wantsMic = false;
+        boolean wantsCamera = false;
+        for (String resource : request.getResources()) {
+            if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)) {
+                wantsMic = true;
+                supportedResources.add(resource);
+            } else if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)) {
+                wantsCamera = true;
+                supportedResources.add(resource);
+            }
+        }
+        if (supportedResources.isEmpty()) {
+            request.deny();
+            return;
+        }
+
+        if (!manualControl) {
+            setManualControl(true, "Site permission requires your approval");
+            requestAgent("pause", null);
+        }
+        String host = request.getOrigin() == null ? "this website" : safe(request.getOrigin().getHost());
+        String what = wantsMic && wantsCamera ? "microphone and camera" : wantsMic ? "microphone" : "camera";
+        final boolean finalWantsMic = wantsMic;
+        final boolean finalWantsCamera = wantsCamera;
+        speakPrompt("This website is asking to use your " + what + ". I need your approval before allowing it.");
+        new AlertDialog.Builder(this)
+                .setTitle("Allow website permission?")
+                .setMessage((host.isEmpty() ? "This website" : host) + " wants access to your " + what + ". Shruthi will never grant website camera or microphone access automatically.")
+                .setPositiveButton("Allow", (dialog, which) -> grantWebPermissionWithRuntimeCheck(request, finalWantsMic, finalWantsCamera))
+                .setNegativeButton("Deny", (dialog, which) -> request.deny())
+                .setCancelable(false)
+                .show();
+    }
+
+    private void grantWebPermissionWithRuntimeCheck(PermissionRequest request, boolean wantsMic, boolean wantsCamera) {
+        ArrayList<String> missing = new ArrayList<>();
+        if (wantsMic && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) missing.add(Manifest.permission.RECORD_AUDIO);
+        if (wantsCamera && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) missing.add(Manifest.permission.CAMERA);
+        if (missing.isEmpty()) {
+            grantSupportedWebResources(request);
+            return;
+        }
+        pendingWebPermissionRequest = request;
+        requestPermissions(missing.toArray(new String[0]), WEB_PERMISSION_REQUEST_CODE);
+    }
+
+    private void grantSupportedWebResources(PermissionRequest request) {
+        if (request == null) return;
+        ArrayList<String> grant = new ArrayList<>();
+        for (String resource : request.getResources()) {
+            if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource) && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) grant.add(resource);
+            if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource) && checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) grant.add(resource);
+        }
+        if (grant.isEmpty()) request.deny();
+        else request.grant(grant.toArray(new String[0]));
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != WEB_PERMISSION_REQUEST_CODE) return;
+        PermissionRequest request = pendingWebPermissionRequest;
+        pendingWebPermissionRequest = null;
+        if (request == null) return;
+        grantSupportedWebResources(request);
+    }
+
     private void toggleTakeover() {
         if (manualControl) {
-            setManualControl(false, "NORA is resuming…");
+            setManualControl(false, "Shruthi is resuming…");
             if (waitingSensitiveHandoff) {
                 waitingSensitiveHandoff = false;
                 requestResume(false, "completed manually");
@@ -603,7 +713,7 @@ public final class NoraComputerActivity extends android.app.Activity {
                 startFreshAgentSession("Continue helping from the current visible page. Inspect it first, then proceed carefully.");
             }
         } else {
-            setManualControl(true, "You have control · NORA is paused");
+            setManualControl(true, "You have control · Shruthi is paused");
             requestAgent("pause", null);
         }
     }
@@ -624,7 +734,7 @@ public final class NoraComputerActivity extends android.app.Activity {
                 JSONObject result = postJson(body);
                 mainHandler.post(() -> handleAgentResult(result));
             } catch (Exception error) {
-                mainHandler.post(() -> failVisible("NORA could not continue: " + safe(error.getMessage())));
+                mainHandler.post(() -> failVisible("Shruthi could not continue: " + safe(error.getMessage())));
             }
         });
     }
@@ -633,7 +743,7 @@ public final class NoraComputerActivity extends android.app.Activity {
         HttpURLConnection connection = (HttpURLConnection) new URL(agentEndpoint).openConnection();
         connection.setRequestMethod("POST");
         connection.setConnectTimeout(20_000);
-        connection.setReadTimeout(75_000);
+        connection.setReadTimeout(55_000);
         connection.setDoOutput(true);
         connection.setRequestProperty("Authorization", "Bearer " + accessToken);
         connection.setRequestProperty("Content-Type", "application/json");
@@ -668,27 +778,27 @@ public final class NoraComputerActivity extends android.app.Activity {
             case "computer_actions":
                 lastCallId = result.optString("call_id", "");
                 lastStepId = result.optString("step_id", "");
-                setManualControl(false, result.optString("current_step", "NORA is working…"));
+                setManualControl(false, result.optString("current_step", "Shruthi is working…"));
                 executeActions(result.optJSONArray("actions"), 0);
                 break;
             case "input_required":
-                handleInputRequest(result.optString("question", "NORA needs your input."), result.optBoolean("sensitive", false));
+                handleInputRequest(result.optString("question", "Shruthi needs your input."), result.optBoolean("sensitive", false));
                 break;
             case "approval_required":
-                showApproval(result.optString("reason", "NORA reached an action that requires your approval."));
+                showApproval(result.optString("reason", "Shruthi reached an action that requires your approval."));
                 break;
             case "completed":
                 lastCallId = "";
                 lastResponseId = "";
                 lastStepId = "";
                 setManualControl(true, "Completed · " + result.optString("message", "Shruthi finished the task."));
-                showCompletion(result.optString("message", "NORA completed and verified the task."));
+                showCompletion(result.optString("message", "Shruthi completed and verified the task."));
                 break;
             case "paused":
                 setManualControl(true, "Paused · you have control");
                 break;
             default:
-                failVisible("NORA returned an unexpected computer state.");
+                failVisible("Shruthi returned an unexpected computer state.");
                 break;
         }
     }
@@ -732,11 +842,11 @@ public final class NoraComputerActivity extends android.app.Activity {
                 case "wait":
                     break;
                 default:
-                    failVisible("NORA requested an unsupported action: " + type);
+                    failVisible("Shruthi requested an unsupported action: " + type);
                     return;
             }
         } catch (Exception error) {
-            failVisible("NORA action failed: " + safe(error.getMessage()));
+            failVisible("Shruthi action failed: " + safe(error.getMessage()));
             return;
         }
         mainHandler.postDelayed(() -> executeActions(actions, index + 1), delay);
@@ -845,10 +955,10 @@ public final class NoraComputerActivity extends android.app.Activity {
             extra.put("call_id", lastCallId);
             extra.put("step_id", lastStepId);
             extra.put("screenshot_base64", encoded);
-            setStatus("NORA is checking the result…");
+            setStatus("Shruthi is checking the result…");
             requestAgent("continue", extra);
         } catch (Exception error) {
-            failVisible("Could not capture NORA browser state.");
+            failVisible("Could not capture Shruthi browser state.");
         }
     }
 
@@ -856,22 +966,24 @@ public final class NoraComputerActivity extends android.app.Activity {
         lastCallId = "";
         if (sensitive) {
             waitingSensitiveHandoff = true;
-            setManualControl(true, "Your turn · complete the secure step, then tap Continue NORA");
+            setManualControl(true, "Your turn · complete the secure step, then tap Continue Shruthi");
+            speakPrompt("I need you to complete the secure sign-in or verification directly in the browser. Please do not say or share your password or security code with me. When you finish, tap Continue Shruthi.");
             new AlertDialog.Builder(this)
-                    .setTitle("NORA needs you")
-                    .setMessage(question + "\n\nComplete this directly in the browser. NORA will not read or store your password, OTP or CAPTCHA response.")
+                    .setTitle("Shruthi needs you")
+                    .setMessage(question + "\n\nComplete this directly in the browser. Shruthi will not read or store your password, OTP, passkey, CAPTCHA response, or other login secret.")
                     .setPositiveButton("Take over", null)
                     .show();
             return;
         }
 
+        speakPrompt(question);
         EditText input = new EditText(this);
         input.setSingleLine(false);
         input.setMinLines(1);
         input.setMaxLines(4);
         input.setPadding(dp(18), dp(10), dp(18), dp(10));
         new AlertDialog.Builder(this)
-                .setTitle("NORA asks")
+                .setTitle("Shruthi asks")
                 .setMessage(question)
                 .setView(input)
                 .setPositiveButton("Continue", (dialog, which) -> {
@@ -889,16 +1001,17 @@ public final class NoraComputerActivity extends android.app.Activity {
 
     private void showApproval(String reason) {
         lastCallId = "";
-        setManualControl(true, "Approval required before NORA continues");
+        setManualControl(true, "Approval required before Shruthi continues");
+        speakPrompt("I need your approval before I take the next consequential action. Please review the approval shown on screen.");
         new AlertDialog.Builder(this)
-                .setTitle("Approve NORA action?")
+                .setTitle("Approve Shruthi action?")
                 .setMessage(reason)
                 .setPositiveButton("Approve", (dialog, which) -> {
-                    setManualControl(false, "Approved · NORA is continuing…");
+                    setManualControl(false, "Approved · Shruthi is continuing…");
                     requestResume(true, "");
                 })
                 .setNegativeButton("Not now", (dialog, which) -> {
-                    setManualControl(true, "Not approved · NORA is paused");
+                    setManualControl(true, "Not approved · Shruthi is paused");
                     requestAgent("pause", null);
                 })
                 .setCancelable(false)
@@ -913,11 +1026,12 @@ public final class NoraComputerActivity extends android.app.Activity {
             if (answer != null && !answer.isEmpty()) extra.put("answer", answer);
             requestAgent("resume", extra);
         } catch (Exception error) {
-            failVisible("NORA could not resume.");
+            failVisible("Shruthi could not resume.");
         }
     }
 
     private void showCompletion(String message) {
+        speakPrompt("Done. I have finished the Live Web task. Please review the result on screen.");
         new AlertDialog.Builder(this)
                 .setTitle("Shruthi finished")
                 .setMessage(message)
@@ -928,7 +1042,7 @@ public final class NoraComputerActivity extends android.app.Activity {
 
     private void cancelAndClose() {
         if (finishedOrDestroyed) return;
-        setStatus("Ending NORA task…");
+        setStatus("Ending Shruthi task…");
         networkExecutor.execute(() -> {
             try {
                 JSONObject body = new JSONObject();
@@ -947,7 +1061,7 @@ public final class NoraComputerActivity extends android.app.Activity {
     }
 
     private void setStatus(String value) {
-        if (statusView != null) statusView.setText(value == null || value.isEmpty() ? "NORA Computer Mode" : value);
+        if (statusView != null) statusView.setText(value == null || value.isEmpty() ? "Shruthi Live Web" : value);
     }
 
     private boolean isAllowedUrl(String value) {
@@ -986,25 +1100,35 @@ public final class NoraComputerActivity extends android.app.Activity {
 
     @Override
     public void onBackPressed() {
-        if (webView != null && webView.canGoBack() && manualControl) {
+        if (webView != null && webView.canGoBack()) {
+            takeOverForBrowser();
             webView.goBack();
-        } else {
-            new AlertDialog.Builder(this)
-                    .setTitle("Leave NORA Computer Mode?")
-                    .setMessage("The task will be paused. You can return to it from CentralHub.")
-                    .setPositiveButton("Leave", (dialog, which) -> {
-                        requestAgent("pause", null);
-                        finish();
-                    })
-                    .setNegativeButton("Stay", null)
-                    .show();
+            return;
         }
+        new AlertDialog.Builder(this)
+                .setTitle("Return to CentralHub?")
+                .setMessage("Shruthi will pause this Live Web task and return you to CentralHub.")
+                .setPositiveButton("Return", (dialog, which) -> {
+                    requestAgent("pause", null);
+                    finish();
+                })
+                .setNegativeButton("Stay", null)
+                .show();
     }
 
     @Override
     protected void onDestroy() {
         finishedOrDestroyed = true;
         mainHandler.removeCallbacksAndMessages(null);
+        if (pendingWebPermissionRequest != null) {
+            try { pendingWebPermissionRequest.deny(); } catch (Exception ignored) { }
+            pendingWebPermissionRequest = null;
+        }
+        if (liveWebTts != null) {
+            try { liveWebTts.stop(); liveWebTts.shutdown(); } catch (Exception ignored) { }
+            liveWebTts = null;
+            liveWebTtsReady = false;
+        }
         networkExecutor.shutdownNow();
         browserExecutor.shutdownNow();
         if (webView != null) {
