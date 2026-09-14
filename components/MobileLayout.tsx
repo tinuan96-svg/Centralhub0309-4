@@ -16,6 +16,7 @@ import NoraComputerLauncher from './NoraComputerLauncher';
 import ShruthiIdentitySkin from './ShruthiIdentitySkin';
 import ShruthiSystemInvocationBridge from './ShruthiSystemInvocationBridge';
 import ShruthiLearningPulse from './ShruthiLearningPulse';
+import ShruthiSecurityGate from './ShruthiSecurityGate';
 import QuickActionsFab from '@/app/dashboard/components/QuickActionsFab';
 import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
 import { useState, useEffect } from 'react';
@@ -54,6 +55,7 @@ export default function MobileLayout({ children }: MobileLayoutProps) {
       <ShruthiIdentitySkin />
       <NoraAdaptiveVoiceNormalizer />
       <NoraWakeListenerRecovery />
+      <ShruthiSecurityGate />
       <CentralHubVoiceAssistant />
       <ShruthiSystemInvocationBridge />
       <NoraConversationSessionSync />
@@ -73,6 +75,7 @@ export default function MobileLayout({ children }: MobileLayoutProps) {
       <ShruthiIdentitySkin />
       <NoraAdaptiveVoiceNormalizer />
       <NoraWakeListenerRecovery />
+      <ShruthiSecurityGate />
       <CentralHubVoiceAssistant />
       <ShruthiSystemInvocationBridge />
       <NoraConversationSessionSync />
