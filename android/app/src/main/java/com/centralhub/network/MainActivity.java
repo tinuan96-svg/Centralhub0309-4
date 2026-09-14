@@ -21,8 +21,11 @@ import com.getcapacitor.BridgeActivity;
 import com.google.firebase.messaging.FirebaseMessaging;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
 import org.json.JSONObject;
+import org.json.JSONTokener;
 
 public class MainActivity extends BridgeActivity {
     private static final String CENTRALHUB_ORIGIN = "https://centralhub.network";
@@ -51,8 +54,12 @@ public class MainActivity extends BridgeActivity {
     private boolean noraConversationActive = false;
     private int taraConsecutiveErrors = 0;
     private long taraLastTranscriptAt = 0L;
+    private long taraLastBargeInAt = 0L;
+    private long taraIgnoreWakeUntil = 0L;
+    private long taraSpeechEndedAt = 0L;
     private String taraLastTranscriptText = "";
     private String taraPendingPartialWakeText = "";
+    private String taraCurrentSpeechContext = "";
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -147,6 +154,12 @@ public class MainActivity extends BridgeActivity {
                     super.onReceivedError(view, request, error);
                 }
             }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                updateTaraWebAudioGuard(noraConversationActive);
+            }
         });
 
         handleNotificationIntent(getIntent());
@@ -200,7 +213,8 @@ public class MainActivity extends BridgeActivity {
                             "Shruthi", "Sruthi", "Shruti", "Hey Shruthi", "Hey Sruthi", "Hey Shruti",
                             "ശ്രുതി", "ஸ்ருதி",
                             "NORA", "Nora", "Norah", "Noora", "Noura", "Hey NORA", "Hey Nora",
-                            "നോറ", "നോറാ", "நோரா"
+                            "നോറ", "നോറാ", "நோரா",
+                            "stop", "wait", "pause", "next", "hold on", "continue", "repeat"
                     ))
             );
             taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_ENABLE_BIASING_DEVICE_CONTEXT, true);
@@ -208,23 +222,17 @@ public class MainActivity extends BridgeActivity {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && taraUsingOnDeviceRecognizer) {
             taraSegmentedSession = true;
-            // The old 300,000 ms minimum kept a one-word wake trapped inside a
-            // five-minute recognition session on Samsung. Use silence-based
-            // segmentation instead: it keeps a segmented session but emits the
-            // utterance quickly after the user stops speaking. If a recognizer
-            // ignores segmented mode, the same short endpointer values also make
-            // the normal final result arrive promptly.
-            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 500L);
-            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 650L);
-            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1050L);
+            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 450L);
+            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 550L);
+            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 900L);
             taraRecognizerIntent.putExtra(
                     RecognizerIntent.EXTRA_SEGMENTED_SESSION,
                     RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS
             );
         } else {
-            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1050L);
-            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 650L);
-            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 500L);
+            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 900L);
+            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 550L);
+            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 450L);
         }
 
         taraRecognizer.setRecognitionListener(new RecognitionListener() {
@@ -253,11 +261,8 @@ public class MainActivity extends BridgeActivity {
                         || error == SpeechRecognizer.ERROR_CLIENT
                         || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
                         && error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED)) {
-                    // Samsung/Bixby can leave Android SpeechRecognizer bound to a stale
-                    // recognition service after audio focus or app lifecycle changes.
-                    // Recreate the native recognizer instead of retrying the dead instance.
                     destroyTaraRecognizer();
-                    scheduleTaraRestart(noraConversationActive ? 700L : 1800L);
+                    scheduleTaraRestart(noraConversationActive ? 550L : 1000L);
                     return;
                 }
                 if (error == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED
@@ -265,19 +270,19 @@ public class MainActivity extends BridgeActivity {
                     if (taraUsingOnDeviceRecognizer) {
                         taraForceNetworkRecognizer = true;
                         destroyTaraRecognizer();
-                        scheduleTaraRestart(900L);
+                        scheduleTaraRestart(750L);
                     } else {
-                        scheduleTaraRestart(6000L);
+                        scheduleTaraRestart(5000L);
                     }
                     return;
                 }
 
                 long delay;
-                if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) delay = 2600L;
+                if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) delay = 2200L;
                 else if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
-                    delay = taraSegmentedSession ? 1800L : 1400L;
+                    delay = taraSegmentedSession ? 1200L : 1000L;
                 } else {
-                    delay = Math.min(12000L, 2200L + (taraConsecutiveErrors * 1000L));
+                    delay = Math.min(10000L, 1800L + (taraConsecutiveErrors * 900L));
                 }
                 scheduleTaraRestart(delay);
             }
@@ -290,7 +295,7 @@ public class MainActivity extends BridgeActivity {
                 taraListening = false;
                 taraReadyForSpeech = false;
                 taraConsecutiveErrors = 0;
-                scheduleTaraRestart(noraConversationActive ? 700L : (taraSegmentedSession ? 1200L : 1000L));
+                scheduleTaraRestart(noraConversationActive ? 450L : (taraSegmentedSession ? 900L : 800L));
             }
 
             @Override
@@ -298,50 +303,30 @@ public class MainActivity extends BridgeActivity {
                 ArrayList<String> matches = partialResults == null ? null : partialResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                 if (matches == null || matches.isEmpty()) return;
 
-                // While Shruthi is talking, only an explicit wake-name utterance is
-                // allowed through. This gives the user barge-in without feeding the
-                // assistant's own speaker audio back as a new user command.
                 if (taraSpeaking) {
-                    for (String match : matches) {
-                        if (match == null || match.trim().isEmpty()) continue;
-                        String canonical = canonicalizeNoraTranscript(match);
-                        String lower = canonical.trim().toLowerCase(Locale.ROOT);
-                        if (lower.equals("shruthi") || lower.startsWith("shruthi ")) {
-                            noraConversationActive = true;
-                            clearPendingPartialWake();
-                            interruptTaraSpeechForWake();
-                            dispatchTaraTranscriptDebounced(canonical);
-                            return;
-                        }
-                    }
+                    handleTaraBargeInMatches(matches);
                     return;
                 }
 
-                // If the user continues past the wake name into a command, cancel
-                // the standalone-wake acknowledgement and let final/segment results
-                // deliver the complete command without Shruthi speaking over them.
                 for (String match : matches) {
                     if (match == null || match.trim().isEmpty()) continue;
                     String canonical = canonicalizeNoraTranscript(match);
                     String lower = canonical.trim().toLowerCase(Locale.ROOT);
                     if (lower.startsWith("shruthi ")) {
-                        noraConversationActive = true;
+                        activateNoraConversation();
                         clearPendingPartialWake();
                         return;
                     }
                 }
 
-                // Partial callbacks are not guaranteed, but when Samsung supplies
-                // one for a standalone wake we can react even before the silence
-                // segment/final callback arrives.
                 for (String match : matches) {
-                    if (isSimpleNoraWakePhrase(match)) {
-                        noraConversationActive = true;
+                    if (isSimpleNoraWakePhrase(match) && System.currentTimeMillis() >= taraIgnoreWakeUntil) {
+                        activateNoraConversation();
                         if (!taraPartialWakeDispatched) {
                             taraPartialWakeDispatched = true;
                             taraPendingPartialWakeText = "SHRUTHI";
                             taraHandler.removeCallbacks(taraPartialWakeDispatchRunnable);
-                            taraHandler.postDelayed(taraPartialWakeDispatchRunnable, 500L);
+                            taraHandler.postDelayed(taraPartialWakeDispatchRunnable, 450L);
                         }
                         return;
                     }
@@ -363,7 +348,7 @@ public class MainActivity extends BridgeActivity {
                 taraListening = false;
                 taraReadyForSpeech = false;
                 taraConsecutiveErrors = 0;
-                scheduleTaraRestart(noraConversationActive ? 700L : 1200L);
+                scheduleTaraRestart(noraConversationActive ? 450L : 900L);
             }
 
             @Override public void onEvent(int eventType, Bundle params) { }
@@ -374,35 +359,142 @@ public class MainActivity extends BridgeActivity {
         ArrayList<String> matches = results == null ? null : results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
         if (matches == null || matches.isEmpty()) return;
 
+        if (taraSpeaking) {
+            handleTaraBargeInMatches(matches);
+            return;
+        }
+
         for (String match : matches) {
             if (match == null || match.trim().isEmpty()) continue;
             String canonical = canonicalizeNoraTranscript(match);
             String lower = canonical.trim().toLowerCase(Locale.ROOT);
             boolean explicitWake = lower.equals("shruthi") || lower.startsWith("shruthi ");
 
-            // Keep the microphone alive during TTS, but ignore ordinary recognition
-            // while Shruthi is speaking so her own voice cannot recursively trigger
-            // commands. An explicit Shruthi/Nora wake is the safe barge-in signal.
-            if (taraSpeaking) {
-                if (!explicitWake) continue;
-                noraConversationActive = true;
-                interruptTaraSpeechForWake();
-            } else if (explicitWake) {
-                noraConversationActive = true;
+            // Ignore the last few syllables of Shruthi's own speaker output after TTS
+            // finishes. Samsung may deliver those as a final result a fraction later.
+            if (System.currentTimeMillis() - taraSpeechEndedAt < 1400L && isLikelyTaraEcho(canonical)) {
+                continue;
+            }
+
+            if (explicitWake) {
+                if (!noraConversationActive && System.currentTimeMillis() < taraIgnoreWakeUntil) continue;
+                activateNoraConversation();
             } else if (!noraConversationActive) {
-                // Android returns recognition alternatives in ranked order. A Samsung
-                // recognizer may put a near-match first and Shruthi/NORA second.
-                // Check every candidate before deciding this was ambient speech.
                 continue;
             } else {
-                // During an active conversation there is no timeout. Prefix each
-                // follow-up so the web assistant treats it as the current Shruthi turn.
                 canonical = "SHRUTHI " + canonical;
             }
 
             dispatchTaraTranscriptDebounced(canonical);
             return;
         }
+    }
+
+    private void handleTaraBargeInMatches(ArrayList<String> matches) {
+        long now = System.currentTimeMillis();
+        if (now - taraLastBargeInAt < 700L) return;
+
+        for (String match : matches) {
+            if (match == null || match.trim().isEmpty()) continue;
+            String canonical = canonicalizeNoraTranscript(match).trim();
+            if (canonical.isEmpty()) continue;
+
+            String lower = canonical.toLowerCase(Locale.ROOT);
+            boolean explicitWake = lower.equals("shruthi") || lower.startsWith("shruthi ");
+            String withoutWake = explicitWake
+                    ? canonical.replaceFirst("(?i)^SHRUTHI\\s*", "").trim()
+                    : canonical;
+
+            boolean pauseOnly = isPauseOnlyBargeIn(withoutWake);
+            boolean conversationalControl = isConversationalBargeInControl(withoutWake);
+            if (!explicitWake && !pauseOnly && !conversationalControl && isLikelyTaraEcho(canonical)) continue;
+            if (!explicitWake && !pauseOnly && withoutWake.length() < 2) continue;
+
+            taraLastBargeInAt = now;
+            activateNoraConversation();
+            clearPendingPartialWake();
+            interruptTaraSpeechForWake();
+
+            // "stop / wait / pause" should interrupt Shruthi, not end the whole
+            // conversation. She remains listening for the user's next sentence.
+            if (pauseOnly) return;
+
+            String dispatch = explicitWake ? canonical : "SHRUTHI " + canonical;
+            dispatchTaraTranscriptDebounced(dispatch);
+            return;
+        }
+    }
+
+    private boolean isPauseOnlyBargeIn(String raw) {
+        String value = normalizeSpeechForCompare(raw);
+        if (value.isEmpty()) return false;
+        return value.equals("stop")
+                || value.equals("stop it")
+                || value.equals("wait")
+                || value.equals("wait a second")
+                || value.equals("pause")
+                || value.equals("hold on")
+                || value.equals("enough")
+                || value.equals("quiet")
+                || value.equals("shh")
+                || value.equals("മതി")
+                || value.equals("നിർത്തു")
+                || value.equals("நிறுத்து")
+                || value.equals("போதும்");
+    }
+
+    private boolean isConversationalBargeInControl(String raw) {
+        String value = normalizeSpeechForCompare(raw);
+        return value.equals("next")
+                || value.equals("no")
+                || value.equals("yes")
+                || value.equals("actually")
+                || value.equals("continue")
+                || value.equals("go on")
+                || value.equals("repeat")
+                || value.equals("again")
+                || value.equals("instead")
+                || value.equals("why")
+                || value.equals("what")
+                || value.equals("how");
+    }
+
+    private boolean isLikelyTaraEcho(String raw) {
+        String heard = normalizeSpeechForCompare(raw);
+        String spoken = normalizeSpeechForCompare(taraCurrentSpeechContext);
+        if (heard.isEmpty() || spoken.isEmpty()) return false;
+        if (heard.startsWith("shruthi ")) heard = heard.substring(8).trim();
+        if (heard.isEmpty()) return false;
+
+        if (heard.length() >= 5 && spoken.contains(heard)) return true;
+
+        String[] heardWords = heard.split("\\s+");
+        String[] spokenWords = spoken.split("\\s+");
+        Set<String> spokenSet = new HashSet<>(Arrays.asList(spokenWords));
+        int meaningful = 0;
+        int overlap = 0;
+        for (String word : heardWords) {
+            if (word.length() < 2) continue;
+            meaningful += 1;
+            if (spokenSet.contains(word)) overlap += 1;
+        }
+        if (meaningful == 0) return false;
+        if (meaningful == 1) return overlap == 1 && heard.length() >= 5;
+        return ((double) overlap / (double) meaningful) >= 0.72d;
+    }
+
+    private String normalizeSpeechForCompare(String raw) {
+        if (raw == null) return "";
+        return raw.toLowerCase(Locale.ROOT)
+                .replaceAll("[^\\p{L}\\p{N}]+", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
+    private void activateNoraConversation() {
+        noraConversationActive = true;
+        taraIgnoreWakeUntil = 0L;
+        updateTaraWebAudioGuard(true);
     }
 
     private void requestTaraLanguageModel() {
@@ -427,8 +519,6 @@ public class MainActivity extends BridgeActivity {
         if (normalized.startsWith("ശ്രുതി ")) return "SHRUTHI " + clean.substring("ശ്രുതി".length()).trim();
         if (normalized.startsWith("ஸ்ருதி ")) return "SHRUTHI " + clean.substring("ஸ்ருதி".length()).trim();
 
-        // NORA remains a narrow legacy alias. Tara/Thara are intentionally not
-        // wake aliases because unrelated speech can resemble those words.
         String[] noraVariants = new String[]{"nora", "norah", "noora", "noura", "norra", "nora's"};
         for (String variant : noraVariants) {
             if (normalized.equals(variant) || normalized.equals("hey " + variant)) return "SHRUTHI";
@@ -453,7 +543,8 @@ public class MainActivity extends BridgeActivity {
         taraPendingPartialWakeText = "";
         taraPartialWakeDispatched = false;
         if (!taraEnabled || !taraResumed || taraSpeaking || wakeText.isEmpty()) return;
-        noraConversationActive = true;
+        if (System.currentTimeMillis() < taraIgnoreWakeUntil) return;
+        activateNoraConversation();
         dispatchTaraTranscriptDebounced(wakeText);
     }
 
@@ -463,18 +554,58 @@ public class MainActivity extends BridgeActivity {
         taraPartialWakeDispatched = false;
     }
 
-    /**
-     * Barge-in helper for a spoken SHRUTHI/NORA wake while assistant audio is
-     * playing. The WebView's existing Mute button owns every TTS backend
-     * (cloud Audio, browser speechSynthesis and native TTS), so briefly toggling
-     * it off and back on stops the current reply without permanently muting the
-     * assistant. The wake transcript is then handled by the normal web listener.
-     */
     private void interruptTaraSpeechForWake() {
         if (!taraSpeaking) return;
+        taraSpeaking = false;
+        taraSpeechEndedAt = System.currentTimeMillis();
         WebView webView = bridge == null ? null : bridge.getWebView();
         if (webView == null) return;
-        String script = "(function(){try{var b=document.querySelector('button[aria-label=\"Mute SHRUTHI\"]');if(!b)return;b.click();setTimeout(function(){var r=document.querySelector('button[aria-label=\"Enable SHRUTHI voice\"]');if(r)r.click();},140);}catch(e){}})();";
+        String script = "(function(){try{"
+                + "var b=document.querySelector('button[aria-label=\\\"Mute SHRUTHI\\\"]');"
+                + "if(b){b.click();setTimeout(function(){var r=document.querySelector('button[aria-label=\\\"Enable SHRUTHI voice\\\"]');if(r)r.click();},120);}"
+                + "else{document.querySelectorAll('audio').forEach(function(a){try{a.pause();a.src='';}catch(e){}});if(window.speechSynthesis)window.speechSynthesis.cancel();if(window.CentralHubNative&&window.CentralHubNative.stopTaraTts)window.CentralHubNative.stopTaraTts();}"
+                + "}catch(e){}})();";
+        webView.post(() -> webView.evaluateJavascript(script, null));
+    }
+
+    private void captureTaraSpeechContextFromWeb() {
+        WebView webView = bridge == null ? null : bridge.getWebView();
+        if (webView == null) return;
+        String script = "(function(){try{var c=document.querySelectorAll('.nora-glass-card');for(var i=c.length-1;i>=0;i--){var l=c[i].querySelector('.nora-card-label');var p=c[i].querySelector('p');if(l&&p&&String(l.textContent||'').trim().toUpperCase()==='SHRUTHI')return String(p.textContent||'').trim();}return '';}catch(e){return '';}})();";
+        webView.postDelayed(() -> webView.evaluateJavascript(script, value -> {
+            if (value == null || "null".equals(value)) return;
+            try {
+                Object decoded = new JSONTokener(value).nextValue();
+                if (decoded instanceof String) {
+                    String text = ((String) decoded).trim();
+                    if (!text.isEmpty()) taraCurrentSpeechContext = text;
+                }
+            } catch (Exception ignored) { }
+        }), 140L);
+    }
+
+    public void setTaraSpeechContext(String text) {
+        taraCurrentSpeechContext = text == null ? "" : text.trim();
+    }
+
+    public boolean isNoraConversationActive() {
+        return noraConversationActive;
+    }
+
+    private void updateTaraWebAudioGuard(boolean allowed) {
+        WebView webView = bridge == null ? null : bridge.getWebView();
+        if (webView == null) return;
+        String value = allowed ? "true" : "false";
+        String script = "(function(){try{"
+                + "window.__centralHubShruthiAudioAllowed=" + value + ";"
+                + "if(!window.__centralHubShruthiAudioGuardInstalled){"
+                + "window.__centralHubShruthiAudioGuardInstalled=true;"
+                + "var originalPlay=HTMLMediaElement.prototype.play;"
+                + "HTMLMediaElement.prototype.play=function(){var s=String(this.src||'');if(window.__centralHubShruthiAudioAllowed===false&&this.tagName==='AUDIO'&&s.indexOf('blob:')===0)return Promise.resolve();return originalPlay.apply(this,arguments);};"
+                + "if(window.speechSynthesis){var synth=window.speechSynthesis;var originalSpeak=synth.speak.bind(synth);window.__centralHubShruthiOriginalSpeak=originalSpeak;try{synth.speak=function(u){if(window.__centralHubShruthiAudioAllowed===false)return;return originalSpeak(u);};}catch(e){}}"
+                + "}"
+                + "if(window.__centralHubShruthiAudioAllowed===false){document.querySelectorAll('audio').forEach(function(a){var s=String(a.src||'');if(s.indexOf('blob:')===0){try{a.pause();a.src='';}catch(e){}}});if(window.speechSynthesis)window.speechSynthesis.cancel();}"
+                + "}catch(e){}})();";
         webView.post(() -> webView.evaluateJavascript(script, null));
     }
 
@@ -487,6 +618,9 @@ public class MainActivity extends BridgeActivity {
         taraEnabled = enabled;
         if (!enabled) {
             noraConversationActive = false;
+            taraIgnoreWakeUntil = System.currentTimeMillis() + 1000L;
+            taraCurrentSpeechContext = "";
+            updateTaraWebAudioGuard(false);
             clearPendingPartialWake();
             destroyTaraRecognizer();
             return;
@@ -498,31 +632,54 @@ public class MainActivity extends BridgeActivity {
         if (!wasEnabled || taraRecognizer == null || taraRecognizerIntent == null) {
             setupTaraRecognizer();
         }
-        scheduleTaraRestart(300L);
+        scheduleTaraRestart(250L);
     }
 
     public void setNoraConversationActive(boolean active) {
-        noraConversationActive = active;
-        if (!active) clearPendingPartialWake();
-        if (taraEnabled && taraResumed && !taraSpeaking && !taraListening) {
-            scheduleTaraRestart(active ? 450L : 900L);
+        if (active) {
+            activateNoraConversation();
+        } else {
+            noraConversationActive = false;
+            taraIgnoreWakeUntil = System.currentTimeMillis() + 1100L;
+            taraCurrentSpeechContext = "";
+            taraLastTranscriptText = "";
+            taraLastTranscriptAt = 0L;
+            updateTaraWebAudioGuard(false);
+            clearPendingPartialWake();
+        }
+        if (taraEnabled && taraResumed && !taraListening) {
+            scheduleTaraRestart(active ? 350L : 800L);
         }
     }
 
     public void setTaraSpeaking(boolean speaking) {
+        // A late network/TTS result is not allowed to resurrect a conversation that
+        // the user has already ended. Keep browser/blob audio blocked until a fresh
+        // wake explicitly re-activates the session.
+        if (speaking && !noraConversationActive) {
+            taraSpeaking = false;
+            taraSpeechEndedAt = System.currentTimeMillis();
+            updateTaraWebAudioGuard(false);
+            return;
+        }
+
         taraSpeaking = speaking;
+        if (speaking) {
+            updateTaraWebAudioGuard(true);
+            captureTaraSpeechContextFromWeb();
+            // Full-duplex mode: keep/restart recognition while TTS is playing. Echo
+            // candidates are filtered before they are dispatched as user speech.
+            if (taraEnabled && taraResumed && !taraListening) scheduleTaraRestart(180L);
+            return;
+        }
 
-        // On Android 13+ keep the segmented recognizer alive while Shruthi speaks.
-        // Recognition callbacks are filtered above so only an explicit wake name can
-        // barge in; ordinary speaker output is ignored and cannot loop back as input.
-        if (taraSegmentedSession && taraListening) return;
-
-        if (speaking) stopTaraRecognizer();
-        else if (!taraListening) scheduleTaraRestart(noraConversationActive ? 600L : 1000L);
+        taraSpeechEndedAt = System.currentTimeMillis();
+        if (!taraListening) scheduleTaraRestart(noraConversationActive ? 350L : 800L);
     }
 
     private void startTaraRecognizerIfReady() {
-        if (!taraEnabled || !taraResumed || taraSpeaking || taraListening) return;
+        if (!taraEnabled || !taraResumed || taraListening) return;
+        if (taraSpeaking && !noraConversationActive) return;
         if (taraRecognizer == null) setupTaraRecognizer();
         if (taraRecognizer == null || taraRecognizerIntent == null) return;
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
@@ -534,33 +691,32 @@ public class MainActivity extends BridgeActivity {
             taraReadyForSpeech = false;
             taraRecognizer.startListening(taraRecognizerIntent);
             taraListening = true;
-            // startListening() can return successfully even when Samsung has handed
-            // us a stale recognizer after an app switch. If onReadyForSpeech never
-            // arrives, recycle the recognizer instead of remaining silently stuck.
-            taraHandler.postDelayed(taraStartWatchdogRunnable, 3500L);
+            taraHandler.postDelayed(taraStartWatchdogRunnable, 3000L);
         } catch (Exception ignored) {
             taraListening = false;
             taraReadyForSpeech = false;
             taraConsecutiveErrors += 1;
             destroyTaraRecognizer();
-            scheduleTaraRestart(Math.min(12000L, 2200L + (taraConsecutiveErrors * 1000L)));
+            scheduleTaraRestart(Math.min(10000L, 1800L + (taraConsecutiveErrors * 900L)));
         }
     }
 
     private void recoverStalledTaraStart() {
-        if (!taraEnabled || !taraResumed || taraSpeaking || !taraListening || taraReadyForSpeech) return;
+        if (!taraEnabled || !taraResumed || !taraListening || taraReadyForSpeech) return;
+        if (taraSpeaking && !noraConversationActive) return;
         taraConsecutiveErrors += 1;
         if (taraUsingOnDeviceRecognizer && taraConsecutiveErrors >= 2) {
             taraForceNetworkRecognizer = true;
         }
         destroyTaraRecognizer();
-        scheduleTaraRestart(noraConversationActive ? 600L : 1200L);
+        scheduleTaraRestart(noraConversationActive ? 500L : 1000L);
     }
 
     private void scheduleTaraRestart(long delayMs) {
         taraHandler.removeCallbacks(taraRestartRunnable);
-        if (!taraEnabled || !taraResumed || taraSpeaking || taraListening) return;
-        long minimumDelay = noraConversationActive ? 450L : 900L;
+        if (!taraEnabled || !taraResumed || taraListening) return;
+        if (taraSpeaking && !noraConversationActive) return;
+        long minimumDelay = noraConversationActive ? 300L : 750L;
         taraHandler.postDelayed(taraRestartRunnable, Math.max(minimumDelay, delayMs));
     }
 
@@ -601,9 +757,7 @@ public class MainActivity extends BridgeActivity {
                 && clean.length() > 8
                 && clean.regionMatches(true, 0, "SHRUTHI ", 0, 8);
 
-        // Suppress duplicate callbacks, but never drop a full wake+command result
-        // merely because the partial standalone wake arrived milliseconds first.
-        if (elapsed < 700L && (sameTranscript || !expandsPartialWake)) return;
+        if (elapsed < 650L && (sameTranscript || !expandsPartialWake)) return;
 
         taraLastTranscriptAt = now;
         taraLastTranscriptText = clean;
@@ -627,17 +781,14 @@ public class MainActivity extends BridgeActivity {
                 && (taraRecognizer == null || taraRecognizerIntent == null)) {
             setupTaraRecognizer();
         }
-        scheduleTaraRestart(noraConversationActive ? 450L : 900L);
+        updateTaraWebAudioGuard(noraConversationActive);
+        scheduleTaraRestart(noraConversationActive ? 350L : 800L);
     }
 
     @Override
     public void onPause() {
         taraResumed = false;
         clearPendingPartialWake();
-        // Android only grants this app microphone access while it is foregrounded.
-        // Destroy the recognizer here so Samsung/Bixby cannot leave a cancelled,
-        // non-responsive SpeechRecognizer instance behind for the next resume.
-        // Conversation state is preserved and the recognizer is rebuilt on resume.
         destroyTaraRecognizer();
         super.onPause();
     }
@@ -660,7 +811,7 @@ public class MainActivity extends BridgeActivity {
                 && grantResults.length > 0
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             if (taraEnabled && taraResumed) setupTaraRecognizer();
-            scheduleTaraRestart(600L);
+            scheduleTaraRestart(500L);
         }
     }
 
