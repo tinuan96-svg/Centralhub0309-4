@@ -20,12 +20,12 @@ type NativeSecurityBridge = {
 type TranscriptEvent = CustomEvent<{ text?: string }>;
 
 const IDENTITY_WINDOW_MS = 10_000;
-const SHRUTHI_NAME = '(?:shruthi|shruti|sruthi|sruti|shrudhi|shroothi|shrooti|ശ്രുതി|ശ്രൂതി|ஸ்ருதி|ஸ்ரூதி)';
-const TINU_NAME = '(?:tinu|tino|teenu|tenu)';
+const SHRUTHI_NAME = '(?:shruthi|shruti|sruthi|sruti|shrudhi|srudhi|shroothi|shrooti|sudhi|sudi|suthi|shudi|shuti|sweetie|sweety|ശ്രുതി|ശ്രൂതി|ஸ்ருதி|ஸ்ரூதி)';
+const TINU_NAME = '(?:tinu|tino|teenu|tenu|jinu|jino|ginu|chino|cheenu)';
 const SHRUTHI_SIGNAL = new RegExp(SHRUTHI_NAME, 'iu');
 const TINU_SIGNAL = new RegExp(`\\b${TINU_NAME}\\b`, 'iu');
-const SELF_IDENTITY_PHRASE = new RegExp(`(?:this\\s+is|i\\s+am|i'?m|its|it's)\\s+${TINU_NAME}\\b`, 'iu');
-const FULL_IDENTITY_PHRASE = new RegExp(`${SHRUTHI_NAME}.*?(?:this\\s+is|i\\s+am|i'?m|its|it's)\\s+${TINU_NAME}\\b|(?:this\\s+is|i\\s+am|i'?m|its|it's)\\s+${TINU_NAME}\\b.*?${SHRUTHI_NAME}`, 'iu');
+const SELF_IDENTITY_PHRASE = new RegExp(`(?:this\\s+is|i\\s+am|i'?m|it\\s+is|its|it's)\\s+${TINU_NAME}\\b`, 'iu');
+const FULL_IDENTITY_PHRASE = new RegExp(`${SHRUTHI_NAME}.*?(?:this\\s+is|i\\s+am|i'?m|it\\s+is|its|it's)\\s+${TINU_NAME}\\b|(?:this\\s+is|i\\s+am|i'?m|it\\s+is|its|it's)\\s+${TINU_NAME}\\b.*?${SHRUTHI_NAME}`, 'iu');
 const WAKE_ONLY = new RegExp(`^(?:hi\\s+|hello\\s+|hey\\s+)?${SHRUTHI_NAME}[.!?\\s]*$`, 'iu');
 
 function bridge(): NativeSecurityBridge | undefined {
@@ -34,6 +34,9 @@ function bridge(): NativeSecurityBridge | undefined {
 }
 
 export default function LoginClient({ params, searchParams }: { params: any; searchParams: any }) {
+  void params;
+  void searchParams;
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
@@ -49,7 +52,6 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
   const [heard, setHeard] = useState('');
   const [fallbackVisible, setFallbackVisible] = useState(false);
   const verifyTimerRef = useRef<number | null>(null);
-  const rearmTimerRef = useRef<number | null>(null);
   const identityArmedUntilRef = useRef(0);
   const router = useRouter();
 
@@ -58,30 +60,18 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
     verifyTimerRef.current = null;
   }, []);
 
-  const clearRearm = useCallback(() => {
-    if (rearmTimerRef.current) window.clearTimeout(rearmTimerRef.current);
-    rearmTimerRef.current = null;
+  const ensureVoiceListening = useCallback(() => {
+    const native = bridge();
+    if (native?.getPlatform?.() !== 'android') return;
+    try {
+      // Never force an Off -> On cycle here. Samsung SpeechRecognizer emits a
+      // loud start/stop tone when cancelled and recreated. Repeated `true` calls
+      // are intentionally idempotent in the native bridge.
+      native.setTaraEnabled?.(true);
+      native.setNoraConversationActive?.(true);
+      setStatus((current) => current.includes('verif') ? current : 'Listening · say “Hi Shruthi, this is Tinu”');
+    } catch { }
   }, []);
-
-  const hardRearm = useCallback((delay = 0) => {
-    clearRearm();
-    rearmTimerRef.current = window.setTimeout(() => {
-      const native = bridge();
-      if (native?.getPlatform?.() !== 'android') return;
-      try {
-        native.stopTaraTts?.();
-        native.setTaraEnabled?.(false);
-        window.setTimeout(() => {
-          try {
-            const latest = bridge();
-            latest?.setTaraEnabled?.(true);
-            latest?.setNoraConversationActive?.(true);
-            setStatus((current) => current.includes('verif') ? current : 'Listening · say “Hi Shruthi, this is Tinu”');
-          } catch { }
-        }, 140);
-      } catch { }
-    }, delay);
-  }, [clearRearm]);
 
   useEffect(() => {
     void (async () => {
@@ -93,19 +83,24 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
     })();
 
     const native = bridge();
-    try {
-      native?.stopTaraTts?.();
-      native?.setTaraEnabled?.(true);
-      native?.setNoraConversationActive?.(true);
-      hardRearm(120);
-    } catch { }
+    try { native?.stopTaraTts?.(); } catch { }
+    ensureVoiceListening();
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') ensureVoiceListening();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
 
     return () => {
       clearVerifyPoll();
-      clearRearm();
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
       try { native?.setNoraConversationActive?.(false); } catch { }
+      // Do not disable or destroy the native recognizer on route cleanup. The
+      // Android activity owns its lifetime and keeps passive wake available.
     };
-  }, [clearRearm, clearVerifyPoll, hardRearm]);
+  }, [clearVerifyPoll, ensureVoiceListening]);
 
   const completeReturningUserUnlock = useCallback(async () => {
     const { data } = await supabase.auth.getSession();
@@ -135,12 +130,13 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
       if (!result) {
         if (Date.now() - startedAt > 60_000) {
           clearVerifyPoll();
-          setStatus('Verification timed out');
+          setStatus('Verification timed out · listening again');
           setFallbackVisible(true);
-          hardRearm(200);
+          ensureVoiceListening();
         }
         return;
       }
+
       clearVerifyPoll();
       if (result === 'success') {
         setStatus('Identity verified · unlocking CentralHub');
@@ -148,12 +144,13 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
         router.replace('/dashboard');
         return;
       }
-      setStatus('Identity verification did not complete');
-      setError('Try again or use your login ID and password.');
+
+      setStatus('Identity verification did not complete · listening again');
+      setError('Try the phrase again or use your login ID and password.');
       setFallbackVisible(true);
-      hardRearm(240);
+      ensureVoiceListening();
     }, 250);
-  }, [clearVerifyPoll, hardRearm, router]);
+  }, [clearVerifyPoll, ensureVoiceListening, router]);
 
   useEffect(() => {
     const onTranscript = (event: Event) => {
@@ -199,13 +196,22 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
         return;
       }
 
-      setStatus('Almost there · listening again');
+      if (mentionsTinu && now < identityArmedUntilRef.current) {
+        identityArmedUntilRef.current = 0;
+        setError('');
+        setStatus('Identity heard · starting secure verification…');
+        void completeReturningUserUnlock();
+        return;
+      }
+
+      setStatus('Almost there · still listening');
       setError('Say “Shruthi” then “This is Tinu”, or say the full phrase naturally.');
-      hardRearm(220);
+      ensureVoiceListening();
     };
+
     window.addEventListener('centralhub:tara-transcript', onTranscript as EventListener, true);
     return () => window.removeEventListener('centralhub:tara-transcript', onTranscript as EventListener, true);
-  }, [completeReturningUserUnlock, hardRearm]);
+  }, [completeReturningUserUnlock, ensureVoiceListening]);
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
