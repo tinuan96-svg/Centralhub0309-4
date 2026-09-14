@@ -4,6 +4,7 @@ import './dashboard-theme.css';
 import './retired-integrations.css';
 import AuthProvider from '@/components/AuthProvider';
 import MobileLayout from '@/components/MobileLayout';
+import ShruthiSecurityTranscriptNormalizer from '@/components/ShruthiSecurityTranscriptNormalizer';
 
 export const metadata = {
   title: 'CentralHub',
@@ -18,6 +19,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body suppressHydrationWarning>
         <AuthProvider>
+          <ShruthiSecurityTranscriptNormalizer />
           <MobileLayout>
             {children}
           </MobileLayout>
