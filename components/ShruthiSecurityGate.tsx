@@ -10,7 +10,6 @@ type NativeSecurityBridge = {
   setTaraEnabled?: (enabled: boolean) => void;
   setNoraConversationActive?: (active: boolean) => void;
   stopTaraTts?: () => void;
-  speakTara?: (text: string, languageTag: string) => boolean;
   isSecureUnlockAvailable?: () => boolean;
   requestSecureUnlock?: () => boolean;
   consumeSecureUnlockResult?: () => string;
@@ -19,9 +18,11 @@ type NativeSecurityBridge = {
 type TranscriptEvent = CustomEvent<{ text?: string }>;
 
 const RELOCK_AFTER_MS = 30_000;
-const IDENTITY_WINDOW_MS = 8_000;
+const IDENTITY_WINDOW_MS = 10_000;
 const SHRUTHI_NAME = '(?:shruthi|shruti|sruthi|sruti|shrudhi|shroothi|shrooti|ശ്രുതി|ശ്രൂതി|ஸ்ருதி|ஸ்ரூதி)';
 const TINU_NAME = '(?:tinu|tino|teenu|tenu)';
+const SHRUTHI_SIGNAL = new RegExp(SHRUTHI_NAME, 'iu');
+const TINU_SIGNAL = new RegExp(`\\b${TINU_NAME}\\b`, 'iu');
 const SELF_IDENTITY_PHRASE = new RegExp(`(?:this\\s+is|i\\s+am|i'?m|its|it's)\\s+${TINU_NAME}\\b`, 'iu');
 const FULL_IDENTITY_PHRASE = new RegExp(`${SHRUTHI_NAME}.*?(?:this\\s+is|i\\s+am|i'?m|its|it's)\\s+${TINU_NAME}\\b|(?:this\\s+is|i\\s+am|i'?m|its|it's)\\s+${TINU_NAME}\\b.*?${SHRUTHI_NAME}`, 'iu');
 const WAKE_ONLY = new RegExp(`^(?:hi\\s+|hello\\s+|hey\\s+)?${SHRUTHI_NAME}[.!?\\s]*$`, 'iu');
@@ -41,7 +42,7 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
   const verifyStartedAtRef = useRef(0);
   const rearmTimerRef = useRef<number | null>(null);
   const identityArmedUntilRef = useRef(0);
-  const [status, setStatus] = useState('Voice activation required');
+  const [status, setStatus] = useState('Listening · say your security phrase');
   const [heard, setHeard] = useState('');
   const [fallback, setFallback] = useState(false);
   const [email, setEmail] = useState(user?.email || '');
@@ -75,6 +76,8 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
       const bridge = nativeBridge();
       if (bridge?.getPlatform?.() !== 'android') return;
       try {
+        // Security listening is intentionally silent. Shruthi must not speak over
+        // the user's identity phrase and create her own echo/noise on the mic.
         bridge.stopTaraTts?.();
         bridge.setTaraEnabled?.(false);
         window.setTimeout(() => {
@@ -83,9 +86,9 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
             const latest = nativeBridge();
             latest?.setTaraEnabled?.(true);
             latest?.setNoraConversationActive?.(true);
-            setStatus((current) => current.includes('verif') ? current : 'Listening for your security phrase…');
+            setStatus((current) => current.includes('verif') ? current : 'Listening · say “Hi Shruthi, this is Tinu”');
           } catch { }
-        }, 180);
+        }, 140);
       } catch { }
     }, delay);
   }, [clearRearmTimer]);
@@ -102,18 +105,16 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
     setHeard('');
     setError('');
     setFallback(false);
-    setStatus('Voice activation required');
+    setStatus('Listening · say “Hi Shruthi, this is Tinu”');
     setGlobalLock(true);
     try {
+      bridge.stopTaraTts?.();
       bridge.setTaraEnabled?.(true);
       bridge.setNoraConversationActive?.(true);
-      window.setTimeout(() => {
-        if (!lockedRef.current) return;
-        try { bridge.speakTara?.('Voice activation required.', 'en-GB'); } catch { }
-      }, 140);
-      // NoraWakeListenerRecovery lives behind this gate and is not mounted while
-      // locked, so perform the Samsung hard re-arm here after the short prompt.
-      hardRearmVoice(1050);
+      // Do not play a spoken "voice activation required" prompt here. On a phone
+      // speaker that prompt competes with the user's first words and was the main
+      // source of self-echo at the security gate.
+      hardRearmVoice(120);
     } catch { }
   }, [clearRearmTimer, clearVerifyPoll, hardRearmVoice, setGlobalLock, user]);
 
@@ -160,7 +161,7 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
           setStatus('Identity verification timed out');
           setError('Try again or use Login ID & password.');
           setFallback(true);
-          hardRearmVoice(250);
+          hardRearmVoice(200);
         }
         return;
       }
@@ -173,7 +174,7 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
       setStatus('Identity verification not completed');
       setError(result === 'cancelled' ? 'Verification cancelled. Say “Shruthi” to retry or use secure login.' : 'Device identity did not verify. Try again or use secure login.');
       setFallback(true);
-      hardRearmVoice(350);
+      hardRearmVoice(260);
     }, 250);
   }, [clearRearmTimer, clearVerifyPoll, hardRearmVoice, unlock]);
 
@@ -198,9 +199,9 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
       const hiddenAt = hiddenAtRef.current;
       hiddenAtRef.current = null;
       if (hiddenAt && Date.now() - hiddenAt >= RELOCK_AFTER_MS) lock();
-      else if (lockedRef.current) hardRearmVoice(180);
+      else if (lockedRef.current) hardRearmVoice(120);
     };
-    const onFocus = () => { if (lockedRef.current) hardRearmVoice(180); };
+    const onFocus = () => { if (lockedRef.current) hardRearmVoice(120); };
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('focus', onFocus);
     return () => {
@@ -218,12 +219,22 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
       if (lockedRef.current) {
         event.stopImmediatePropagation();
         const body = text.replace(/^SHRUTHI\s*/i, '').trim();
-        setHeard(body || text);
-
         const now = Date.now();
         const wakeOnly = /^SHRUTHI[.!?\s]*$/i.test(text) || WAKE_ONLY.test(text);
         const fullIdentity = FULL_IDENTITY_PHRASE.test(text);
         const followUpIdentity = now < identityArmedUntilRef.current && SELF_IDENTITY_PHRASE.test(body || text);
+        const mentionsShruthi = /SHRUTHI/i.test(text) || SHRUTHI_SIGNAL.test(text);
+        const mentionsTinu = TINU_SIGNAL.test(text);
+
+        // Recognition-level noise gate: surrounding conversation/noise that does
+        // not contain the security identity markers is ignored silently instead
+        // of being treated as a failed login attempt.
+        if (!mentionsShruthi && !mentionsTinu && !followUpIdentity) {
+          setStatus('Listening · focused on your security phrase');
+          return;
+        }
+
+        setHeard(body || text);
 
         if (wakeOnly) {
           identityArmedUntilRef.current = now + IDENTITY_WINDOW_MS;
@@ -241,18 +252,25 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
           return;
         }
 
-        // If Android delivered a wake-containing partial first, keep the identity
-        // window open rather than treating that useful partial as a failed login.
-        if (/SHRUTHI/i.test(text) || new RegExp(SHRUTHI_NAME, 'iu').test(text)) {
+        if (mentionsShruthi) {
           identityArmedUntilRef.current = now + IDENTITY_WINDOW_MS;
           setError('');
           setStatus('Shruthi heard · say “This is Tinu”');
           return;
         }
 
-        setStatus('Voice phrase not recognised');
+        if (mentionsTinu && now < identityArmedUntilRef.current) {
+          setError('');
+          setStatus('Identity heard · starting secure verification…');
+          beginSecureVerification();
+          return;
+        }
+
+        // Phrase-like mismatches get one concise hint; unrelated background audio
+        // never reaches this branch.
+        setStatus('Almost there · listening again');
         setError('Say “Shruthi” then “This is Tinu”, or say the full phrase naturally.');
-        hardRearmVoice(350);
+        hardRearmVoice(220);
         return;
       }
 
@@ -304,9 +322,9 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
           <div className="flex items-center justify-center gap-2 text-cyan-200"><Mic className="h-5 w-5" /><span className="font-semibold">{status}</span></div>
           <p className="mt-3 text-sm text-slate-400">Say naturally:</p>
           <p className="mt-1 text-lg font-medium text-white">“Hi Shruthi, this is Tinu.”</p>
-          <p className="mt-1 text-xs text-slate-500">You can also say “Shruthi” → “This is Tinu”.</p>
+          <p className="mt-1 text-xs text-slate-500">Or: “Shruthi” → “This is Tinu”. Background speech is ignored unless it matches the security phrase.</p>
           {heard && <p className="mt-3 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2 text-xs text-slate-400">Heard: {heard}</p>}
-          <p className="mt-4 text-[11px] leading-relaxed text-slate-500">Voice starts the security flow. Android biometric/device credential performs the actual identity verification; speech-to-text alone is never treated as a secure voiceprint.</p>
+          <p className="mt-4 text-[11px] leading-relaxed text-slate-500">Shruthi stays silent while listening so her own speaker does not interfere. Android biometric/device credential performs the actual identity verification; speech-to-text alone is not treated as a secure voiceprint.</p>
           {error && <p className="mt-3 text-sm text-rose-300">{error}</p>}
 
           <div className="mt-5 grid gap-2 sm:grid-cols-2">
