@@ -12,6 +12,7 @@ type UpdateBridge = {
   getVersionName?: () => string;
   startAppUpdateDownload?: (url: string, versionName: string) => number;
   getAppUpdateDownloadStatus?: (downloadId: number) => string;
+  canInstallAppUpdatesAutomatically?: () => boolean;
   installAppUpdate?: (downloadId: number) => boolean;
   openExternalUrl?: (url: string) => boolean;
 };
@@ -41,6 +42,10 @@ type NativeVersion = {
 function getUpdateBridge(): UpdateBridge | undefined {
   if (typeof window === 'undefined') return undefined;
   return (window as unknown as { CentralHubNative?: UpdateBridge }).CentralHubNative;
+}
+
+function autoAttemptKey(versionCode: number) {
+  return `centralhub:auto-native-update:${versionCode}`;
 }
 
 export default function AppUpdateStatus() {
@@ -145,10 +150,10 @@ export default function AppUpdateStatus() {
         if (status === 'successful') {
           if (timer) window.clearInterval(timer);
           const opened = bridge.installAppUpdate?.(downloadId) === true;
-          if (!opened) setError('Download complete. If Android opened “Install unknown apps”, allow CentralHub, return here, and tap Update Android app again.');
+          if (!opened) setError('Update downloaded. Android may ask once for “Allow from this source”. Enable it, return to CentralHub, and the same update will continue automatically.');
         } else if (status === 'failed' || status === 'missing') {
           if (timer) window.clearInterval(timer);
-          setError('Android update download failed. Tap again to retry.');
+          setError('Android update download failed. CentralHub will retry on the next update check.');
         }
       } catch {
         // Keep polling transient native status failures.
@@ -171,7 +176,7 @@ export default function AppUpdateStatus() {
     if (mode === 'native' && bridge?.startAppUpdateDownload) {
       if (downloadStatus === 'successful' && downloadId && bridge.installAppUpdate) {
         const opened = bridge.installAppUpdate(downloadId);
-        if (!opened) setError('Allow CentralHub to install app updates in Android settings, then return and tap again.');
+        if (!opened) setError('Allow CentralHub to install app updates in Android settings, then return here.');
         return;
       }
       const id = Number(bridge.startAppUpdateDownload(latest.downloadUrl, latest.versionName) || -1);
@@ -194,6 +199,55 @@ export default function AppUpdateStatus() {
 
   const downloading = downloadStatus === 'pending' || downloadStatus === 'running' || downloadStatus === 'paused';
 
+  // New updater-enabled Android builds download a newer signed APK automatically.
+  // A per-version guard prevents route remounts or visibility changes from creating
+  // duplicate DownloadManager jobs. Older installed shells keep the manual button.
+  useEffect(() => {
+    if (mode !== 'native' || !updateRequired || !latest || downloadId || downloading) return;
+    const bridge = getUpdateBridge();
+    if (!bridge?.startAppUpdateDownload || typeof bridge.canInstallAppUpdatesAutomatically !== 'function') return;
+
+    const key = autoAttemptKey(latest.versionCode);
+    try {
+      const lastAttempt = Number(localStorage.getItem(key) || 0);
+      if (Number.isFinite(lastAttempt) && lastAttempt > 0 && Date.now() - lastAttempt < 30 * 60 * 1000) return;
+      localStorage.setItem(key, String(Date.now()));
+    } catch {
+      // Storage is only a duplicate guard; automatic updating can still proceed.
+    }
+
+    const id = Number(bridge.startAppUpdateDownload(latest.downloadUrl, latest.versionName) || -1);
+    if (id > 0) {
+      setError('');
+      setDownloadId(id);
+      setDownloadStatus('pending');
+      setDownloadProgress(0);
+    } else {
+      setError('Automatic Android update download could not start. You can tap the update button to retry.');
+    }
+  }, [mode, updateRequired, latest, downloadId, downloading]);
+
+  // If Android opened the one-time "Install unknown apps" permission screen,
+  // resume the already-downloaded update when the user returns to CentralHub.
+  useEffect(() => {
+    if (!downloadId || downloadStatus !== 'successful') return;
+    const bridge = getUpdateBridge();
+    if (!bridge?.installAppUpdate) return;
+    const retry = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (bridge.canInstallAppUpdatesAutomatically?.() === true) {
+        setError('');
+        bridge.installAppUpdate?.(downloadId);
+      }
+    };
+    document.addEventListener('visibilitychange', retry);
+    window.addEventListener('focus', retry);
+    return () => {
+      document.removeEventListener('visibilitychange', retry);
+      window.removeEventListener('focus', retry);
+    };
+  }, [downloadId, downloadStatus]);
+
   const handleClick = () => {
     if (!loading && latest && (updateRequired || mode === 'web')) {
       openUpdate();
@@ -203,7 +257,7 @@ export default function AppUpdateStatus() {
   };
 
   const label = downloading
-    ? `Downloading ${downloadProgress}%`
+    ? `Updating ${downloadProgress}%`
     : loading
       ? 'Checking Android app…'
     : updateRequired
