@@ -1,0 +1,14 @@
+/* Shruthi secure-access UX: Android owns the biometric prompt, so the web gate
+   does not need a second visible fingerprint action. The password fallback stays
+   available and expands to the full row. */
+[aria-label="Shruthi Security Login"] button:has(svg.lucide-fingerprint) {
+  display: none !important;
+}
+
+[aria-label="Shruthi Security Login"] div.grid:has(> button svg.lucide-fingerprint) {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+[aria-label="Shruthi Security Login"] div.grid:has(> button svg.lucide-fingerprint) > button:not(:has(svg.lucide-fingerprint)) {
+  width: 100%;
+}
