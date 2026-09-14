@@ -31,6 +31,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- Explicit ASSIST capability qualifies CentralHub for Android's
+                 ROLE_ASSISTANT picker on devices that enumerate assist activities
+                 in addition to VoiceInteractionService implementations. -->
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
         </activity>
 
         <!-- Android system-assistant integration. Once the user selects CentralHub
