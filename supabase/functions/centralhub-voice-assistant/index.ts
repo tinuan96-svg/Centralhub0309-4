@@ -50,13 +50,13 @@ function upstreamCode(payload: any) {
 }
 function intentsFor(text: string) {
   const v = text.toLowerCase();
-  const all = /everything|overall|full overview|summari[sz]e today|what needs attention|മൊത്തം|എല്ലാം|மொத்தம்/iu.test(v);
+  const all = /everything|overall|full overview|summari[sz]e today|what needs attention|what'?s next|next priority|മൊത്തം|എല്ലാം|ഇന്നത്തെ.*(?:സമ്മറി|സംഗ്രഹം)|எல்லாம்|மொத்தம்/iu.test(v);
   return {
     all,
     stock: all || /stock|inventory|product availability|out of stock|low stock|സ്റ്റോക്ക്|ഇൻവെന്ററി|ஸ்டாக்/iu.test(v),
     banking: all || /bank|balance|cash position|available balance|ബാങ്ക്|ബാലൻസ്|வங்கி|பேலன்ஸ்/iu.test(v),
     finance: all || /finance|payable|cashflow|p&l|pnl|expense|invoice|vat|margin|ഫിനാൻസ്|நிதி/iu.test(v),
-    orders: all || /order|sale|revenue|profit|payout|delivery|shipment|ഓർഡർ|സെയിൽ|റവന്യൂ|லாபம்|ஆர்டர்|சேல்ஸ்/iu.test(v),
+    orders: all || /order|sale|revenue|profit|payout|delivery|shipment|today|ഓർഡർ|സെയിൽ|റവന്യൂ|ഇന്ന്|லாபம்|ஆர்டர்|சேல்ஸ்|இன்று/iu.test(v),
     customers: all || /customer|buyer|repeat|lifetime|spend|കസ്റ്റമർ|வாடிக்கையாளர்/iu.test(v),
     purchase: all || /purchase|supplier|procure|\bpo\b|backorder|replenish|സപ്ലയർ|പർച്ചേസ്|சப்ளையர்/iu.test(v),
     marketing: all || /marketing|campaign|audience|traffic|google ads|meta ads|seo|മാർക്കറ്റിംഗ്|மார்க்கெட்டிங்/iu.test(v),
@@ -182,9 +182,50 @@ async function getSnapshot(db: any, userId: string, text: string) {
   return snapshot;
 }
 
+function instantReply(text: string) {
+  const v = text.toLowerCase().trim().replace(/[.!?]+$/g, "").trim();
+  if (/^(hi|hello|hey|hiya|good morning|good afternoon|good evening|ഹായ്|ഹലോ|നമസ്കാരം|வணக்கம்|ஹாய்|ஹலோ)$/iu.test(v)) {
+    const ml = /[\u0D00-\u0D7F]/.test(text);
+    return { reply: ml ? "ഹായ്, ശ്രുതി ഇവിടെ. എന്താണ് നോക്കേണ്ടത്?" : "Hi! Shruthi here. What should I check?", intent:"greeting" };
+  }
+  if (/^(thanks|thank you|thank you shruthi|thanks shruthi|നന്ദി|താങ്ക്സ്|நன்றி)$/iu.test(v)) return { reply:"Anytime.", intent:"acknowledgement" };
+  if (/^(stop|wait|pause|hold on|quiet|മതി|നിർത്തു|நிறுத்து|போதும்)$/iu.test(v)) return { reply:"Okay.", intent:"conversation_control" };
+  return null;
+}
+
 function fastReply(snapshot: any, learning: any, text: string) {
   const v = text.toLowerCase().trim();
   if (/^(?:okay\s+)?(?:stop|wait|pause|hold on|quiet|മതി|നിർത്തു)[.! ]*$/iu.test(v)) return { reply:"Okay.", intent:"conversation_control" };
+
+  const isTodaySummary = /^(?:please\s+)?(?:summari[sz]e\s+)?today(?:'s)?(?:\s+(?:summary|status|business|sales))?[.!? ]*$/iu.test(v)
+    || /ഇന്നത്തെ\s*(?:സമ്മറി|സംഗ്രഹം|സ്റ്റാറ്റസ്)?/iu.test(v)
+    || /இன்றைய\s*(?:சுருக்கம்|நிலை)?/iu.test(v);
+  if (isTodaySummary) {
+    const d=snapshot.sales.last24h,w=snapshot.sales.last7d;
+    const overdue=Number(snapshot.banking?.cashPosition?.overdue_count || 0);
+    const out=Number(snapshot.stock?.outOfStockCount || 0), low=Number(snapshot.stock?.lowStockCount || 0);
+    const openSecurity=(snapshot.security || []).filter((x:any)=>!["resolved","closed"].includes(String(x.status||"").toLowerCase())).length;
+    const openHealth=(snapshot.health || []).length;
+    const extras=[overdue?`${overdue} overdue payable${overdue===1?"":"s"}`:"",out||low?`${out} out of stock and ${low} low stock`:"",openSecurity?`${openSecurity} security alert${openSecurity===1?"":"s"}`:"",openHealth?`${openHealth} site-health issue${openHealth===1?"":"s"}`:""].filter(Boolean);
+    return { reply:`Today: ${d.orders} paid orders, ${currency(d.revenue)} revenue and ${currency(d.profit)} profit. Last 7 days: ${w.orders} orders and ${currency(w.revenue)} revenue.${extras.length?` Attention: ${extras.slice(0,3).join("; ")}.`:" No urgent exception is visible in the current snapshot."}`, intent:"daily_business_summary" };
+  }
+
+  if (/what needs attention|what'?s next|what next|next priority|next priorities|എന്താണ് ശ്രദ്ധിക്കേണ്ടത്|അടുത്തത് എന്ത്|அடுத்து என்ன/iu.test(v)) {
+    const p:string[]=[];
+    const security=(snapshot.security || []).filter((x:any)=>!["resolved","closed"].includes(String(x.status||"").toLowerCase()));
+    const health=(snapshot.health || []);
+    const overdue=Number(snapshot.banking?.cashPosition?.overdue_count || 0);
+    const due7=Number(snapshot.banking?.cashPosition?.due_7_days || 0);
+    const out=Number(snapshot.stock?.outOfStockCount || 0), low=Number(snapshot.stock?.lowStockCount || 0);
+    if (health.some((x:any)=>["critical","high"].includes(String(x.severity||x.risk_level||"").toLowerCase()))) p.push("high-priority site-health issues");
+    if (security.length) p.push(`${security.length} open security alert${security.length===1?"":"s"}`);
+    if (overdue) p.push(`${overdue} overdue payable${overdue===1?"":"s"}`);
+    else if (due7>0) p.push(`${currency(due7)} due within 7 days`);
+    if (out || low) p.push(`${out} out-of-stock and ${low} low-stock products`);
+    if (snapshot.sales.last24h.orders===0) p.push("no paid orders recorded in the last 24 hours");
+    return { reply:p.length?`Priority now: ${p.slice(0,4).join("; ")}.`:`Nothing urgent is flagged in the current CentralHub snapshot.`, intent:"next_priority_brief" };
+  }
+
   if (snapshot.intent.banking && /bank|balance|cash|ബാങ്ക്|ബാലൻസ്|வங்கி|பேலன்ஸ்/iu.test(v)) {
     const accounts = snapshot.banking?.accounts || [];
     const usable = accounts.filter((a:any)=>Number.isFinite(Number(a.current_balance)));
@@ -203,7 +244,7 @@ function fastReply(snapshot: any, learning: any, text: string) {
     }
     if (/stock|inventory|സ്റ്റോക്ക്|ஸ்டாக்/iu.test(v)) return { reply:`Across the active catalogue, I can see ${snapshot.stock.totalActiveProducts} products and ${snapshot.stock.totalUnits} recorded units. ${snapshot.stock.lowStockCount} are low stock and ${snapshot.stock.outOfStockCount} are out of stock.`, intent:"stock_status" };
   }
-  if (snapshot.intent.orders && /sales?|revenue|profit|orders? today|today.*orders?|സെയിൽ|റവന്യൂ|ലാഭം|ഓർഡർ|சேல்ஸ்|லாபம்/iu.test(v)) {
+  if (snapshot.intent.orders && /sales?|revenue|profit|orders? today|today.*orders?|today|സെയിൽ|റവന്യൂ|ലാഭം|ഓർഡർ|ഇന്ന്|சேல்ஸ்|லாபம்|இன்று/iu.test(v)) {
     const d=snapshot.sales.last24h,w=snapshot.sales.last7d;
     return { reply:`In the last 24 hours: ${d.orders} paid orders, ${currency(d.revenue)} revenue and ${currency(d.profit)} profit. Over 7 days: ${w.orders} paid orders, ${currency(w.revenue)} revenue and ${currency(w.profit)} profit.`, intent:"sales_summary" };
   }
@@ -218,11 +259,24 @@ function fastReply(snapshot: any, learning: any, text: string) {
 }
 
 async function storeHistory(db:any,userId:string,text:string,result:any,meta:any) {
-  const { error } = await db.from("voice_assistant_commands").insert({
-    user_id:userId, mode:result.mode || "operations", input_text:text, response_text:result.reply, intent:result.intent || "general", risk_level:result.risk_level || "read_only", requires_confirmation:false, action_name:null,
-    action_payload:{ assistant_name:"Shruthi", access_mode:"page_independent_read_only", ...meta }, status:"completed"
-  });
-  if (error) console.error("voice history insert failed",error.message);
+  const latency=meta?.latency_ms || {};
+  const model=String(meta?.model || (meta?.fast_path ? "deterministic-fast-path" : "unknown"));
+  const [historyRes, usageRes] = await Promise.all([
+    db.from("voice_assistant_commands").insert({
+      user_id:userId, mode:result.mode || "operations", input_text:text, response_text:result.reply, intent:result.intent || "general", risk_level:result.risk_level || "read_only", requires_confirmation:false, action_name:null,
+      action_payload:{ assistant_name:"Shruthi", access_mode:"page_independent_read_only", ...meta }, status:"completed"
+    }),
+    db.from("ai_usage_logs").insert({
+      feature:"centralhub_voice_assistant",
+      model,
+      request_type:meta?.fast_path ? "fast_path" : "command",
+      duration_ms:Number.isFinite(Number(latency?.total)) ? Number(latency.total) : null,
+      status:meta?.degraded ? "degraded" : "success",
+      metadata:{ snapshot_ms:latency?.snapshot ?? null, model_ms:latency?.model ?? null, fast_path:!!meta?.fast_path, degraded:!!meta?.degraded, page_context:meta?.page_context || null }
+    })
+  ]);
+  if (historyRes.error) console.error("voice history insert failed",historyRes.error.message);
+  if (usageRes.error) console.error("voice usage insert failed",usageRes.error.message);
 }
 
 Deno.serve(async (req: Request) => {
@@ -247,18 +301,28 @@ Deno.serve(async (req: Request) => {
     try{
       const bytes=decodeBase64(audioBase64), ext=mimeType.includes("mp4")?"m4a":mimeType.includes("ogg")?"ogg":mimeType.includes("wav")?"wav":"webm";
       const form=new FormData(); form.append("file",new File([bytes],`centralhub-command.${ext}`,{type:mimeType})); form.append("model",Deno.env.get("CENTRALHUB_TRANSCRIBE_MODEL")||"gpt-4o-transcribe"); form.append("prompt",TRANSCRIBE_HINT);
-      const response=await fetch("https://api.openai.com/v1/audio/transcriptions",{method:"POST",headers:{Authorization:`Bearer ${openaiKey}`},body:form});
+      const response=await fetch("https://api.openai.com/v1/audio/transcriptions",{method:"POST",headers:{Authorization:`Bearer ${openaiKey}`},body:form,signal:AbortSignal.timeout(15000)});
       const payload=await response.json().catch(()=>null);
       if(!response.ok) return send(502,{success:false,error:"transcription_failed",status:response.status,upstream_code:upstreamCode(payload)});
       const transcript=String(payload?.text||"").trim(); if(!transcript) return send(422,{success:false,error:"empty_transcript"});
       return send(200,{success:true,transcript,latency_ms:Date.now()-started});
-    }catch(e){return send(500,{success:false,error:e instanceof Error?e.message:"transcription_error"});}
+    }catch(e:any){
+      const timeout=e?.name==="TimeoutError" || e?.name==="AbortError";
+      return send(timeout?504:500,{success:false,error:timeout?"transcription_timeout":(e instanceof Error?e.message:"transcription_error")});
+    }
   }
 
   if(action!=="command") return send(400,{success:false,error:"invalid_action"});
-  if(!openaiKey) return send(503,{success:false,error:"openai_not_configured"});
   const text=String(body?.text||"").trim().slice(0,6000), requestedMode=["operations","board","developer"].includes(String(body?.mode))?String(body.mode):"operations", pageContext=String(body?.page_context||"").trim().slice(0,300);
   if(!text) return send(400,{success:false,error:"missing_command"});
+
+  const instant=instantReply(text);
+  if(instant){
+    const final={...instant,mode:requestedMode,risk_level:"read_only",requires_confirmation:false,suggested_action:null,navigation_path:null,speak:true};
+    const total=Date.now()-started;
+    await storeHistory(db,user.id,text,final,{page_context:pageContext,fast_path:true,model:"deterministic-instant",latency_ms:{snapshot:0,model:0,total}});
+    return send(200,{success:true,transcript:text,...final,status:"completed",access_mode:"page_independent_read_only",latency_ms:{snapshot:0,model:0,total}});
+  }
 
   const contextStart=Date.now();
   const [snapshot,projectKnowledge,learning]=await Promise.all([getSnapshot(db,user.id,text),getProjectKnowledge(db,text),getLearningContext(db,text)]);
@@ -267,24 +331,55 @@ Deno.serve(async (req: Request) => {
   if(quick){
     const final={...quick,mode:requestedMode,risk_level:"read_only",requires_confirmation:false,suggested_action:null,navigation_path:null,speak:true};
     const total=Date.now()-started;
-    await storeHistory(db,user.id,text,final,{page_context:pageContext,fast_path:true,latency_ms:{snapshot:contextMs,model:0,total},knowledge_topics:projectKnowledge.map((x:any)=>`${x.scope}:${x.topic}`),learning_signals:(learning.insights||[]).map((x:any)=>x.title)});
+    await storeHistory(db,user.id,text,final,{page_context:pageContext,fast_path:true,model:"deterministic-fast-path",latency_ms:{snapshot:contextMs,model:0,total},knowledge_topics:projectKnowledge.map((x:any)=>`${x.scope}:${x.topic}`),learning_signals:(learning.insights||[]).map((x:any)=>x.title)});
     return send(200,{success:true,transcript:text,...final,status:"completed",access_mode:"page_independent_read_only",latency_ms:{snapshot:contextMs,model:0,total}});
+  }
+
+  if(!openaiKey){
+    const final={reply:"I have the live CentralHub snapshot, but the language model is temporarily unavailable. Ask me a specific sales, stock, bank, security or status question and I can answer from the fast path.",intent:"assistant_degraded",mode:requestedMode,risk_level:"read_only",requires_confirmation:false,suggested_action:null,navigation_path:null,speak:true};
+    const total=Date.now()-started;
+    await storeHistory(db,user.id,text,final,{page_context:pageContext,fast_path:false,degraded:true,model:"unavailable",latency_ms:{snapshot:contextMs,model:0,total}});
+    return send(200,{success:true,transcript:text,...final,status:"degraded",access_mode:"page_independent_read_only",latency_ms:{snapshot:contextMs,model:0,total}});
   }
 
   const prompt=`You are Shruthi (ശ്രുതി), the private executive assistant and overall business manager for CentralHub's sole super-admin. Match the user's Malayalam/English/Tamil mix naturally. Be human-like, warm and concise; for finance, payments, security, legal or incidents become precise and serious. The current UI page never limits your READ access. LIVE SNAPSHOT is current operational truth. PROJECT KNOWLEDGE contains stable architecture/rules. LEARNED INTELLIGENCE is sourced continuous web research: use it as current advisory expertise, mention uncertainty when relevant, and never treat a recommendation as already implemented. Live verified state always wins conflicts. Do not make internal edits from this endpoint. External public-site work may be delegated to Shruthi Live Web; do not refuse it merely because this endpoint is read-only. Passwords, OTP/2FA, CAPTCHA, identity secrets and consequential final actions require takeover/approval. Ordinary spoken replies should usually be 1-3 natural sentences; only go deep when explicitly asked. Return JSON only with reply,intent,mode,risk_level,requires_confirmation,suggested_action,navigation_path,speak.\nPAGE:${pageContext||"unknown"}\nMODE:${requestedMode}\nUSER:${text}\nPROJECT KNOWLEDGE:${JSON.stringify(projectKnowledge)}\nLEARNED INTELLIGENCE:${JSON.stringify(learning)}\nLIVE SNAPSHOT:${JSON.stringify(snapshot)}`;
   const configured=String(Deno.env.get("CENTRALHUB_VOICE_MODEL")||Deno.env.get("OPENAI_MODEL_FAST")||"").trim();
   const models=Array.from(new Set(["gpt-5.6-luna",configured,"gpt-5.6-terra"].filter(Boolean)));
   const deep=/\b(deep|deeply|detailed|fully|audit|investigate|analyse|analyze|compare|full scan)\b|ഡീറ്റെയിൽ|ഡീപ്|ഓഡിറ്റ്|വിശദമായി/iu.test(text);
-  let raw:any=null, aiResponse:Response|null=null, usedModel=""; const modelStart=Date.now();
+  let raw:any=null, aiResponse:Response|null=null, usedModel="", fetchFailure=""; const modelStart=Date.now();
   for(const model of models){
     usedModel=model;
-    aiResponse=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:{Authorization:`Bearer ${openaiKey}`,"Content-Type":"application/json"},body:JSON.stringify({model,store:false,reasoning:{effort:deep?"medium":"none"},input:prompt,max_output_tokens:deep?1000:280,text:{format:{type:"json_schema",name:"centralhub_voice_reply",strict:true,schema:{type:"object",additionalProperties:false,properties:{reply:{type:"string"},intent:{type:"string"},mode:{type:"string",enum:["operations","board","developer"]},risk_level:{type:"string",enum:["read_only","low","medium","high"]},requires_confirmation:{type:"boolean"},suggested_action:{type:["string","null"]},navigation_path:{type:["string","null"]},speak:{type:"boolean"}},required:["reply","intent","mode","risk_level","requires_confirmation","suggested_action","navigation_path","speak"]}}}})});
-    raw=await aiResponse.json().catch(()=>null); if(aiResponse.ok) break;
+    try{
+      aiResponse=await fetch("https://api.openai.com/v1/responses",{
+        method:"POST",
+        headers:{Authorization:`Bearer ${openaiKey}`,"Content-Type":"application/json"},
+        signal:AbortSignal.timeout(deep?20000:7000),
+        body:JSON.stringify({model,store:false,reasoning:{effort:deep?"medium":"none"},input:prompt,max_output_tokens:deep?900:220,text:{format:{type:"json_schema",name:"centralhub_voice_reply",strict:true,schema:{type:"object",additionalProperties:false,properties:{reply:{type:"string"},intent:{type:"string"},mode:{type:"string",enum:["operations","board","developer"]},risk_level:{type:"string",enum:["read_only","low","medium","high"]},requires_confirmation:{type:"boolean"},suggested_action:{type:["string","null"]},navigation_path:{type:["string","null"]},speak:{type:"boolean"}},required:["reply","intent","mode","risk_level","requires_confirmation","suggested_action","navigation_path","speak"]}}}})
+      });
+      raw=await aiResponse.json().catch(()=>null);
+    }catch(e:any){
+      fetchFailure=(e?.name==="TimeoutError"||e?.name==="AbortError")?"model_timeout":"model_fetch_error";
+      aiResponse=null;
+      break;
+    }
+    if(aiResponse.ok) break;
     const code=upstreamCode(raw); if(!(aiResponse.status===404&&(code==="model_not_found"||code==="not_found_error"))) break;
   }
   const modelMs=Date.now()-modelStart;
-  if(!aiResponse?.ok) return send(502,{success:false,error:"assistant_failed",status:aiResponse?.status||502,upstream_code:upstreamCode(raw),attempted_model:usedModel||null,latency_ms:Date.now()-started});
-  let result:any; try{result=JSON.parse(textOut(raw).trim());}catch{return send(502,{success:false,error:"invalid_assistant_output",latency_ms:Date.now()-started});}
+  if(!aiResponse?.ok){
+    const d=snapshot.sales.last24h;
+    const fallback=`I stopped a slow analysis request instead of leaving you waiting. Current snapshot: ${d.orders} paid orders, ${currency(d.revenue)} revenue and ${currency(d.profit)} profit in the last 24 hours. Ask the same question again or ask for sales, stock, bank balance, security, or today's summary for an instant data answer.`;
+    const final={reply:fallback,intent:"assistant_degraded",mode:requestedMode,risk_level:"read_only",requires_confirmation:false,suggested_action:null,navigation_path:null,speak:true};
+    const total=Date.now()-started;
+    await storeHistory(db,user.id,text,final,{page_context:pageContext,fast_path:false,degraded:true,model:usedModel||"unknown",failure:fetchFailure||upstreamCode(raw)||"assistant_failed",latency_ms:{snapshot:contextMs,model:modelMs,total}});
+    return send(200,{success:true,transcript:text,...final,status:"degraded",access_mode:"page_independent_read_only",latency_ms:{snapshot:contextMs,model:modelMs,total}});
+  }
+  let result:any; try{result=JSON.parse(textOut(raw).trim());}catch{
+    const final={reply:"I got the data, but the response format was invalid. Please ask that once more.",intent:"assistant_degraded",mode:requestedMode,risk_level:"read_only",requires_confirmation:false,suggested_action:null,navigation_path:null,speak:true};
+    const total=Date.now()-started;
+    await storeHistory(db,user.id,text,final,{page_context:pageContext,fast_path:false,degraded:true,model:usedModel,latency_ms:{snapshot:contextMs,model:modelMs,total}});
+    return send(200,{success:true,transcript:text,...final,status:"degraded",access_mode:"page_independent_read_only",latency_ms:{snapshot:contextMs,model:modelMs,total}});
+  }
   const final={reply:String(result?.reply||"Shruthi is ready.").slice(0,5000),intent:String(result?.intent||"general").slice(0,200),mode:["operations","board","developer"].includes(String(result?.mode))?String(result.mode):requestedMode,risk_level:["read_only","low","medium","high"].includes(String(result?.risk_level))?String(result.risk_level):"read_only",requires_confirmation:false,suggested_action:null,navigation_path:typeof result?.navigation_path==="string"?result.navigation_path:null,speak:result?.speak!==false};
   const total=Date.now()-started;
   await storeHistory(db,user.id,text,final,{page_context:pageContext,model:usedModel,fast_path:false,latency_ms:{snapshot:contextMs,model:modelMs,total},knowledge_topics:projectKnowledge.map((x:any)=>`${x.scope}:${x.topic}`),learning_signals:(learning.insights||[]).map((x:any)=>x.title)});
