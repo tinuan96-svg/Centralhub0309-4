@@ -166,6 +166,7 @@ public final class CentralHubNativeBridge {
     @JavascriptInterface
     public boolean speakTara(String text, String languageTag) {
         if (text == null || text.trim().isEmpty()) return false;
+        if (!activity.isNoraConversationActive()) return false;
         final String speech = text.trim();
         final String requestedLanguage = languageTag == null || languageTag.trim().isEmpty() ? "en-GB" : languageTag.trim();
 
@@ -182,6 +183,13 @@ public final class CentralHubNativeBridge {
         final Locale selectedLocale = selectSupportedLocale(currentTts, locale);
 
         activity.runOnUiThread(() -> {
+            if (!activity.isNoraConversationActive()) {
+                pendingSpeech = "";
+                pendingLanguageTag = "en-GB";
+                activity.setTaraSpeaking(false);
+                return;
+            }
+
             TextToSpeech tts = taraTts;
             if (tts == null || !taraTtsReady) {
                 pendingSpeech = speech;
@@ -189,6 +197,7 @@ public final class CentralHubNativeBridge {
                 return;
             }
 
+            activity.setTaraSpeechContext(speech);
             activity.setTaraSpeaking(true);
             tts.setLanguage(selectedLocale);
             tts.setSpeechRate(0.93f);
