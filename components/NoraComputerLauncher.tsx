@@ -26,6 +26,10 @@ type Target = { key: string; system: string; url: string };
 const TARGETS: Target[] = [
   { key: 'meta_business', system: 'Meta Business', url: 'https://business.facebook.com/' },
   { key: 'facebook', system: 'Facebook', url: 'https://www.facebook.com/' },
+  { key: 'instagram', system: 'Instagram', url: 'https://www.instagram.com/' },
+  { key: 'spotify', system: 'Spotify', url: 'https://www.spotify.com/' },
+  { key: 'shopify', system: 'Shopify', url: 'https://admin.shopify.com/' },
+  { key: 'web_search', system: 'Web Search', url: 'https://www.google.com/' },
   { key: 'google_ads', system: 'Google Ads', url: 'https://ads.google.com/' },
   { key: 'google_merchant', system: 'Google Merchant Center', url: 'https://merchants.google.com/' },
   { key: 'google_analytics', system: 'Google Analytics', url: 'https://analytics.google.com/' },
@@ -55,11 +59,15 @@ function targetFor(text: string): Target | null {
   if (/\b(search console|google search console)\b/.test(value)) return targetByKey('google_search_console');
   if (/\b(google business profile|google business|business profile)\b/.test(value)) return targetByKey('google_business');
   if (/\b(google account|gmail account)\b/.test(value)) return targetByKey('google_account');
-  if (/\b(meta business|business manager|business suite|meta ads|facebook ads|ads manager|instagram business)\b/.test(value)) return targetByKey('meta_business');
+  if (/\b(instagram account|instagram profile|instagram signup|instagram sign up|create instagram|open instagram)\b/.test(value)) return targetByKey('instagram');
+  if (/\b(meta business|business manager|business suite|meta ads|facebook ads|ads manager|instagram business|connect instagram)\b/.test(value)) return targetByKey('meta_business');
   if (/\b(facebook account|facebook page|facebook)\b/.test(value)) return targetByKey('facebook');
+  if (/\bspotify\b/.test(value)) return targetByKey('spotify');
+  if (/\bshopify\b/.test(value)) return targetByKey('shopify');
   if (/\bgithub\b/.test(value)) return targetByKey('github');
   if (/\bnetlify\b/.test(value)) return targetByKey('netlify');
   if (/\bsupabase\b/.test(value)) return targetByKey('supabase');
+  if (/\b(search the web|search web|look up online|lookup online|research online|browse the web|browse web|find online|check online|scan website|visit website|check website|external source|from the web|on the web)\b/.test(value)) return targetByKey('web_search');
   return null;
 }
 
@@ -77,6 +85,11 @@ function targetFromCommand(command: VoiceCommand | null): Target | null {
       if (url.protocol === 'https:') {
         const known = TARGETS.find((item) => new URL(item.url).hostname === url.hostname);
         if (known) return { ...known, url: payloadUrl, system: payloadSystem || known.system };
+        return {
+          key: String(payload.computer_target_key || 'external_web').trim().toLowerCase() || 'external_web',
+          system: payloadSystem || url.hostname,
+          url: payloadUrl,
+        };
       }
     } catch {
       // Ignore invalid backend URLs and fall back to deterministic task matching.
@@ -228,7 +241,7 @@ export default function NoraComputerLauncher() {
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-semibold">Shruthi Live Action</h3><button type="button" onClick={() => setDismissed(command.id)} className="rounded-lg p-1 text-slate-400 hover:bg-white/10" aria-label="Dismiss"><X className="h-4 w-4" /></button></div>
           <p className="mt-1 text-xs leading-relaxed text-slate-400">Shruthi resolved this task to <strong className="text-slate-200">{target.system}</strong>. She will work visibly and pause for login, OTP, CAPTCHA, missing business details or consequential approval.</p>
-          <div className="mt-3 flex items-center gap-2 text-[10px] text-emerald-300"><ShieldCheck className="h-3.5 w-3.5" />No task defaults to Facebook. The requested system is resolved per instruction.</div>
+          <div className="mt-3 flex items-center gap-2 text-[10px] text-emerald-300"><ShieldCheck className="h-3.5 w-3.5" />The requested site is resolved per instruction; no task defaults to Facebook.</div>
           {error && <p className="mt-2 text-xs text-rose-300">{error}</p>}
           <button type="button" disabled={busy} onClick={() => void start()} className="mt-3 w-full rounded-xl bg-cyan-400 px-3 py-2.5 text-sm font-semibold text-slate-950 disabled:opacity-50">{busy ? 'Starting…' : `Open ${target.system} & continue`}</button>
         </div>
