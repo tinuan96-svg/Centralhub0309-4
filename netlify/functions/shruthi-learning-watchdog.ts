@@ -1,6 +1,3 @@
-import { createClient } from '@supabase/supabase-js';
-import { runShruthiLearning } from '../../lib/server/shruthiLearning';
-
 export const config = {
   schedule: '17 */6 * * *',
 };
@@ -21,12 +18,21 @@ export default async function shruthiLearningWatchdog() {
     ''
   ).trim();
 
-  if (!supabaseUrl || !serviceRoleKey) return json({ success: false, error: 'Shruthi Learning database configuration is missing.' }, 500);
+  if (!supabaseUrl || !serviceRoleKey) {
+    return json({ success: false, error: 'Shruthi Learning scheduler configuration is missing.' }, 500);
+  }
 
   try {
-    const db = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
-    const result = await runShruthiLearning(db, { source: 'scheduled' });
-    return json(result as Record<string, unknown>, result.success ? 200 : 207);
+    const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/shruthi-continuous-learning`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${serviceRoleKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ source: 'scheduled' }),
+    });
+    const result = await response.json().catch(() => ({ success: false, error: `Learning worker returned HTTP ${response.status}` }));
+    return json(result as Record<string, unknown>, response.ok ? 200 : 207);
   } catch (error: any) {
     return json({ success: false, error: error?.message || 'Shruthi Learning watchdog failed.' }, 500);
   }
