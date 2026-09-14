@@ -21,12 +21,12 @@ const TRUST_WINDOW_MS = 5 * 60_000;
 const RELOCK_AFTER_MS = 5 * 60_000;
 const IDENTITY_WINDOW_MS = 10_000;
 const TRUST_KEY_PREFIX = 'centralhub:shruthi-security-trusted-until:';
-const SHRUTHI_NAME = '(?:shruthi|shruti|sruthi|sruti|shrudhi|shroothi|shrooti|ശ്രുതി|ശ്രൂതി|ஸ்ருதி|ஸ்ரூதி)';
-const TINU_NAME = '(?:tinu|tino|teenu|tenu)';
+const SHRUTHI_NAME = '(?:shruthi|shruti|sruthi|sruti|shrudhi|srudhi|shroothi|shrooti|sudhi|sudi|suthi|shudi|shuti|sweetie|sweety|ശ്രുതി|ശ്രൂതി|ஸ்ருதி|ஸ்ரூதி)';
+const TINU_NAME = '(?:tinu|tino|teenu|tenu|jinu|jino|ginu|chino|cheenu)';
 const SHRUTHI_SIGNAL = new RegExp(SHRUTHI_NAME, 'iu');
 const TINU_SIGNAL = new RegExp(`\\b${TINU_NAME}\\b`, 'iu');
-const SELF_IDENTITY_PHRASE = new RegExp(`(?:this\\s+is|i\\s+am|i'?m|its|it's)\\s+${TINU_NAME}\\b`, 'iu');
-const FULL_IDENTITY_PHRASE = new RegExp(`${SHRUTHI_NAME}.*?(?:this\\s+is|i\\s+am|i'?m|its|it's)\\s+${TINU_NAME}\\b|(?:this\\s+is|i\\s+am|i'?m|its|it's)\\s+${TINU_NAME}\\b.*?${SHRUTHI_NAME}`, 'iu');
+const SELF_IDENTITY_PHRASE = new RegExp(`(?:this\\s+is|i\\s+am|i'?m|it\\s+is|its|it's)\\s+${TINU_NAME}\\b`, 'iu');
+const FULL_IDENTITY_PHRASE = new RegExp(`${SHRUTHI_NAME}.*?(?:this\\s+is|i\\s+am|i'?m|it\\s+is|its|it's)\\s+${TINU_NAME}\\b|(?:this\\s+is|i\\s+am|i'?m|it\\s+is|its|it's)\\s+${TINU_NAME}\\b.*?${SHRUTHI_NAME}`, 'iu');
 const WAKE_ONLY = new RegExp(`^(?:hi\\s+|hello\\s+|hey\\s+)?${SHRUTHI_NAME}[.!?\\s]*$`, 'iu');
 const STOP_PHRASE = /^(?:(?:ok|okay|please|hey)\s+)?(?:stop|stop it|wait|pause|hold on|enough|quiet|shh)(?:\s+(?:please|now))?[.!?\s]*$|^(?:മതി|നിർത്തു|നിർത്തൂ|സ്റ്റോപ്പ്|போதும்|நிறுத்து|ஸ்டாப்)[.!?\s]*$/iu;
 
@@ -66,7 +66,6 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
   const hiddenAtRef = useRef<number | null>(null);
   const verifyTimerRef = useRef<number | null>(null);
   const verifyStartedAtRef = useRef(0);
-  const rearmTimerRef = useRef<number | null>(null);
   const identityArmedUntilRef = useRef(0);
   const [status, setStatus] = useState('Listening · say your security phrase');
   const [heard, setHeard] = useState('');
@@ -84,64 +83,46 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
     verifyStartedAtRef.current = 0;
   }, []);
 
-  const clearRearmTimer = useCallback(() => {
-    if (rearmTimerRef.current) window.clearTimeout(rearmTimerRef.current);
-    rearmTimerRef.current = null;
-  }, []);
-
   const setGlobalLock = useCallback((value: boolean) => {
     lockedRef.current = value;
     setLocked(value);
     if (typeof window !== 'undefined') (window as any).__centralHubSecurityLocked = value;
   }, []);
 
-  const hardRearmVoice = useCallback((delay = 0) => {
-    clearRearmTimer();
-    rearmTimerRef.current = window.setTimeout(() => {
-      if (!lockedRef.current) return;
-      const bridge = nativeBridge();
-      if (bridge?.getPlatform?.() !== 'android') return;
-      try {
-        bridge.stopTaraTts?.();
-        bridge.setTaraEnabled?.(false);
-        window.setTimeout(() => {
-          if (!lockedRef.current) return;
-          try {
-            const latest = nativeBridge();
-            latest?.setTaraEnabled?.(true);
-            latest?.setNoraConversationActive?.(true);
-            setStatus((current) => current.includes('verif') ? current : 'Listening · say “Hi Shruthi, this is Tinu”');
-          } catch { }
-        }, 140);
-      } catch { }
-    }, delay);
-  }, [clearRearmTimer]);
+  const ensureVoiceListening = useCallback(() => {
+    if (!lockedRef.current) return;
+    const bridge = nativeBridge();
+    if (bridge?.getPlatform?.() !== 'android') return;
+    try {
+      // Keep one recognizer session alive. Do not use the old Off -> On hard reset:
+      // Samsung plays a loud pair of system tones when SpeechRecognizer is cancelled
+      // and restarted, and repeated resets also make wake recognition less reliable.
+      bridge.setTaraEnabled?.(true);
+      bridge.setNoraConversationActive?.(true);
+      setStatus((current) => current.includes('verif') ? current : 'Listening · say “Hi Shruthi, this is Tinu”');
+    } catch { }
+  }, []);
 
   const lock = useCallback(() => {
     clearVerifyPoll();
-    clearRearmTimer();
     identityArmedUntilRef.current = 0;
     const bridge = nativeBridge();
     if (!user || bridge?.getPlatform?.() !== 'android') {
       setGlobalLock(false);
       return;
     }
+
     setHeard('');
     setError('');
     setFallback(false);
     setStatus('Listening · say “Hi Shruthi, this is Tinu”');
     setGlobalLock(true);
-    try {
-      bridge.stopTaraTts?.();
-      bridge.setTaraEnabled?.(true);
-      bridge.setNoraConversationActive?.(true);
-      hardRearmVoice(120);
-    } catch { }
-  }, [clearRearmTimer, clearVerifyPoll, hardRearmVoice, setGlobalLock, user]);
+    try { bridge.stopTaraTts?.(); } catch { }
+    window.setTimeout(ensureVoiceListening, 40);
+  }, [clearVerifyPoll, ensureVoiceListening, setGlobalLock, user]);
 
   const unlock = useCallback(() => {
     clearVerifyPoll();
-    clearRearmTimer();
     identityArmedUntilRef.current = 0;
     const bridge = nativeBridge();
     setGlobalLock(false);
@@ -156,11 +137,10 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
       bridge?.setNoraConversationActive?.(false);
       bridge?.setTaraEnabled?.(true);
     } catch { }
-  }, [clearRearmTimer, clearVerifyPoll, setGlobalLock, user?.id]);
+  }, [clearVerifyPoll, setGlobalLock, user?.id]);
 
   const beginSecureVerification = useCallback(() => {
     clearVerifyPoll();
-    clearRearmTimer();
     setError('');
     setStatus('Voice accepted · verify your device identity…');
     const bridge = nativeBridge();
@@ -168,8 +148,9 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
     try { started = bridge?.requestSecureUnlock?.() === true; } catch { started = false; }
     if (!started) {
       setStatus('Secure device verification unavailable');
-      setError('Use Login ID & password, or tap Verify securely after updating the Android app.');
+      setError('Use Login ID & password, or tap Verify securely.');
       setFallback(true);
+      ensureVoiceListening();
       return;
     }
 
@@ -180,10 +161,10 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
       if (!result) {
         if (Date.now() - verifyStartedAtRef.current > 60_000) {
           clearVerifyPoll();
-          setStatus('Identity verification timed out');
+          setStatus('Identity verification timed out · listening again');
           setError('Try again or use Login ID & password.');
           setFallback(true);
-          hardRearmVoice(200);
+          ensureVoiceListening();
         }
         return;
       }
@@ -193,18 +174,20 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
         unlock();
         return;
       }
-      setStatus('Identity verification not completed');
-      setError(result === 'cancelled' ? 'Verification cancelled. Say “Shruthi” to retry or use secure login.' : 'Device identity did not verify. Try again or use secure login.');
+
+      setStatus('Identity verification not completed · listening again');
+      setError(result === 'cancelled' ? 'Verification cancelled. Say the phrase again or use secure login.' : 'Device identity did not verify. Try again or use secure login.');
       setFallback(true);
-      hardRearmVoice(260);
+      ensureVoiceListening();
     }, 250);
-  }, [clearRearmTimer, clearVerifyPoll, hardRearmVoice, unlock]);
+  }, [clearVerifyPoll, ensureVoiceListening, unlock]);
 
   useEffect(() => {
     if (!user) {
       setGlobalLock(false);
       return;
     }
+
     if (readTrustedUntil(user.id) > Date.now()) {
       setGlobalLock(false);
       try {
@@ -216,11 +199,9 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
       clearTrustedUntil(user.id);
       lock();
     }
-    return () => {
-      clearVerifyPoll();
-      clearRearmTimer();
-    };
-  }, [clearRearmTimer, clearVerifyPoll, lock, setGlobalLock, user?.id]);
+
+    return () => clearVerifyPoll();
+  }, [clearVerifyPoll, lock, setGlobalLock, user?.id]);
 
   useEffect(() => {
     const onVisibility = () => {
@@ -228,6 +209,7 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
         hiddenAtRef.current = Date.now();
         return;
       }
+
       const now = Date.now();
       const hiddenAt = hiddenAtRef.current;
       hiddenAtRef.current = null;
@@ -244,27 +226,29 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
         return;
       }
 
-      if (lockedRef.current) hardRearmVoice(120);
+      if (lockedRef.current) ensureVoiceListening();
       else {
         clearTrustedUntil(user.id);
         lock();
       }
     };
+
     const onFocus = () => {
       if (!user?.id) return;
       if (readTrustedUntil(user.id) > Date.now()) {
         setGlobalLock(false);
         return;
       }
-      if (lockedRef.current) hardRearmVoice(120);
+      if (lockedRef.current) ensureVoiceListening();
     };
+
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('focus', onFocus);
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('focus', onFocus);
     };
-  }, [hardRearmVoice, lock, setGlobalLock, user?.id]);
+  }, [ensureVoiceListening, lock, setGlobalLock, user?.id]);
 
   useEffect(() => {
     const onTranscript = (event: Event) => {
@@ -313,15 +297,16 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
         }
 
         if (mentionsTinu && now < identityArmedUntilRef.current) {
+          identityArmedUntilRef.current = 0;
           setError('');
           setStatus('Identity heard · starting secure verification…');
           beginSecureVerification();
           return;
         }
 
-        setStatus('Almost there · listening again');
+        setStatus('Almost there · still listening');
         setError('Say “Shruthi” then “This is Tinu”, or say the full phrase naturally.');
-        hardRearmVoice(220);
+        ensureVoiceListening();
         return;
       }
 
@@ -336,7 +321,7 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
 
     window.addEventListener('centralhub:tara-transcript', onTranscript as EventListener, true);
     return () => window.removeEventListener('centralhub:tara-transcript', onTranscript as EventListener, true);
-  }, [beginSecureVerification, hardRearmVoice]);
+  }, [beginSecureVerification, ensureVoiceListening]);
 
   const passwordLogin = async (event: FormEvent) => {
     event.preventDefault();
