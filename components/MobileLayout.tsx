@@ -14,6 +14,7 @@ import NoraConversationSessionSync from './NoraConversationSessionSync';
 import NoraLiveActionOverlay from './NoraLiveActionOverlay';
 import NoraComputerLauncher from './NoraComputerLauncher';
 import ShruthiIdentitySkin from './ShruthiIdentitySkin';
+import ShruthiSystemInvocationBridge from './ShruthiSystemInvocationBridge';
 import QuickActionsFab from '@/app/dashboard/components/QuickActionsFab';
 import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
 import { useState, useEffect } from 'react';
@@ -25,8 +26,6 @@ export default function MobileLayout({ children }: MobileLayoutProps) {
   const isLoginPage = pathname === '/login';
   const section = pathname.split('/')[1] || 'dashboard';
   const isSupportInbox = pathname.startsWith('/customer-care/inbox');
-  // Keep the narrow cover display in the mobile shell. The unfolded Fold
-  // starts at the shared fold-inner breakpoint and uses the desktop shell.
   const isMobile = useMediaQuery('(max-width: 699px)');
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
@@ -54,6 +53,7 @@ export default function MobileLayout({ children }: MobileLayoutProps) {
       <NoraAdaptiveVoiceNormalizer />
       <NoraWakeListenerRecovery />
       <CentralHubVoiceAssistant />
+      <ShruthiSystemInvocationBridge />
       <NoraConversationSessionSync />
       <NoraComputerLauncher />
       <NoraLiveActionOverlay />
@@ -71,6 +71,7 @@ export default function MobileLayout({ children }: MobileLayoutProps) {
       <NoraAdaptiveVoiceNormalizer />
       <NoraWakeListenerRecovery />
       <CentralHubVoiceAssistant />
+      <ShruthiSystemInvocationBridge />
       <NoraConversationSessionSync />
       <NoraComputerLauncher />
       <NoraLiveActionOverlay />
