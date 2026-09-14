@@ -35,6 +35,7 @@ public class MainActivity extends BridgeActivity {
     private final Handler taraHandler = new Handler(Looper.getMainLooper());
     private final Runnable taraRestartRunnable = this::startTaraRecognizerIfReady;
     private final Runnable taraStartWatchdogRunnable = this::recoverStalledTaraStart;
+    private final Runnable taraPartialWakeDispatchRunnable = this::dispatchPendingPartialWake;
     private SpeechRecognizer taraRecognizer;
     private Intent taraRecognizerIntent;
     private CentralHubNativeBridge nativeBridge;
@@ -51,6 +52,7 @@ public class MainActivity extends BridgeActivity {
     private int taraConsecutiveErrors = 0;
     private long taraLastTranscriptAt = 0L;
     private String taraLastTranscriptText = "";
+    private String taraPendingPartialWakeText = "";
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -234,9 +236,9 @@ public class MainActivity extends BridgeActivity {
             @Override
             public void onError(int error) {
                 taraHandler.removeCallbacks(taraStartWatchdogRunnable);
+                clearPendingPartialWake();
                 taraListening = false;
                 taraReadyForSpeech = false;
-                taraPartialWakeDispatched = false;
                 if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) return;
 
                 taraConsecutiveErrors += 1;
@@ -276,46 +278,66 @@ public class MainActivity extends BridgeActivity {
             @Override
             public void onResults(Bundle results) {
                 taraHandler.removeCallbacks(taraStartWatchdogRunnable);
+                clearPendingPartialWake();
                 processNoraRecognitionBundle(results);
                 taraListening = false;
                 taraReadyForSpeech = false;
                 taraConsecutiveErrors = 0;
-                taraPartialWakeDispatched = false;
                 scheduleTaraRestart(noraConversationActive ? 900L : (taraSegmentedSession ? 2600L : 1800L));
             }
 
             @Override
             public void onPartialResults(Bundle partialResults) {
-                if (taraSpeaking || taraPartialWakeDispatched) return;
+                if (taraSpeaking) return;
                 ArrayList<String> matches = partialResults == null ? null : partialResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
-                if (matches == null) return;
+                if (matches == null || matches.isEmpty()) return;
+
+                // If the user continues past the wake name into a command, cancel
+                // the standalone-wake acknowledgement and let final/segment results
+                // deliver the complete command without Shruthi speaking over them.
+                for (String match : matches) {
+                    if (match == null || match.trim().isEmpty()) continue;
+                    String canonical = canonicalizeNoraTranscript(match);
+                    String lower = canonical.trim().toLowerCase(Locale.ROOT);
+                    if (lower.startsWith("shruthi ")) {
+                        noraConversationActive = true;
+                        clearPendingPartialWake();
+                        return;
+                    }
+                }
+
+                // A one-word wake in Samsung's long segmented session may not emit
+                // a final callback promptly. Dispatch it after a short grace period.
+                // The timer is cancelled above if a command follows the wake name.
                 for (String match : matches) {
                     if (isSimpleNoraWakePhrase(match)) {
-                        // Mark NORA active immediately, but let final recognition own
-                        // the user-visible acknowledgement so "NORA, <command>" is not
-                        // interrupted by TTS before the command has finished arriving.
-                        taraPartialWakeDispatched = true;
                         noraConversationActive = true;
-                        break;
+                        if (!taraPartialWakeDispatched) {
+                            taraPartialWakeDispatched = true;
+                            taraPendingPartialWakeText = "SHRUTHI";
+                            taraHandler.removeCallbacks(taraPartialWakeDispatchRunnable);
+                            taraHandler.postDelayed(taraPartialWakeDispatchRunnable, 850L);
+                        }
+                        return;
                     }
                 }
             }
 
             @Override
             public void onSegmentResults(Bundle segmentResults) {
+                clearPendingPartialWake();
                 processNoraRecognitionBundle(segmentResults);
                 taraConsecutiveErrors = 0;
-                taraPartialWakeDispatched = false;
                 taraListening = true;
             }
 
             @Override
             public void onEndOfSegmentedSession() {
                 taraHandler.removeCallbacks(taraStartWatchdogRunnable);
+                clearPendingPartialWake();
                 taraListening = false;
                 taraReadyForSpeech = false;
                 taraConsecutiveErrors = 0;
-                taraPartialWakeDispatched = false;
                 scheduleTaraRestart(noraConversationActive ? 900L : 2600L);
             }
 
@@ -394,6 +416,21 @@ public class MainActivity extends BridgeActivity {
         return normalized.equals("shruthi");
     }
 
+    private void dispatchPendingPartialWake() {
+        String wakeText = taraPendingPartialWakeText;
+        taraPendingPartialWakeText = "";
+        taraPartialWakeDispatched = false;
+        if (!taraEnabled || !taraResumed || taraSpeaking || wakeText.isEmpty()) return;
+        noraConversationActive = true;
+        dispatchTaraTranscriptDebounced(wakeText);
+    }
+
+    private void clearPendingPartialWake() {
+        taraHandler.removeCallbacks(taraPartialWakeDispatchRunnable);
+        taraPendingPartialWakeText = "";
+        taraPartialWakeDispatched = false;
+    }
+
     public boolean isTaraVoiceAvailable() {
         return SpeechRecognizer.isRecognitionAvailable(this);
     }
@@ -403,6 +440,7 @@ public class MainActivity extends BridgeActivity {
         taraEnabled = enabled;
         if (!enabled) {
             noraConversationActive = false;
+            clearPendingPartialWake();
             destroyTaraRecognizer();
             return;
         }
@@ -418,7 +456,7 @@ public class MainActivity extends BridgeActivity {
 
     public void setNoraConversationActive(boolean active) {
         noraConversationActive = active;
-        if (!active) taraPartialWakeDispatched = false;
+        if (!active) clearPendingPartialWake();
         if (taraEnabled && taraResumed && !taraSpeaking && !taraListening) {
             scheduleTaraRestart(active ? 600L : 1600L);
         }
@@ -445,7 +483,7 @@ public class MainActivity extends BridgeActivity {
         try {
             taraHandler.removeCallbacks(taraRestartRunnable);
             taraHandler.removeCallbacks(taraStartWatchdogRunnable);
-            taraPartialWakeDispatched = false;
+            clearPendingPartialWake();
             taraReadyForSpeech = false;
             taraRecognizer.startListening(taraRecognizerIntent);
             taraListening = true;
@@ -482,9 +520,9 @@ public class MainActivity extends BridgeActivity {
     private void stopTaraRecognizer() {
         taraHandler.removeCallbacks(taraRestartRunnable);
         taraHandler.removeCallbacks(taraStartWatchdogRunnable);
+        clearPendingPartialWake();
         taraListening = false;
         taraReadyForSpeech = false;
-        taraPartialWakeDispatched = false;
         if (taraRecognizer != null) {
             try { taraRecognizer.cancel(); } catch (Exception ignored) { }
         }
@@ -493,9 +531,9 @@ public class MainActivity extends BridgeActivity {
     private void destroyTaraRecognizer() {
         taraHandler.removeCallbacks(taraRestartRunnable);
         taraHandler.removeCallbacks(taraStartWatchdogRunnable);
+        clearPendingPartialWake();
         taraListening = false;
         taraReadyForSpeech = false;
-        taraPartialWakeDispatched = false;
         if (taraRecognizer != null) {
             try { taraRecognizer.cancel(); } catch (Exception ignored) { }
             try { taraRecognizer.destroy(); } catch (Exception ignored) { }
@@ -548,6 +586,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onPause() {
         taraResumed = false;
+        clearPendingPartialWake();
         // Android only grants this app microphone access while it is foregrounded.
         // Destroy the recognizer here so Samsung/Bixby cannot leave a cancelled,
         // non-responsive SpeechRecognizer instance behind for the next resume.
