@@ -23,7 +23,7 @@ public final class ShruthiVoiceInteractionSession extends VoiceInteractionSessio
                 .appendQueryParameter("shruthi_wake", "1")
                 .appendQueryParameter("shruthi_command", transcript.trim())
                 .build();
-        Intent intent = new Intent(getContext(), MainActivity.class)
+        Intent intent = new Intent(getContext(), CentralHubActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK)
                 .putExtra(EXTRA_ACTION_URL, url.toString());
         try {

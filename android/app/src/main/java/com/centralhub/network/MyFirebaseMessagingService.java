@@ -36,7 +36,6 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
             return;
         }
 
-        // Keep compatibility with any older Firebase notification payloads.
         if (remoteMessage.getNotification() != null) {
             sendNotification(
                     valueOr(remoteMessage.getNotification().getTitle(), "CentralHub"),
@@ -70,7 +69,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
             String dedupeKey,
             String storeSlug
     ) {
-        Intent intent = new Intent(this, MainActivity.class);
+        Intent intent = new Intent(this, CentralHubActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         intent.putExtra("centralhub_action_url", actionUrl == null ? "/dashboard" : actionUrl);
 
@@ -121,25 +120,15 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
     private int notificationIcon(String storeSlug) {
         String normalized = storeSlug == null ? "" : storeSlug.trim().toLowerCase();
         switch (normalized) {
-            case "malluspices":
-                return R.drawable.ic_store_malluspices;
-            case "keralagrocery":
-                return R.drawable.ic_store_keralagrocery;
-            case "pocketgrocery":
-                return R.drawable.ic_store_pocketgrocery;
-            case "tamilretail":
-                return R.drawable.ic_store_tamilretail;
-            default:
-                return R.mipmap.ic_launcher;
+            case "malluspices": return R.drawable.ic_store_malluspices;
+            case "keralagrocery": return R.drawable.ic_store_keralagrocery;
+            case "pocketgrocery": return R.drawable.ic_store_pocketgrocery;
+            case "tamilretail": return R.drawable.ic_store_tamilretail;
+            default: return R.mipmap.ic_launcher;
         }
     }
 
-    private static int stableNotificationId(
-            String notificationId,
-            String dedupeKey,
-            String title,
-            String body
-    ) {
+    private static int stableNotificationId(String notificationId, String dedupeKey, String title, String body) {
         String key = valueOr(notificationId, valueOr(dedupeKey, title + ":" + body));
         int hash = key.hashCode() & 0x7fffffff;
         return hash == 0 ? 1 : hash;
