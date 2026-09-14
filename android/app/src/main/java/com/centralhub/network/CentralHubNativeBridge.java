@@ -1,9 +1,11 @@
 package com.centralhub.network;
 
 import android.app.DownloadManager;
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
+import android.content.pm.PackageInstaller;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
@@ -13,6 +15,8 @@ import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import android.speech.tts.Voice;
 import android.webkit.JavascriptInterface;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
@@ -301,6 +305,13 @@ public final class CentralHubNativeBridge {
     }
 
     @JavascriptInterface
+    public boolean canInstallAppUpdatesAutomatically() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return false;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.getPackageManager().canRequestPackageInstalls()) return false;
+        return true;
+    }
+
+    @JavascriptInterface
     public boolean installAppUpdate(long downloadId) {
         if (downloadId <= 0) return false;
         try {
@@ -313,10 +324,52 @@ public final class CentralHubNativeBridge {
             if (manager == null) return false;
             Uri apk = manager.getUriForDownloadedFile(downloadId);
             if (apk == null) return false;
-            Intent install = new Intent(Intent.ACTION_VIEW).setDataAndType(apk, "application/vnd.android.package-archive").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                return installSelfUpdateWithPackageInstaller(apk);
+            }
+
+            Intent install = new Intent(Intent.ACTION_VIEW)
+                    .setDataAndType(apk, "application/vnd.android.package-archive")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
             activity.startActivity(install);
             return true;
         } catch (Exception ignored) { return false; }
+    }
+
+    private boolean installSelfUpdateWithPackageInstaller(Uri apk) {
+        PackageInstaller installer = context.getPackageManager().getPackageInstaller();
+        int sessionId = -1;
+        try {
+            PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+            params.setAppPackageName(context.getPackageName());
+            params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED);
+            sessionId = installer.createSession(params);
+
+            try (PackageInstaller.Session session = installer.openSession(sessionId);
+                 InputStream input = context.getContentResolver().openInputStream(apk);
+                 OutputStream output = session.openWrite("centralhub-update.apk", 0, -1)) {
+                if (input == null) throw new IllegalStateException("downloaded_apk_unavailable");
+                byte[] buffer = new byte[64 * 1024];
+                int read;
+                while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
+                session.fsync(output);
+
+                Intent statusIntent = new Intent(context, AppUpdateInstallReceiver.class)
+                        .setAction(AppUpdateInstallReceiver.ACTION_INSTALL_STATUS)
+                        .putExtra("package", context.getPackageName());
+                int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) flags |= PendingIntent.FLAG_MUTABLE;
+                PendingIntent status = PendingIntent.getBroadcast(context, sessionId, statusIntent, flags);
+                session.commit(status.getIntentSender());
+            }
+            return true;
+        } catch (Exception ignored) {
+            if (sessionId >= 0) {
+                try { installer.abandonSession(sessionId); } catch (Exception ignoredAgain) { }
+            }
+            return false;
+        }
     }
 
     @JavascriptInterface
