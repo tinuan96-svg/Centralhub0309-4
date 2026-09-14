@@ -46,8 +46,6 @@ public final class CentralHubNativeBridge {
                 taraTts.setPitch(1.04f);
                 taraTts.setLanguage(Locale.UK);
 
-                // The first wake reply can arrive before Android's TTS engine has
-                // finished initialising. Queue it instead of silently dropping it.
                 if (!pendingSpeech.isEmpty()) {
                     String speech = pendingSpeech;
                     String language = pendingLanguageTag;
@@ -58,52 +56,26 @@ public final class CentralHubNativeBridge {
             });
 
             taraTts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                @Override
-                public void onStart(String utteranceId) {
-                    activity.runOnUiThread(() -> activity.setTaraSpeaking(true));
-                }
-
-                @Override
-                public void onDone(String utteranceId) {
-                    activity.runOnUiThread(() -> activity.setTaraSpeaking(false));
-                }
-
-                @Override
-                public void onError(String utteranceId) {
-                    activity.runOnUiThread(() -> activity.setTaraSpeaking(false));
-                }
-
-                @Override
-                public void onError(String utteranceId, int errorCode) {
-                    activity.runOnUiThread(() -> activity.setTaraSpeaking(false));
-                }
+                @Override public void onStart(String utteranceId) { activity.runOnUiThread(() -> activity.setTaraSpeaking(true)); }
+                @Override public void onDone(String utteranceId) { activity.runOnUiThread(() -> activity.setTaraSpeaking(false)); }
+                @Override public void onError(String utteranceId) { activity.runOnUiThread(() -> activity.setTaraSpeaking(false)); }
+                @Override public void onError(String utteranceId, int errorCode) { activity.runOnUiThread(() -> activity.setTaraSpeaking(false)); }
             });
         });
     }
 
     public static void saveFcmToken(Context context, String token) {
         if (token == null || token.trim().isEmpty()) return;
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit()
-                .putString(FCM_TOKEN, token.trim())
-                .apply();
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(FCM_TOKEN, token.trim()).apply();
     }
 
     @JavascriptInterface
     public String getFcmToken() {
-        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .getString(FCM_TOKEN, "");
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(FCM_TOKEN, "");
     }
 
-    @JavascriptInterface
-    public String getPlatform() {
-        return "android";
-    }
-
-    @JavascriptInterface
-    public String getAppId() {
-        return "com.centralhub.network";
-    }
+    @JavascriptInterface public String getPlatform() { return "android"; }
+    @JavascriptInterface public String getAppId() { return "com.centralhub.network"; }
 
     @JavascriptInterface
     public long getVersionCode() {
@@ -111,9 +83,7 @@ public final class CentralHubNativeBridge {
             PackageInfo info = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) return info.getLongVersionCode();
             return info.versionCode;
-        } catch (Exception ignored) {
-            return 0L;
-        }
+        } catch (Exception ignored) { return 0L; }
     }
 
     @JavascriptInterface
@@ -121,46 +91,35 @@ public final class CentralHubNativeBridge {
         try {
             PackageInfo info = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
             return info.versionName == null ? "" : info.versionName;
-        } catch (Exception ignored) {
-            return "";
-        }
+        } catch (Exception ignored) { return ""; }
+    }
+
+    @JavascriptInterface public boolean isTaraVoiceAvailable() { return activity.isTaraVoiceAvailable(); }
+    @JavascriptInterface public void setTaraEnabled(boolean enabled) { activity.runOnUiThread(() -> activity.setTaraEnabled(enabled)); }
+    @JavascriptInterface public void setNoraConversationActive(boolean active) { activity.runOnUiThread(() -> activity.setNoraConversationActive(active)); }
+    @JavascriptInterface public void setTaraSpeaking(boolean speaking) { activity.runOnUiThread(() -> activity.setTaraSpeaking(speaking)); }
+
+    @JavascriptInterface
+    public boolean isSecureUnlockAvailable() {
+        return activity.isShruthiSecureUnlockAvailable();
     }
 
     @JavascriptInterface
-    public boolean isTaraVoiceAvailable() {
-        return activity.isTaraVoiceAvailable();
+    public boolean requestSecureUnlock() {
+        if (!activity.isShruthiSecureUnlockAvailable()) return false;
+        activity.runOnUiThread(activity::requestShruthiSecureUnlock);
+        return true;
     }
 
-    @JavascriptInterface
-    public void setTaraEnabled(boolean enabled) {
-        activity.runOnUiThread(() -> activity.setTaraEnabled(enabled));
-    }
-
-    @JavascriptInterface
-    public void setNoraConversationActive(boolean active) {
-        activity.runOnUiThread(() -> activity.setNoraConversationActive(active));
-    }
-
-    @JavascriptInterface
-    public void setTaraSpeaking(boolean speaking) {
-        activity.runOnUiThread(() -> activity.setTaraSpeaking(speaking));
-    }
-
-    @JavascriptInterface
-    public boolean isTaraTtsReady() {
-        return taraTtsReady && taraTts != null;
-    }
+    @JavascriptInterface public boolean isTaraTtsReady() { return taraTtsReady && taraTts != null; }
 
     @JavascriptInterface
     public boolean isTaraLanguageAvailable(String languageTag) {
         TextToSpeech tts = taraTts;
         if (!taraTtsReady || tts == null) return false;
         Locale locale = resolveLocale(languageTag);
-        try {
-            return tts.isLanguageAvailable(locale) >= TextToSpeech.LANG_AVAILABLE;
-        } catch (Exception ignored) {
-            return false;
-        }
+        try { return tts.isLanguageAvailable(locale) >= TextToSpeech.LANG_AVAILABLE; }
+        catch (Exception ignored) { return false; }
     }
 
     @JavascriptInterface
@@ -202,19 +161,9 @@ public final class CentralHubNativeBridge {
             tts.setLanguage(selectedLocale);
             tts.setSpeechRate(0.93f);
             tts.setPitch(1.04f);
-
-            // Prefer the configured executive/female voice when the engine exposes
-            // one, but never make speech depend on a vendor-specific voice name.
-            // Samsung/Google TTS often expose names such as en-gb-x-* with no
-            // "female" marker; the system default is still a valid audible voice.
             selectExecutiveVoice(tts, selectedLocale);
 
-            int result = tts.speak(
-                    speech,
-                    TextToSpeech.QUEUE_FLUSH,
-                    null,
-                    "nora-" + UUID.randomUUID()
-            );
+            int result = tts.speak(speech, TextToSpeech.QUEUE_FLUSH, null, "nora-" + UUID.randomUUID());
             if (result == TextToSpeech.ERROR) activity.setTaraSpeaking(false);
         });
         return true;
@@ -232,14 +181,8 @@ public final class CentralHubNativeBridge {
         });
     }
 
-    /** Launch NORA's visible browser-computer mode. Authentication secrets remain manual. */
     @JavascriptInterface
-    public boolean openNoraComputerMode(
-            String sessionId,
-            String targetUrl,
-            String accessToken,
-            String supabaseUrl
-    ) {
+    public boolean openNoraComputerMode(String sessionId, String targetUrl, String accessToken, String supabaseUrl) {
         if (sessionId == null || sessionId.trim().isEmpty()
                 || targetUrl == null || targetUrl.trim().isEmpty()
                 || accessToken == null || accessToken.trim().isEmpty()
@@ -260,9 +203,7 @@ public final class CentralHubNativeBridge {
             intent.putExtra("nora_supabase_url", supabaseUrl.trim());
             activity.runOnUiThread(() -> activity.startActivity(intent));
             return true;
-        } catch (Exception ignored) {
-            return false;
-        }
+        } catch (Exception ignored) { return false; }
     }
 
     private Locale resolveLocale(String languageTag) {
@@ -270,9 +211,7 @@ public final class CentralHubNativeBridge {
         try {
             Locale locale = Locale.forLanguageTag(languageTag.trim());
             return locale.getLanguage().isEmpty() ? Locale.UK : locale;
-        } catch (Exception ignored) {
-            return Locale.UK;
-        }
+        } catch (Exception ignored) { return Locale.UK; }
     }
 
     private Locale selectSupportedLocale(TextToSpeech tts, Locale preferred) {
@@ -292,15 +231,9 @@ public final class CentralHubNativeBridge {
                 if (voice == null || voice.getLocale() == null) continue;
                 if (!voice.getLocale().getLanguage().equalsIgnoreCase(locale.getLanguage())) continue;
                 String name = voice.getName() == null ? "" : voice.getName().toLowerCase(Locale.ROOT);
-                if (name.contains("female")
-                        || name.contains("sonia")
-                        || name.contains("serena")
-                        || name.contains("samantha")
-                        || name.contains("aria")
-                        || name.contains("ava")
-                        || name.contains("veena")
-                        || name.contains("heera")
-                        || name.contains("hazel")
+                if (name.contains("female") || name.contains("sonia") || name.contains("serena")
+                        || name.contains("samantha") || name.contains("aria") || name.contains("ava")
+                        || name.contains("veena") || name.contains("heera") || name.contains("hazel")
                         || name.contains("susan")) return voice;
             }
         } catch (Exception ignored) { }
@@ -310,12 +243,8 @@ public final class CentralHubNativeBridge {
     private boolean selectExecutiveVoice(TextToSpeech tts, Locale locale) {
         Voice preferred = findExecutiveVoice(tts, locale);
         if (preferred == null) return true;
-        try {
-            tts.setVoice(preferred);
-            return true;
-        } catch (Exception ignored) {
-            return true;
-        }
+        try { tts.setVoice(preferred); return true; }
+        catch (Exception ignored) { return true; }
     }
 
     public void shutdown() {
@@ -328,7 +257,6 @@ public final class CentralHubNativeBridge {
         }
     }
 
-    /** Download CentralHub APK updates without handing the URL to Chrome. */
     @JavascriptInterface
     public long startAppUpdateDownload(String value, String versionName) {
         if (value == null || value.trim().isEmpty()) return -1L;
@@ -353,9 +281,7 @@ public final class CentralHubNativeBridge {
             request.setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, "centralhub-" + safeVersion + ".apk");
             DownloadManager manager = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
             return manager == null ? -1L : manager.enqueue(request);
-        } catch (Exception ignored) {
-            return -1L;
-        }
+        } catch (Exception ignored) { return -1L; }
     }
 
     @JavascriptInterface
@@ -389,7 +315,6 @@ public final class CentralHubNativeBridge {
         }
     }
 
-    /** Opens only Android's package installer. Chrome is not involved. */
     @JavascriptInterface
     public boolean installAppUpdate(long downloadId) {
         if (downloadId <= 0) return false;
@@ -408,9 +333,7 @@ public final class CentralHubNativeBridge {
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
             activity.startActivity(install);
             return true;
-        } catch (Exception ignored) {
-            return false;
-        }
+        } catch (Exception ignored) { return false; }
     }
 
     @JavascriptInterface
@@ -432,8 +355,6 @@ public final class CentralHubNativeBridge {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             context.startActivity(intent);
             return true;
-        } catch (Exception ignored) {
-            return false;
-        }
+        } catch (Exception ignored) { return false; }
     }
 }
