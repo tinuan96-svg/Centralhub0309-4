@@ -28,7 +28,7 @@ Deno.serve(async (req: Request) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
   const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   const openaiKey = Deno.env.get("OPENAI_API_KEY") ?? "";
-  if (!supabaseUrl || !serviceRole || !openaiKey) return reply(503, { success: false, error: "speech_not_configured" });
+  if (!supabaseUrl || !serviceRole) return reply(503, { success: false, error: "speech_not_configured" });
 
   const authHeader = req.headers.get("authorization") ?? "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
@@ -47,6 +47,22 @@ Deno.serve(async (req: Request) => {
 
   const text = String(body?.text ?? "").trim().slice(0, 2800);
   if (!text) return reply(400, { success: false, error: "missing_text" });
+
+  // The Android app already has a native TTS engine kept warm in-process. Returning
+  // immediately here makes the web client fall back to that engine instead of waiting
+  // for a full cloud MP3 generation/download cycle before Shruthi starts talking.
+  const userAgent = req.headers.get("user-agent") ?? "";
+  const preferNative = body?.prefer_native_tts === true || /Android/i.test(userAgent);
+  if (preferNative) {
+    return reply(200, {
+      success: false,
+      error: "native_tts_preferred",
+      provider: "android-native",
+      fast_path: true,
+    });
+  }
+
+  if (!openaiKey) return reply(503, { success: false, error: "openai_not_configured" });
 
   const customVoiceId = String(Deno.env.get("SHRUTHI_CUSTOM_VOICE_ID") ?? "").trim();
   const namedVoice = String(Deno.env.get("SHRUTHI_TTS_VOICE") ?? "marin").trim() || "marin";
