@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { BrainCircuit, ChevronRight } from 'lucide-react';
+import { BrainCircuit } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 type LearningState = {
@@ -46,21 +46,20 @@ export default function ShruthiLearningPulse() {
 
   if (pathname !== '/dashboard' || !state) return null;
 
+  const count = Math.max(0, Number(state.total_insights || 0));
+  const countLabel = count > 99 ? '99+' : String(count);
+  const title = `Shruthi Self Learning · ${state.enabled ? `${label(state.current_track)} · ${count} signals` : 'Paused'}`;
+
   return (
     <Link
       href="/shruthi-learning"
-      aria-label="Open Shruthi Self Learning"
-      className="fixed right-3 top-[4.7rem] z-[72] flex max-w-[min(78vw,290px)] items-center gap-2.5 rounded-2xl border border-cyan-300/20 bg-slate-950/88 px-3 py-2.5 text-white shadow-xl shadow-black/25 backdrop-blur-xl transition hover:border-cyan-300/40 hover:bg-slate-900/95 sm:right-5 sm:top-[5.1rem]"
+      aria-label={title}
+      title={title}
+      className="fixed right-2 top-1/2 z-[68] grid h-12 w-12 -translate-y-1/2 place-items-center rounded-2xl border border-cyan-300/20 bg-slate-950/90 text-white shadow-xl shadow-black/25 backdrop-blur-xl transition hover:border-cyan-300/40 hover:bg-slate-900/95 active:scale-95 sm:right-3 sm:h-13 sm:w-13"
     >
-      <span className="relative grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-cyan-400/10">
-        <BrainCircuit className="h-4.5 w-4.5 text-cyan-200" />
-        <span className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-slate-950 ${state.enabled ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.9)]' : 'bg-slate-500'}`} />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[11px] font-semibold uppercase tracking-[.15em] text-cyan-200">Shruthi Self Learning</span>
-        <span className="mt-0.5 block truncate text-[10px] text-slate-400">{state.enabled ? `${label(state.current_track)} · ${state.total_insights || 0} signals` : 'Paused'}</span>
-      </span>
-      <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
+      <BrainCircuit className="h-5 w-5 text-cyan-200" />
+      <span className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-slate-950 ${state.enabled ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.9)]' : 'bg-slate-500'}`} />
+      <span className="absolute -bottom-1 -left-1 min-w-5 rounded-full border border-cyan-300/20 bg-slate-950 px-1 py-0.5 text-center text-[8px] font-black leading-none text-cyan-100">{countLabel}</span>
     </Link>
   );
 }
