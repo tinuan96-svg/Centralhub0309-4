@@ -27,7 +27,7 @@ function nativeBridge(): NativeSecurityBridge | undefined {
   return (window as unknown as { CentralHubNative?: NativeSecurityBridge }).CentralHubNative;
 }
 
-export default function ShruthiSecurityGate() {
+export default function ShruthiSecurityGate({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [locked, setLocked] = useState(false);
   const lockedRef = useRef(false);
@@ -72,9 +72,9 @@ export default function ShruthiSecurityGate() {
       bridge.setTaraEnabled?.(true);
       bridge.setNoraConversationActive?.(true);
       window.setTimeout(() => {
-        try { bridge.speakTara?.('Security check. Please identify yourself to continue.', 'en-GB'); } catch { /* visual prompt remains */ }
+        try { bridge.speakTara?.('Security check. Please identify yourself to continue.', 'en-GB'); } catch { }
       }, 220);
-    } catch { /* fallback remains available */ }
+    } catch { }
   }, [clearVerifyPoll, setGlobalLock, user]);
 
   const unlock = useCallback(() => {
@@ -85,12 +85,12 @@ export default function ShruthiSecurityGate() {
     setPassword('');
     setError('');
     setStatus('Identity verified · CentralHub unlocked');
-    try { sessionStorage.setItem('centralhub:shruthi-security-unlocked-at', String(Date.now())); } catch { /* no-op */ }
+    try { sessionStorage.setItem('centralhub:shruthi-security-unlocked-at', String(Date.now())); } catch { }
     try {
       bridge?.stopTaraTts?.();
       bridge?.setNoraConversationActive?.(false);
       bridge?.setTaraEnabled?.(true);
-    } catch { /* passive wake remains best-effort */ }
+    } catch { }
   }, [clearVerifyPoll, setGlobalLock]);
 
   const beginSecureVerification = useCallback(() => {
@@ -178,7 +178,7 @@ export default function ShruthiSecurityGate() {
       const body = text.replace(/^SHRUTHI\s*/i, '').trim();
       if (STOP_PHRASE.test(body)) {
         event.stopImmediatePropagation();
-        try { nativeBridge()?.stopTaraTts?.(); } catch { /* no-op */ }
+        try { nativeBridge()?.stopTaraTts?.(); } catch { }
         const end = document.querySelector<HTMLButtonElement>('button[aria-label="End SHRUTHI conversation"]');
         if (end) end.click();
       }
@@ -204,7 +204,7 @@ export default function ShruthiSecurityGate() {
     }
   };
 
-  if (!locked || !user) return null;
+  if (!locked || !user) return <>{children}</>;
 
   return (
     <section className="fixed inset-0 z-[320] overflow-y-auto bg-[#01040a] text-white" aria-label="Shruthi Security Login">

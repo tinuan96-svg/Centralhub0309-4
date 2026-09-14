@@ -1,6 +1,7 @@
 apply plugin: 'com.android.application'
 
 // Wake recognizer fallback build marker: on-device first, Android recognizer fallback enabled.
+// Shruthi security-gate build marker: validates biometric unlock + Live Web native bridge together.
 def centralHubVersionCode = (System.getenv('CENTRALHUB_VERSION_CODE') ?: '4').toInteger()
 def centralHubVersionName = System.getenv('CENTRALHUB_VERSION_NAME') ?: '1.2.0'
 def centralHubSigningStorePath = System.getenv('CENTRALHUB_SIGNING_STORE_PATH')
