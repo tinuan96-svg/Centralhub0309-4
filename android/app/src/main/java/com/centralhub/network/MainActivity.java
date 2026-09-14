@@ -32,9 +32,28 @@ public class MainActivity extends BridgeActivity {
     private static final String EXTRA_ACTION_URL = "centralhub_action_url";
     private static final int REQUEST_POST_NOTIFICATIONS = 4101;
     private static final int REQUEST_RECORD_AUDIO = 4102;
+    private static final String PRIMARY_RECOGNITION_LANGUAGE = "en-IN";
+    private static final String[] SHRUTHI_VARIANTS = new String[]{
+            "shruthi", "shruti", "sruthi", "sruti", "shrudhi", "srudhi",
+            "shrewthi", "shrewti", "shrew tea", "shru thi", "shru ti",
+            "shroothi", "shrooti", "shroo thi", "shroo ti"
+    };
+    private static final ArrayList<String> SHRUTHI_LANGUAGE_ALLOWLIST = new ArrayList<>(Arrays.asList(
+            "en-IN", "en-GB", "ml-IN", "ta-IN"
+    ));
+    private static final ArrayList<String> SHRUTHI_BIAS_PHRASES = new ArrayList<>(Arrays.asList(
+            "Shruthi", "Shruti", "Sruthi", "Sruti", "Shrudhi", "Srudhi",
+            "Shrewthi", "Shrew tea", "Shru thi", "Shru ti", "Shroothi", "Shrooti",
+            "Hey Shruthi", "Hey Shruti", "Hey Sruthi",
+            "ശ്രുതി", "ശ്രൂതി", "ஸ்ருதி", "ஸ்ரூதி",
+            "CentralHub", "MalluSpices", "KeralaGrocery", "PocketGrocery", "TamilRetail",
+            "DHL", "D H L", "WhatsApp", "Supabase", "Netlify", "Mollie", "Trust Payments",
+            "Google Ads", "Google Analytics", "Merchant Center",
+            "stop", "wait", "pause", "next", "hold on", "continue", "repeat"
+    ));
 
-    // Bridge method names remain Tara-compatible so installed web/native versions can
-    // overlap during rollout. NORA remains a wake alias; SHRUTHI is the primary name.
+    // Bridge method names remain Tara-compatible so installed web/native versions can overlap
+    // during rollout. SHRUTHI is the promoted spoken assistant name; legacy aliases are fallback only.
     private final Handler taraHandler = new Handler(Looper.getMainLooper());
     private final Runnable taraRestartRunnable = this::startTaraRecognizerIfReady;
     private final Runnable taraStartWatchdogRunnable = this::recoverStalledTaraStart;
@@ -51,6 +70,7 @@ public class MainActivity extends BridgeActivity {
     private boolean taraSegmentedSession = false;
     private boolean taraUsingOnDeviceRecognizer = false;
     private boolean taraForceNetworkRecognizer = false;
+    private boolean taraLanguageSwitchEnabled = true;
     private boolean noraConversationActive = false;
     private int taraConsecutiveErrors = 0;
     private long taraLastTranscriptAt = 0L;
@@ -169,7 +189,7 @@ public class MainActivity extends BridgeActivity {
      * Passive wake listening uses Android's on-device recognizer where available.
      * Android 13+ uses segmented recognition so Samsung can keep one recognizer
      * session alive while still delivering a result shortly after the user stops
-     * speaking. SHRUTHI and NORA are both accepted wake names.
+     * speaking. SHRUTHI is the promoted wake name; legacy NORA recognition is fallback-only.
      */
     private void setupTaraRecognizer() {
         destroyTaraRecognizer();
@@ -200,38 +220,51 @@ public class MainActivity extends BridgeActivity {
         taraRecognizerIntent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
         taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
         taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
-        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);
+        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 8);
         taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getPackageName());
-        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-GB");
-        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en-GB");
+        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, PRIMARY_RECOGNITION_LANGUAGE);
+        taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, PRIMARY_RECOGNITION_LANGUAGE);
         taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, taraUsingOnDeviceRecognizer);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             taraRecognizerIntent.putStringArrayListExtra(
                     RecognizerIntent.EXTRA_BIASING_STRINGS,
-                    new ArrayList<>(Arrays.asList(
-                            "Shruthi", "Sruthi", "Shruti", "Hey Shruthi", "Hey Sruthi", "Hey Shruti",
-                            "ശ്രുതി", "ஸ்ருதி",
-                            "NORA", "Nora", "Norah", "Noora", "Noura", "Hey NORA", "Hey Nora",
-                            "നോറ", "നോറാ", "நோரா",
-                            "stop", "wait", "pause", "next", "hold on", "continue", "repeat"
-                    ))
+                    new ArrayList<>(SHRUTHI_BIAS_PHRASES)
             );
             taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_ENABLE_BIASING_DEVICE_CONTEXT, true);
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && taraLanguageSwitchEnabled) {
+            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_ENABLE_LANGUAGE_DETECTION, true);
+            taraRecognizerIntent.putStringArrayListExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE_DETECTION_ALLOWED_LANGUAGES,
+                    new ArrayList<>(SHRUTHI_LANGUAGE_ALLOWLIST)
+            );
+            taraRecognizerIntent.putExtra(
+                    RecognizerIntent.EXTRA_ENABLE_LANGUAGE_SWITCH,
+                    RecognizerIntent.LANGUAGE_SWITCH_BALANCED
+            );
+            taraRecognizerIntent.putStringArrayListExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE_SWITCH_ALLOWED_LANGUAGES,
+                    new ArrayList<>(SHRUTHI_LANGUAGE_ALLOWLIST)
+            );
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_SWITCH_MAX_SWITCHES, 3);
+            }
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && taraUsingOnDeviceRecognizer) {
             taraSegmentedSession = true;
             taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 450L);
-            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 550L);
-            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 900L);
+            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 650L);
+            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1050L);
             taraRecognizerIntent.putExtra(
                     RecognizerIntent.EXTRA_SEGMENTED_SESSION,
                     RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS
             );
         } else {
-            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 900L);
-            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 550L);
+            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1050L);
+            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 650L);
             taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 450L);
         }
 
@@ -267,12 +300,18 @@ public class MainActivity extends BridgeActivity {
                 }
                 if (error == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED
                         || error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE) {
+                    if (taraLanguageSwitchEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                        taraLanguageSwitchEnabled = false;
+                        destroyTaraRecognizer();
+                        scheduleTaraRestart(500L);
+                        return;
+                    }
                     if (taraUsingOnDeviceRecognizer) {
                         taraForceNetworkRecognizer = true;
                         destroyTaraRecognizer();
                         scheduleTaraRestart(750L);
                     } else {
-                        scheduleTaraRestart(5000L);
+                        scheduleTaraRestart(3500L);
                     }
                     return;
                 }
@@ -326,7 +365,7 @@ public class MainActivity extends BridgeActivity {
                             taraPartialWakeDispatched = true;
                             taraPendingPartialWakeText = "SHRUTHI";
                             taraHandler.removeCallbacks(taraPartialWakeDispatchRunnable);
-                            taraHandler.postDelayed(taraPartialWakeDispatchRunnable, 450L);
+                            taraHandler.postDelayed(taraPartialWakeDispatchRunnable, 400L);
                         }
                         return;
                     }
@@ -508,25 +547,28 @@ public class MainActivity extends BridgeActivity {
         if (clean.isEmpty()) return clean;
 
         String normalized = clean.toLowerCase(Locale.ROOT);
-        String[] shruthiVariants = new String[]{"shruthi", "sruthi", "shruti"};
-        for (String variant : shruthiVariants) {
+        for (String variant : SHRUTHI_VARIANTS) {
             if (normalized.equals(variant) || normalized.equals("hey " + variant)) return "SHRUTHI";
             if (normalized.startsWith(variant + " ")) return "SHRUTHI " + clean.substring(variant.length()).trim();
             String heyVariant = "hey " + variant + " ";
             if (normalized.startsWith(heyVariant)) return "SHRUTHI " + clean.substring(heyVariant.length()).trim();
         }
-        if (normalized.equals("ശ്രുതി") || normalized.equals("ஸ்ருதி")) return "SHRUTHI";
-        if (normalized.startsWith("ശ്രുതി ")) return "SHRUTHI " + clean.substring("ശ്രുതി".length()).trim();
-        if (normalized.startsWith("ஸ்ருதி ")) return "SHRUTHI " + clean.substring("ஸ்ருதி".length()).trim();
 
-        String[] noraVariants = new String[]{"nora", "norah", "noora", "noura", "norra", "nora's"};
-        for (String variant : noraVariants) {
+        String[] nativeVariants = new String[]{"ശ്രുതി", "ശ്രൂതി", "ஸ்ருதி", "ஸ்ரூதி"};
+        for (String variant : nativeVariants) {
+            if (normalized.equals(variant)) return "SHRUTHI";
+            if (normalized.startsWith(variant + " ")) return "SHRUTHI " + clean.substring(variant.length()).trim();
+        }
+
+        // Legacy aliases remain fallback-compatible for older installed flows but are no longer
+        // promoted to Android's recognizer bias list. Shruthi is the spoken assistant identity.
+        String[] legacyVariants = new String[]{"nora", "norah", "noora", "noura", "norra", "nora's", "നോറ", "നോറാ", "நோரா"};
+        for (String variant : legacyVariants) {
             if (normalized.equals(variant) || normalized.equals("hey " + variant)) return "SHRUTHI";
             if (normalized.startsWith(variant + " ")) return "SHRUTHI " + clean.substring(variant.length()).trim();
             String heyVariant = "hey " + variant + " ";
             if (normalized.startsWith(heyVariant)) return "SHRUTHI " + clean.substring(heyVariant.length()).trim();
         }
-        if (normalized.equals("നോറ") || normalized.equals("നോറാ") || normalized.equals("நோரா")) return "SHRUTHI";
         return clean;
     }
 
