@@ -7,6 +7,7 @@ import AuthProvider from '@/components/AuthProvider';
 import MobileLayout from '@/components/MobileLayout';
 import ShruthiSecurityTranscriptNormalizer from '@/components/ShruthiSecurityTranscriptNormalizer';
 import ShruthiSecurityBiometricAutoStart from '@/components/ShruthiSecurityBiometricAutoStart';
+import NativeAppAutoUpdater from '@/components/NativeAppAutoUpdater';
 
 export const metadata = {
   title: 'CentralHub',
@@ -23,6 +24,7 @@ export default function RootLayout({
         <AuthProvider>
           <ShruthiSecurityTranscriptNormalizer />
           <ShruthiSecurityBiometricAutoStart />
+          <NativeAppAutoUpdater />
           <MobileLayout>
             {children}
           </MobileLayout>
