@@ -12,7 +12,6 @@ type NativeSecurityBridge = {
   setTaraEnabled?: (enabled: boolean) => void;
   setNoraConversationActive?: (active: boolean) => void;
   stopTaraTts?: () => void;
-  speakTara?: (text: string, languageTag: string) => boolean;
   isSecureUnlockAvailable?: () => boolean;
   requestSecureUnlock?: () => boolean;
   consumeSecureUnlockResult?: () => string;
@@ -20,7 +19,14 @@ type NativeSecurityBridge = {
 
 type TranscriptEvent = CustomEvent<{ text?: string }>;
 
-const IDENTITY_PHRASE = /(?:shruthi|shruti|sruthi|sruti|ശ്രുതി|ശ്രൂതി|ஸ்ருதி|ஸ்ரூதி).*?(?:this\s+is|i\s+am|i'?m|its|it's)\s+tinu\b|(?:this\s+is|i\s+am|i'?m|its|it's)\s+tinu\b.*?(?:shruthi|shruti|sruthi|sruti|ശ്രുതി|ശ്രൂതി|ஸ்ருதி|ஸ்ரூதி)/iu;
+const IDENTITY_WINDOW_MS = 10_000;
+const SHRUTHI_NAME = '(?:shruthi|shruti|sruthi|sruti|shrudhi|shroothi|shrooti|ശ്രുതി|ശ്രൂതി|ஸ்ருதி|ஸ்ரூதி)';
+const TINU_NAME = '(?:tinu|tino|teenu|tenu)';
+const SHRUTHI_SIGNAL = new RegExp(SHRUTHI_NAME, 'iu');
+const TINU_SIGNAL = new RegExp(`\\b${TINU_NAME}\\b`, 'iu');
+const SELF_IDENTITY_PHRASE = new RegExp(`(?:this\\s+is|i\\s+am|i'?m|its|it's)\\s+${TINU_NAME}\\b`, 'iu');
+const FULL_IDENTITY_PHRASE = new RegExp(`${SHRUTHI_NAME}.*?(?:this\\s+is|i\\s+am|i'?m|its|it's)\\s+${TINU_NAME}\\b|(?:this\\s+is|i\\s+am|i'?m|its|it's)\\s+${TINU_NAME}\\b.*?${SHRUTHI_NAME}`, 'iu');
+const WAKE_ONLY = new RegExp(`^(?:hi\\s+|hello\\s+|hey\\s+)?${SHRUTHI_NAME}[.!?\\s]*$`, 'iu');
 
 function bridge(): NativeSecurityBridge | undefined {
   if (typeof window === 'undefined') return undefined;
@@ -39,16 +45,43 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
   const [selectedStoreId, setSelectedStoreId] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [status, setStatus] = useState('Voice activation required');
+  const [status, setStatus] = useState('Listening · say “Hi Shruthi, this is Tinu”');
   const [heard, setHeard] = useState('');
   const [fallbackVisible, setFallbackVisible] = useState(false);
   const verifyTimerRef = useRef<number | null>(null);
+  const rearmTimerRef = useRef<number | null>(null);
+  const identityArmedUntilRef = useRef(0);
   const router = useRouter();
 
   const clearVerifyPoll = useCallback(() => {
     if (verifyTimerRef.current) window.clearInterval(verifyTimerRef.current);
     verifyTimerRef.current = null;
   }, []);
+
+  const clearRearm = useCallback(() => {
+    if (rearmTimerRef.current) window.clearTimeout(rearmTimerRef.current);
+    rearmTimerRef.current = null;
+  }, []);
+
+  const hardRearm = useCallback((delay = 0) => {
+    clearRearm();
+    rearmTimerRef.current = window.setTimeout(() => {
+      const native = bridge();
+      if (native?.getPlatform?.() !== 'android') return;
+      try {
+        native.stopTaraTts?.();
+        native.setTaraEnabled?.(false);
+        window.setTimeout(() => {
+          try {
+            const latest = bridge();
+            latest?.setTaraEnabled?.(true);
+            latest?.setNoraConversationActive?.(true);
+            setStatus((current) => current.includes('verif') ? current : 'Listening · say “Hi Shruthi, this is Tinu”');
+          } catch { }
+        }, 140);
+      } catch { }
+    }, delay);
+  }, [clearRearm]);
 
   useEffect(() => {
     void (async () => {
@@ -61,24 +94,24 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
 
     const native = bridge();
     try {
+      native?.stopTaraTts?.();
       native?.setTaraEnabled?.(true);
       native?.setNoraConversationActive?.(true);
-      window.setTimeout(() => {
-        try { native?.speakTara?.('Voice activation required. Say: Hi Shruthi, this is Tinu.', 'en-GB'); } catch { }
-      }, 350);
+      hardRearm(120);
     } catch { }
 
     return () => {
       clearVerifyPoll();
+      clearRearm();
       try { native?.setNoraConversationActive?.(false); } catch { }
     };
-  }, [clearVerifyPoll]);
+  }, [clearRearm, clearVerifyPoll, hardRearm]);
 
   const completeReturningUserUnlock = useCallback(async () => {
     const { data } = await supabase.auth.getSession();
     const session = data.session;
     if (!session?.user) {
-      setStatus('Voice activation accepted · secure login required');
+      setStatus('Voice accepted · secure login required');
       setFallbackVisible(true);
       return;
     }
@@ -104,40 +137,75 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
           clearVerifyPoll();
           setStatus('Verification timed out');
           setFallbackVisible(true);
+          hardRearm(200);
         }
         return;
       }
       clearVerifyPoll();
       if (result === 'success') {
         setStatus('Identity verified · unlocking CentralHub');
+        try { sessionStorage.setItem('centralhub:shruthi-security-unlocked-at', String(Date.now())); } catch { }
         router.replace('/dashboard');
         return;
       }
       setStatus('Identity verification did not complete');
       setError('Try again or use your login ID and password.');
       setFallbackVisible(true);
-    }, 300);
-  }, [clearVerifyPoll, router]);
+      hardRearm(240);
+    }, 250);
+  }, [clearVerifyPoll, hardRearm, router]);
 
   useEffect(() => {
     const onTranscript = (event: Event) => {
       const text = String((event as TranscriptEvent).detail?.text || '').trim();
       if (!text) return;
       event.stopImmediatePropagation();
-      setHeard(text.replace(/^SHRUTHI\s*/i, '').trim() || text);
-      if (!IDENTITY_PHRASE.test(text)) {
-        setStatus('Voice phrase did not match');
-        setError('Say: “Hi Shruthi, this is Tinu.” Or use secure login.');
-        setFallbackVisible(true);
+
+      const body = text.replace(/^SHRUTHI\s*/i, '').trim();
+      const now = Date.now();
+      const wakeOnly = /^SHRUTHI[.!?\s]*$/i.test(text) || WAKE_ONLY.test(text);
+      const fullIdentity = FULL_IDENTITY_PHRASE.test(text);
+      const followUpIdentity = now < identityArmedUntilRef.current && SELF_IDENTITY_PHRASE.test(body || text);
+      const mentionsShruthi = /SHRUTHI/i.test(text) || SHRUTHI_SIGNAL.test(text);
+      const mentionsTinu = TINU_SIGNAL.test(text);
+
+      if (!mentionsShruthi && !mentionsTinu && !followUpIdentity) {
+        setStatus('Listening · focused on your security phrase');
         return;
       }
-      setError('');
-      setStatus('Voice activation accepted');
-      void completeReturningUserUnlock();
+
+      setHeard(body || text);
+
+      if (wakeOnly) {
+        identityArmedUntilRef.current = now + IDENTITY_WINDOW_MS;
+        setError('');
+        setFallbackVisible(false);
+        setStatus('Shruthi heard · now say “This is Tinu”');
+        return;
+      }
+
+      if (fullIdentity || followUpIdentity) {
+        identityArmedUntilRef.current = 0;
+        setError('');
+        setStatus('Voice activation accepted');
+        void completeReturningUserUnlock();
+        return;
+      }
+
+      if (mentionsShruthi) {
+        identityArmedUntilRef.current = now + IDENTITY_WINDOW_MS;
+        setError('');
+        setStatus('Shruthi heard · say “This is Tinu”');
+        return;
+      }
+
+      setStatus('Almost there · listening again');
+      setError('Say “Shruthi” then “This is Tinu”, or say the full phrase naturally.');
+      hardRearm(220);
     };
     window.addEventListener('centralhub:tara-transcript', onTranscript as EventListener, true);
     return () => window.removeEventListener('centralhub:tara-transcript', onTranscript as EventListener, true);
-  }, [completeReturningUserUnlock]);
+  }, [completeReturningUserUnlock, hardRearm]);
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
@@ -145,6 +213,7 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
     setIsLoading(true);
     try {
       await AuthService.signIn(email, password);
+      try { sessionStorage.setItem('centralhub:shruthi-security-unlocked-at', String(Date.now())); } catch { }
       setStatus('Login verified · unlocking CentralHub');
       router.replace('/dashboard');
     } catch (err: any) {
@@ -182,6 +251,7 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
       if (res.success && res.session_tokens?.email_otp && res.user?.email) {
         const { error: authError } = await supabase.auth.verifyOtp({ email: res.user.email, token: res.session_tokens.email_otp, type: 'magiclink' });
         if (authError) throw authError;
+        try { sessionStorage.setItem('centralhub:shruthi-security-unlocked-at', String(Date.now())); } catch { }
         setStatus('WhatsApp verification complete · unlocking CentralHub');
         router.replace('/dashboard');
       } else setError(res.error || 'Invalid OTP');
@@ -211,8 +281,9 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
           <div className="flex items-center justify-center gap-2 text-cyan-100"><Mic className="h-5 w-5" /><span className="font-semibold">{status}</span></div>
           <p className="mt-3 text-sm text-slate-400">Say naturally:</p>
           <p className="mt-1 text-lg font-medium">“Hi Shruthi, this is Tinu.”</p>
+          <p className="mt-1 text-xs text-slate-500">Shruthi stays silent while listening so her own speaker does not interfere.</p>
           {heard && <p className="mt-3 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2 text-xs text-slate-400">Heard: {heard}</p>}
-          <p className="mx-auto mt-4 max-w-lg text-[11px] leading-relaxed text-slate-500">Voice starts the secure access flow. For returning sessions, Android biometric/device credential confirms identity before CentralHub opens. A spoken phrase by itself is not treated as a secure voiceprint.</p>
+          <p className="mx-auto mt-4 max-w-lg text-[11px] leading-relaxed text-slate-500">Background speech without your security markers is ignored. For returning sessions, Android biometric/device credential confirms identity before CentralHub opens.</p>
           {error && <p className="mt-3 text-sm text-rose-300">{error}</p>}
 
           <div className="mt-5 grid gap-2 sm:grid-cols-2">
