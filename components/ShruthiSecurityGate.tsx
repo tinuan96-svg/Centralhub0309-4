@@ -17,8 +17,10 @@ type NativeSecurityBridge = {
 
 type TranscriptEvent = CustomEvent<{ text?: string }>;
 
-const RELOCK_AFTER_MS = 30_000;
+const TRUST_WINDOW_MS = 5 * 60_000;
+const RELOCK_AFTER_MS = 5 * 60_000;
 const IDENTITY_WINDOW_MS = 10_000;
+const TRUST_KEY_PREFIX = 'centralhub:shruthi-security-trusted-until:';
 const SHRUTHI_NAME = '(?:shruthi|shruti|sruthi|sruti|shrudhi|shroothi|shrooti|ശ്രുതി|ശ്രൂതി|ஸ்ருதி|ஸ்ரூதி)';
 const TINU_NAME = '(?:tinu|tino|teenu|tenu)';
 const SHRUTHI_SIGNAL = new RegExp(SHRUTHI_NAME, 'iu');
@@ -31,6 +33,30 @@ const STOP_PHRASE = /^(?:(?:ok|okay|please|hey)\s+)?(?:stop|stop it|wait|pause|h
 function nativeBridge(): NativeSecurityBridge | undefined {
   if (typeof window === 'undefined') return undefined;
   return (window as unknown as { CentralHubNative?: NativeSecurityBridge }).CentralHubNative;
+}
+
+function trustKey(userId: string) {
+  return `${TRUST_KEY_PREFIX}${userId}`;
+}
+
+function readTrustedUntil(userId: string) {
+  if (typeof window === 'undefined' || !userId) return 0;
+  try {
+    const value = Number(window.sessionStorage.getItem(trustKey(userId)) || 0);
+    return Number.isFinite(value) ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeTrustedUntil(userId: string, value: number) {
+  if (typeof window === 'undefined' || !userId) return;
+  try { window.sessionStorage.setItem(trustKey(userId), String(value)); } catch { }
+}
+
+function clearTrustedUntil(userId: string) {
+  if (typeof window === 'undefined' || !userId) return;
+  try { window.sessionStorage.removeItem(trustKey(userId)); } catch { }
 }
 
 export default function ShruthiSecurityGate({ children }: { children: React.ReactNode }) {
@@ -76,8 +102,6 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
       const bridge = nativeBridge();
       if (bridge?.getPlatform?.() !== 'android') return;
       try {
-        // Security listening is intentionally silent. Shruthi must not speak over
-        // the user's identity phrase and create her own echo/noise on the mic.
         bridge.stopTaraTts?.();
         bridge.setTaraEnabled?.(false);
         window.setTimeout(() => {
@@ -111,9 +135,6 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
       bridge.stopTaraTts?.();
       bridge.setTaraEnabled?.(true);
       bridge.setNoraConversationActive?.(true);
-      // Do not play a spoken "voice activation required" prompt here. On a phone
-      // speaker that prompt competes with the user's first words and was the main
-      // source of self-echo at the security gate.
       hardRearmVoice(120);
     } catch { }
   }, [clearRearmTimer, clearVerifyPoll, hardRearmVoice, setGlobalLock, user]);
@@ -128,13 +149,14 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
     setPassword('');
     setError('');
     setStatus('Identity verified · CentralHub unlocked');
+    if (user?.id) writeTrustedUntil(user.id, Date.now() + TRUST_WINDOW_MS);
     try { sessionStorage.setItem('centralhub:shruthi-security-unlocked-at', String(Date.now())); } catch { }
     try {
       bridge?.stopTaraTts?.();
       bridge?.setNoraConversationActive?.(false);
       bridge?.setTaraEnabled?.(true);
     } catch { }
-  }, [clearRearmTimer, clearVerifyPoll, setGlobalLock]);
+  }, [clearRearmTimer, clearVerifyPoll, setGlobalLock, user?.id]);
 
   const beginSecureVerification = useCallback(() => {
     clearVerifyPoll();
@@ -183,7 +205,17 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
       setGlobalLock(false);
       return;
     }
-    lock();
+    if (readTrustedUntil(user.id) > Date.now()) {
+      setGlobalLock(false);
+      try {
+        const bridge = nativeBridge();
+        bridge?.setNoraConversationActive?.(false);
+        bridge?.setTaraEnabled?.(true);
+      } catch { }
+    } else {
+      clearTrustedUntil(user.id);
+      lock();
+    }
     return () => {
       clearVerifyPoll();
       clearRearmTimer();
@@ -196,19 +228,43 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
         hiddenAtRef.current = Date.now();
         return;
       }
+      const now = Date.now();
       const hiddenAt = hiddenAtRef.current;
       hiddenAtRef.current = null;
-      if (hiddenAt && Date.now() - hiddenAt >= RELOCK_AFTER_MS) lock();
-      else if (lockedRef.current) hardRearmVoice(120);
+      if (!user?.id) return;
+
+      if (hiddenAt && now - hiddenAt >= RELOCK_AFTER_MS) {
+        clearTrustedUntil(user.id);
+        lock();
+        return;
+      }
+
+      if (readTrustedUntil(user.id) > now) {
+        setGlobalLock(false);
+        return;
+      }
+
+      if (lockedRef.current) hardRearmVoice(120);
+      else {
+        clearTrustedUntil(user.id);
+        lock();
+      }
     };
-    const onFocus = () => { if (lockedRef.current) hardRearmVoice(120); };
+    const onFocus = () => {
+      if (!user?.id) return;
+      if (readTrustedUntil(user.id) > Date.now()) {
+        setGlobalLock(false);
+        return;
+      }
+      if (lockedRef.current) hardRearmVoice(120);
+    };
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('focus', onFocus);
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('focus', onFocus);
     };
-  }, [hardRearmVoice, lock]);
+  }, [hardRearmVoice, lock, setGlobalLock, user?.id]);
 
   useEffect(() => {
     const onTranscript = (event: Event) => {
@@ -226,9 +282,6 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
         const mentionsShruthi = /SHRUTHI/i.test(text) || SHRUTHI_SIGNAL.test(text);
         const mentionsTinu = TINU_SIGNAL.test(text);
 
-        // Recognition-level noise gate: surrounding conversation/noise that does
-        // not contain the security identity markers is ignored silently instead
-        // of being treated as a failed login attempt.
         if (!mentionsShruthi && !mentionsTinu && !followUpIdentity) {
           setStatus('Listening · focused on your security phrase');
           return;
@@ -266,8 +319,6 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
           return;
         }
 
-        // Phrase-like mismatches get one concise hint; unrelated background audio
-        // never reaches this branch.
         setStatus('Almost there · listening again');
         setError('Say “Shruthi” then “This is Tinu”, or say the full phrase naturally.');
         hardRearmVoice(220);
@@ -344,7 +395,7 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
             </form>
           )}
         </div>
-        <div className="mt-5 flex items-center gap-2 text-[10px] uppercase tracking-[0.24em] text-slate-600"><LockKeyhole className="h-3.5 w-3.5" /> Relocks after 30 seconds away from the app</div>
+        <div className="mt-5 flex items-center gap-2 text-[10px] uppercase tracking-[0.24em] text-slate-600"><LockKeyhole className="h-3.5 w-3.5" /> Trusted for 5 minutes · relocks after 5 minutes away</div>
       </div>
     </section>
   );
