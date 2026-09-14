@@ -20,7 +20,11 @@ export default function NoraConversationSessionSync() {
     let lastActive: boolean | null = null;
 
     const sync = () => {
-      const active = Boolean(document.querySelector('.nora-screen'));
+      // Minimized Shruthi is still an active conversation. Only the real End/close
+      // state should tell the native listener that the conversation has finished.
+      const active = Boolean(
+        document.querySelector('.nora-screen, [aria-label="SHRUTHI minimized assistant"]'),
+      );
       if (active === lastActive) return;
       lastActive = active;
       try {
