@@ -16,6 +16,12 @@ verify_jwt = false
 [functions.competitor-price-scanner]
 verify_jwt = false
 
+# Custom-auth supervisor: validates admin/service-role access or the existing
+# competitor cron secret. It writes dry-run reviews only; price execution remains
+# behind Pricing Approval Centre.
+[functions.competitor-intelligence-agent]
+verify_jwt = false
+
 [functions.whatsapp-media]
 verify_jwt = false
 
