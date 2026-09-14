@@ -43,14 +43,13 @@ public final class CentralHubActivity extends MainActivity {
             previousAudioMode = audioManager.getMode();
             previousMusicVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
 
-            // MODE_IN_COMMUNICATION lets Samsung's audio stack apply its voice-call
-            // echo/noise processing while the microphone remains live for barge-in.
+            // Samsung's communication mode enables the platform's voice-oriented
+            // echo/noise processing while the recognizer remains live for barge-in.
             audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
             audioManager.setMicrophoneMute(false);
 
-            // Lightly duck only very loud playback. This is intentionally modest:
-            // Shruthi stays easy to hear, while her speaker output is less likely to
-            // dominate the recognizer when Tinu starts talking over her.
+            // Lightly duck only very loud playback. Shruthi remains easy to hear,
+            // but the phone speaker is less likely to drown out a real interruption.
             int max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
             int ceiling = Math.max(1, Math.round(max * 0.78f));
             if (previousMusicVolume > ceiling) {
@@ -97,10 +96,11 @@ public final class CentralHubActivity extends MainActivity {
         webView.evaluateJavascript(
                 "(function(){try{return String(document.referrer||'')}catch(e){return ''}})()",
                 raw -> {
-                    String referrer = raw == null ? "" : raw.replace("\\\"", "\"");
+                    String referrer = raw == null ? "" : raw;
                     if (referrer.startsWith("\"") && referrer.endsWith("\"") && referrer.length() >= 2) {
                         referrer = referrer.substring(1, referrer.length() - 1);
                     }
+                    referrer = referrer.replace("\\u0026", "&").replace("\\/", "/");
                     String target = CENTRALHUB_FALLBACK;
                     try {
                         Uri uri = Uri.parse(referrer);
@@ -124,15 +124,15 @@ public final class CentralHubActivity extends MainActivity {
             return;
         }
 
-        final String currentUrl = webView.getUrl();
+        String currentUrl = webView.getUrl();
         if (webView.canGoBack()) {
             webView.goBack();
             return;
         }
 
-        // This is the failure shown on Google Search Central: an external document
-        // can replace the main WebView without a native history entry. Never finish
-        // CentralHub in that case; return to the referring CentralHub page/dashboard.
+        // External pages can replace the main WebView without creating a native
+        // history entry. In that case Android Back must return to CentralHub,
+        // never destroy the Activity/app.
         if (isExternalHttpUrl(currentUrl)) {
             returnToCentralHub(webView);
             return;
@@ -145,8 +145,8 @@ public final class CentralHubActivity extends MainActivity {
                     if (hasPageHistory) {
                         webView.evaluateJavascript("window.history.back()", null);
                     } else {
-                        // Keep the Activity alive; Back at the dashboard simply puts
-                        // CentralHub in the background instead of destroying the app.
+                        // At the app root, keep CentralHub alive in the task rather
+                        // than finishing it. Returning to it is immediate.
                         moveTaskToBack(true);
                     }
                 }
@@ -154,13 +154,13 @@ public final class CentralHubActivity extends MainActivity {
     }
 
     @Override
-    protected void onPause() {
+    public void onPause() {
         restoreBargeInAudioProfile();
         super.onPause();
     }
 
     @Override
-    protected void onDestroy() {
+    public void onDestroy() {
         restoreBargeInAudioProfile();
         super.onDestroy();
     }

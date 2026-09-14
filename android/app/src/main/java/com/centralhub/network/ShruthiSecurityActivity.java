@@ -1,6 +1,5 @@
 package com.centralhub.network;
 
-import android.content.Context;
 import android.os.Bundle;
 import android.view.WindowManager;
 import androidx.appcompat.app.AppCompatActivity;
@@ -10,8 +9,6 @@ import androidx.core.content.ContextCompat;
 import java.util.concurrent.Executor;
 
 public final class ShruthiSecurityActivity extends AppCompatActivity {
-    private static final String SECURITY_PREFS = "centralhub_security";
-    private static final String SECURE_UNLOCK_RESULT = "secure_unlock_result";
     private boolean resultWritten = false;
 
     @Override
@@ -50,8 +47,8 @@ public final class ShruthiSecurityActivity extends AppCompatActivity {
             @Override
             public void onAuthenticationFailed() {
                 super.onAuthenticationFailed();
-                // Keep the prompt open. Android may allow another biometric attempt
-                // or device-credential fallback without restarting CentralHub.
+                // Keep the prompt open. Android can accept another fingerprint or
+                // fall back to the device credential without restarting the flow.
             }
         });
 
@@ -67,20 +64,18 @@ public final class ShruthiSecurityActivity extends AppCompatActivity {
     private void finishWithResult(String result) {
         if (resultWritten) return;
         resultWritten = true;
-        getSharedPreferences(SECURITY_PREFS, Context.MODE_PRIVATE)
-                .edit()
-                .putString(SECURE_UNLOCK_RESULT, result)
-                .apply();
+
+        // The WebView polls this result immediately when MainActivity resumes.
+        // Use a synchronous tiny write so the first successful fingerprint cannot
+        // be lost between Activity finish/resume and SharedPreferences flushing.
+        ShruthiSecurityResultBridge.write(this, result);
         finish();
     }
 
     @Override
     protected void onDestroy() {
         if (!resultWritten && isFinishing()) {
-            getSharedPreferences(SECURITY_PREFS, Context.MODE_PRIVATE)
-                    .edit()
-                    .putString(SECURE_UNLOCK_RESULT, "cancelled")
-                    .apply();
+            ShruthiSecurityResultBridge.write(this, "cancelled");
         }
         super.onDestroy();
     }
