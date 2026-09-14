@@ -112,6 +112,16 @@ function announceHandoff(target: Target) {
   }
 }
 
+function securityUnlockCutoffMs() {
+  if (typeof window === 'undefined') return 0;
+  try {
+    const raw = Number(sessionStorage.getItem('centralhub:shruthi-security-unlocked-at') || 0);
+    return Number.isFinite(raw) && raw > 0 ? raw : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export default function NoraComputerLauncher() {
   const [command, setCommand] = useState<VoiceCommand | null>(null);
   const [busy, setBusy] = useState(false);
@@ -124,8 +134,16 @@ export default function NoraComputerLauncher() {
   const autoStart = Boolean(command?.action_payload?.computer_auto_start);
 
   const refresh = useCallback(async () => {
-    const commandCutoff = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-    const activeCutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    if (typeof window !== 'undefined' && (window as any).__centralHubSecurityLocked === true) {
+      setCommand(null);
+      return;
+    }
+
+    const now = Date.now();
+    const unlockCutoff = securityUnlockCutoffMs();
+    const commandCutoffMs = Math.max(now - 2 * 60 * 60 * 1000, unlockCutoff);
+    const commandCutoff = new Date(commandCutoffMs).toISOString();
+    const activeCutoff = new Date(now - 15 * 60 * 1000).toISOString();
     const { data: auth } = await supabase.auth.getUser();
     if (!auth.user) return setCommand(null);
 
@@ -175,6 +193,12 @@ export default function NoraComputerLauncher() {
 
   const start = useCallback(async () => {
     if (!command || !target || busy || launchingRef.current) return;
+    const unlockCutoff = securityUnlockCutoffMs();
+    if (unlockCutoff > 0 && new Date(command.created_at).getTime() < unlockCutoff) {
+      setCommand(null);
+      return;
+    }
+
     launchingRef.current = true;
     setBusy(true);
     setError('');
@@ -261,7 +285,7 @@ export default function NoraComputerLauncher() {
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-semibold">Shruthi Live Web</h3><button type="button" onClick={() => setDismissed(command.id)} className="rounded-lg p-1 text-slate-400 hover:bg-white/10" aria-label="Dismiss"><X className="h-4 w-4" /></button></div>
           <p className="mt-1 text-xs leading-relaxed text-slate-400">Resolved to <strong className="text-slate-200">{target.system}</strong>. Shruthi will work visibly and pause for authentication, missing details, or consequential approval.</p>
-          <div className="mt-3 flex items-center gap-2 text-[10px] text-emerald-300"><ShieldCheck className="h-3.5 w-3.5" />Live Web routing is active; missed realtime events are recovered automatically.</div>
+          <div className="mt-3 flex items-center gap-2 text-[10px] text-emerald-300"><ShieldCheck className="h-3.5 w-3.5" />Only fresh tasks created after the current security unlock can auto-open Live Web.</div>
           {error && <p className="mt-2 text-xs text-rose-300">{error}</p>}
           <button type="button" disabled={busy} onClick={() => void start()} className="mt-3 w-full rounded-xl bg-cyan-400 px-3 py-2.5 text-sm font-semibold text-slate-950 disabled:opacity-50">{busy ? 'Starting…' : `Open ${target.system} & continue`}</button>
         </div>
