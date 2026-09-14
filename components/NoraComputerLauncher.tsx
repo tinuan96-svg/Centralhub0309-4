@@ -151,7 +151,7 @@ export default function NoraComputerLauncher() {
       .from('nora_action_sessions')
       .select('id,updated_at')
       .eq('user_id', auth.user.id)
-      .in('status', ['planned', 'running', 'waiting_input', 'waiting_approval', 'paused'])
+      .in('status', ['planned', 'running', 'waiting_input', 'waiting_approval'])
       .gte('updated_at', activeCutoff)
       .limit(1);
     if (active?.length) return setCommand(null);
@@ -247,16 +247,15 @@ export default function NoraComputerLauncher() {
         throw new Error('Android Live Web could not launch. Update/reopen the CentralHub app.');
       }
 
-      await supabase.from('voice_assistant_commands').update({
-        status: 'completed',
-        action_payload: {
-          ...(command.action_payload || {}),
-          computer_session_id: actionSession.id,
-          delegated_to: 'nora_computer_mode',
-          resolved_target_key: target.key,
-          resolved_target_url: target.url,
-        },
-      }).eq('id', command.id);
+      const { data: completed, error: completeError } = await supabase.rpc('complete_voice_computer_command', {
+        p_command_id: command.id,
+        p_session_id: actionSession.id,
+        p_target_key: target.key,
+        p_target_url: target.url,
+      });
+      if (completeError || completed !== true) {
+        console.warn('Live Web launched but source command completion could not be persisted', completeError);
+      }
       setCommand(null);
     } catch (e: any) {
       autoStartedRef.current = null;
