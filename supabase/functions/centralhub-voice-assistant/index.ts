@@ -7,7 +7,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" };
-const TRANSCRIBE_HINT = "Shruthi, CentralHub, MalluSpices, KeralaGrocery, PocketGrocery, bank balance, stock, orders, customers, finance, Supabase, GitHub, Netlify, DHL, Mollie, WhatsApp.";
+const TRANSCRIBE_HINT = "Shruthi, CentralHub, MalluSpices, KeralaGrocery, PocketGrocery, TamilRetail, bank balance, stock, orders, customers, finance, Supabase, GitHub, Netlify, DHL, Mollie, WhatsApp.";
 
 function reply(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), { status, headers: jsonHeaders });
@@ -71,6 +71,23 @@ function matchingProducts(products: any[], text: string) {
   }).filter((x: any) => x.score > 0).sort((a: any, b: any) => b.score - a.score).slice(0, 15).map((x: any) => x.p);
 }
 
+async function getProjectKnowledge(db: any, userText: string) {
+  const { data, error } = await db.from("shruthi_project_knowledge")
+    .select("scope,topic,content,source_type,source_date,priority,tags")
+    .eq("active", true)
+    .order("priority", { ascending: false })
+    .limit(80);
+  if (error || !data) return [];
+  const tokens = new Set(words(userText).filter((x) => x.length > 2));
+  return data.map((row: any) => {
+    const hay = new Set(words(`${row.scope} ${row.topic} ${(row.tags || []).join(" ")} ${row.content}`));
+    let overlap = 0;
+    for (const token of tokens) if (hay.has(token) || [...hay].some((word) => word.includes(token) || token.includes(word))) overlap += 1;
+    const always = ["core", "assistant", "knowledge"].includes(String(row.scope));
+    return { row, score: Number(row.priority || 0) + overlap * 20 + (always ? 80 : 0) };
+  }).sort((a: any, b: any) => b.score - a.score).slice(0, 18).map((x: any) => x.row);
+}
+
 async function getSnapshot(db: any, userId: string, userText: string) {
   const now = Date.now();
   const since24h = new Date(now - 86400000).toISOString();
@@ -84,7 +101,7 @@ async function getSnapshot(db: any, userId: string, userText: string) {
     db.from("products").select("id,name,sku,brand,category,stock,reorder_level,stock_status,is_active,is_published,updated_at").eq("is_active", true).limit(1000),
     db.from("store_bank_accounts").select("store_id,bank_name,account_name,currency,current_balance,last_synced_at,balance_source,sync_source,account_scope").eq("is_active", true).order("updated_at", { ascending: false }).limit(30),
     db.from("v_finance_cash_position").select("bank_balance,total_payables,due_now,due_7_days,due_30_days,overdue_count,projected_cash_after_7_day_payables,projected_cash_after_30_day_payables").limit(1),
-    db.from("voice_assistant_commands").select("mode,input_text,response_text,intent,created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(8),
+    db.from("voice_assistant_commands").select("mode,input_text,response_text,intent,created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(10),
   ]);
 
   const stores = storesRes.data ?? [];
@@ -192,21 +209,34 @@ Deno.serve(async (req: Request) => {
   if (!openaiKey) return reply(503, { success: false, error: "openai_not_configured" });
   const text = String(body?.text ?? "").trim().slice(0, 6000), requestedMode = ["operations", "board", "developer"].includes(String(body?.mode)) ? String(body.mode) : "operations", pageContext = String(body?.page_context ?? "").trim().slice(0, 300);
   if (!text) return reply(400, { success: false, error: "missing_command" });
-  const snapStart = Date.now(), snapshot = await getSnapshot(db, user.id, text), snapshotMs = Date.now() - snapStart;
-  const prompt = `You are Shruthi (ശ്രുതി), the private AI executive assistant and business manager inside CentralHub for the sole super-admin. NORA is only a legacy wake alias. Match the user's Malayalam/English/Tamil language mix naturally.
+  const snapStart = Date.now();
+  const [snapshot, projectKnowledge] = await Promise.all([getSnapshot(db, user.id, text), getProjectKnowledge(db, text)]);
+  const snapshotMs = Date.now() - snapStart;
+  const prompt = `You are Shruthi (ശ്രുതി), the private executive assistant and overall business manager inside CentralHub for the sole super-admin. NORA is only a legacy wake alias. Match the user's Malayalam/English/Tamil language mix naturally.
 
-The CURRENT PAGE is UI context only and NEVER limits your data access. You have page-independent READ access to the LIVE SNAPSHOT. If the requested fact is in the snapshot, answer it directly; never tell the user to open Banking, Products, Orders, Finance or another page merely to read data you already have. Navigation is optional after answering.
+PERSONALITY AND INTERACTION:
+- Talk like a trusted human executive assistant, not like a chatbot. Be warm, lively and natural for ordinary conversation without fake enthusiasm or filler.
+- Adapt internally to the task: friendly assistant, analyst, operations lead, executive adviser, support lead or critical-incident mode. Do not announce artificial mode labels unless the user asks.
+- For finance, banking, payments, security, legal, permissions or production incidents, become precise, calm and professional automatically.
+- Use recentConversation for follow-ups and avoid making the user repeat context. Never say "as an AI" unless directly asked about your nature.
+- Ordinary spoken replies are usually 1-3 natural sentences. For explicit deep/audit/investigate requests, provide deeper evidence and next steps.
 
-For bank balances, name the store/account, balance, currency and freshness when available; if null or stale, say so. For stock, distinguish total, low and out-of-stock, and prefer stock.productMatches for named products/brands. Sales/revenue/profit count paid orders only. Use recentConversation for short follow-ups.
+DATA AND KNOWLEDGE:
+- The CURRENT PAGE is UI context only and NEVER limits data access. You have page-independent READ access to the LIVE SNAPSHOT. If a requested fact is in the snapshot, answer it directly; never tell the user to open another CentralHub page merely to read it.
+- PROJECT KNOWLEDGE is curated from prior project history. Use it for architecture, decisions and stable context. If it conflicts with the live snapshot or a verified current state, the live/verified state wins.
+- For bank balances, name store/account, balance, currency and freshness when available. For stock, distinguish total, low and out-of-stock and prefer stock.productMatches for named items. Sales/revenue/profit count paid orders only.
 
-AUTHORITY: broad read-only business access plus navigation and harmless refresh/reload. ZERO write authority: no edits, creates, deletes, price/order/settings changes, refunds, payments, transfers, deployments, external messages, permission changes, or commitments. For a write request, explain that Shruthi is currently read-only and do not pretend it happened. requires_confirmation must remain false and suggested_action null.
-
-Speak like a fast human assistant: ordinary replies usually 1-3 natural sentences. Give deeper evidence only when explicitly asked for deep/audit/investigate/full analysis. Never invent missing data.
+AUTHORITY AND LIVE WEB:
+- Inside CentralHub, this voice endpoint is read-only plus navigation and harmless refresh/reload. Do not perform database edits, refunds, payments, deletes, price/order/settings changes or other internal mutations from this endpoint.
+- External website work is delegated to Shruthi Live Web. If the user asks to create/open/configure/connect/search/research/browse or work on Instagram, Facebook/Meta, Spotify, Shopify, Google Ads/Analytics/Merchant/Search Console/Business, GitHub, Netlify, Supabase or another public website, do NOT refuse merely because this voice endpoint is read-only. Briefly acknowledge the task; the command-routing layer will open the visible Live Web browser.
+- Live Web will ask the user to take over for password, OTP/2FA, CAPTCHA, identity verification or authentication secrets and requires approval before final consequential actions such as account creation, publishing, spend/payment, ownership/permission changes, deletion, terms acceptance or legal/identity submission.
+- Never invent that an external action already happened.
 
 Return ONLY JSON: {"reply":"string","intent":"string","mode":"operations|board|developer","risk_level":"read_only|low|medium|high","requires_confirmation":false,"suggested_action":null,"navigation_path":null,"speak":true}
 CURRENT PAGE: ${pageContext || "unknown"}
 INTERNAL MODE: ${requestedMode}
 USER: ${text}
+PROJECT KNOWLEDGE: ${JSON.stringify(projectKnowledge)}
 LIVE PAGE-INDEPENDENT SNAPSHOT: ${JSON.stringify(snapshot)}`;
   const configured = String(Deno.env.get("CENTRALHUB_VOICE_MODEL") || Deno.env.get("OPENAI_MODEL_FAST") || "").trim();
   const models = Array.from(new Set(["gpt-5.6-luna", configured, "gpt-5.6-terra"].filter(Boolean)));
@@ -223,7 +253,7 @@ LIVE PAGE-INDEPENDENT SNAPSHOT: ${JSON.stringify(snapshot)}`;
   let result: any; try { result = JSON.parse(textOut(raw).trim()); } catch { return reply(502, { success: false, error: "invalid_assistant_output", attempted_model: usedModel || null, latency_ms: Date.now() - started }); }
   const finalResult = { reply: String(result?.reply ?? "Shruthi is ready.").slice(0, 5000), intent: String(result?.intent ?? "general").slice(0, 200), mode: ["operations", "board", "developer"].includes(String(result?.mode)) ? String(result.mode) : requestedMode, risk_level: ["read_only", "low", "medium", "high"].includes(String(result?.risk_level)) ? String(result.risk_level) : "read_only", requires_confirmation: false, suggested_action: null, navigation_path: typeof result?.navigation_path === "string" ? result.navigation_path : null, speak: result?.speak !== false };
   const totalMs = Date.now() - started;
-  const { error: historyError } = await db.from("voice_assistant_commands").insert({ user_id: user.id, mode: finalResult.mode, input_text: text, response_text: finalResult.reply, intent: finalResult.intent, risk_level: finalResult.risk_level, requires_confirmation: false, action_name: null, action_payload: { navigation_path: finalResult.navigation_path, model: usedModel, page_context: pageContext, assistant_name: "Shruthi", requested_domains: snapshot.requestedDomains, access_mode: "page_independent_read_only", latency_ms: { snapshot: snapshotMs, model: modelMs, total: totalMs } }, status: "completed" });
+  const { error: historyError } = await db.from("voice_assistant_commands").insert({ user_id: user.id, mode: finalResult.mode, input_text: text, response_text: finalResult.reply, intent: finalResult.intent, risk_level: finalResult.risk_level, requires_confirmation: false, action_name: null, action_payload: { navigation_path: finalResult.navigation_path, model: usedModel, page_context: pageContext, assistant_name: "Shruthi", requested_domains: snapshot.requestedDomains, knowledge_topics: projectKnowledge.map((x: any) => `${x.scope}:${x.topic}`), access_mode: "page_independent_read_only", latency_ms: { snapshot: snapshotMs, model: modelMs, total: totalMs } }, status: "completed" });
   if (historyError) console.error("centralhub-voice history insert failed", historyError.message);
   return reply(200, { success: true, transcript: text, ...finalResult, status: "completed", access_mode: "page_independent_read_only", latency_ms: { snapshot: snapshotMs, model: modelMs, total: totalMs } });
 });
