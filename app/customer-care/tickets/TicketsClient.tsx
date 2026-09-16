@@ -1,9 +1,10 @@
 'use client';
 
+import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { SupportTicket } from '@/lib/types';
 import { ticketService } from '@/lib/services/customer-care/ticketService';
-import { designTokens, Card, Button, Badge, PageHeader } from '@/lib/design-system';
+import { Card, Button, Badge, PageHeader } from '@/lib/design-system';
 import CreateTicketModal from '@/components/CreateTicketModal';
 import StoreScopeSelector from '@/components/StoreScopeSelector';
 
@@ -11,6 +12,10 @@ const formatFullDate = (date: string | null) => {
   if (!date) return '';
   return new Date(date).toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 };
+
+const chatHref = (ticket: SupportTicket) => ticket.conversation_id
+  ? `/customer-care/tickets/chat?conversation=${encodeURIComponent(ticket.conversation_id)}&ticket=${encodeURIComponent(ticket.id)}`
+  : null;
 
 export default function TicketsClient({ params, searchParams }: { params: any; searchParams: any }) {
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
@@ -54,7 +59,7 @@ export default function TicketsClient({ params, searchParams }: { params: any; s
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 sm:p-6 space-y-4 sm:space-y-6 pb-28 md:pb-6">
       <PageHeader
         title="Support Tickets"
         subtitle="Manage and resolve customer complaints and enquiries."
@@ -63,72 +68,79 @@ export default function TicketsClient({ params, searchParams }: { params: any; s
         }
       />
 
-      <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-2xl">
+      <div className="bg-slate-900/50 border border-slate-800 p-3 sm:p-4 rounded-2xl">
         <StoreScopeSelector value={selectedStoreId} onStoreChange={setSelectedStoreId} />
       </div>
 
       {selectedTicket && (
-        <Card className="p-6 bg-slate-900 border-blue-500/50 space-y-6 animate-in slide-in-from-top duration-300">
-            <div className="flex justify-between items-start">
+        <Card className="p-4 sm:p-6 bg-slate-900 border-blue-500/50 space-y-5 sm:space-y-6 animate-in slide-in-from-top duration-300">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
+            <div className="min-w-0">
+              <h3 className="text-lg sm:text-xl font-bold text-white mb-1 truncate">Ticket Details #{selectedTicket.id.slice(0, 8).toUpperCase()}</h3>
+              <p className="text-xs sm:text-sm text-slate-400">Created on {formatFullDate(selectedTicket.created_at)}</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {chatHref(selectedTicket) && (
+                <Link href={chatHref(selectedTicket)!} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-cyan-500 px-4 py-2 text-xs font-black text-slate-950 active:scale-[.98]">
+                  Open customer chat
+                </Link>
+              )}
+              <Button variant="secondary" onClick={() => setSelectedTicket(null)}>Close Details</Button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 sm:gap-6">
+            <div className="md:col-span-2 space-y-5 sm:space-y-6">
+              <div>
+                <label className="text-[10px] text-slate-500 font-bold uppercase block mb-2">Subject / Category</label>
+                <p className="text-slate-100 font-medium capitalize">{selectedTicket.category.replace('_', ' ')}</p>
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 font-bold uppercase block mb-2">Description</label>
+                <div className="p-4 bg-slate-800/50 rounded-xl border border-slate-700 text-sm text-slate-300 whitespace-pre-wrap">
+                  {selectedTicket.description || 'No description provided.'}
+                </div>
+              </div>
+              {selectedTicket.resolution && (
                 <div>
-                    <h3 className="text-xl font-bold text-white mb-1">Ticket Details #{selectedTicket.id.slice(0, 8)}</h3>
-                    <p className="text-sm text-slate-400">Created on {formatFullDate(selectedTicket.created_at)}</p>
+                  <label className="text-[10px] text-emerald-500 font-bold uppercase block mb-2">Resolution</label>
+                  <div className="p-4 bg-emerald-500/10 rounded-xl border border-emerald-500/20 text-sm text-emerald-100">
+                    {selectedTicket.resolution}
+                  </div>
                 </div>
-                <Button variant="secondary" onClick={() => setSelectedTicket(null)}>Close Details</Button>
+              )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="md:col-span-2 space-y-6">
-                    <div>
-                        <label className="text-[10px] text-slate-500 font-bold uppercase block mb-2">Subject / Category</label>
-                        <p className="text-slate-100 font-medium capitalize">{selectedTicket.category.replace('_', ' ')}</p>
-                    </div>
-                    <div>
-                        <label className="text-[10px] text-slate-500 font-bold uppercase block mb-2">Description</label>
-                        <div className="p-4 bg-slate-800/50 rounded-xl border border-slate-700 text-sm text-slate-300 whitespace-pre-wrap">
-                            {selectedTicket.description || 'No description provided.'}
-                        </div>
-                    </div>
-                    {selectedTicket.resolution && (
-                        <div>
-                            <label className="text-[10px] text-emerald-500 font-bold uppercase block mb-2">Resolution</label>
-                            <div className="p-4 bg-emerald-500/10 rounded-xl border border-emerald-500/20 text-sm text-emerald-100">
-                                {selectedTicket.resolution}
-                            </div>
-                        </div>
-                    )}
-                </div>
-
+            <div className="space-y-4">
+              <div className="bg-slate-800/30 p-4 rounded-xl border border-slate-800">
+                <label className="text-[10px] text-slate-500 font-bold uppercase block mb-3">Workflow</label>
                 <div className="space-y-4">
-                    <div className="bg-slate-800/30 p-4 rounded-xl border border-slate-800">
-                        <label className="text-[10px] text-slate-500 font-bold uppercase block mb-3">Workflow</label>
-                        <div className="space-y-4">
-                            <div>
-                                <p className="text-[10px] text-slate-500 mb-1">STATUS</p>
-                                <select
-                                    value={selectedTicket.status}
-                                    onChange={(e) => handleUpdateStatus(selectedTicket.id, e.target.value)}
-                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
-                                >
-                                    <option value="open">Open</option>
-                                    <option value="in_progress">In Progress</option>
-                                    <option value="waiting_customer">Waiting Customer</option>
-                                    <option value="resolved">Resolved</option>
-                                    <option value="closed">Closed</option>
-                                </select>
-                            </div>
-                            <div>
-                                <p className="text-[10px] text-slate-500 mb-1">PRIORITY</p>
-                                <Badge className={getPriorityColor(selectedTicket.priority)}>{selectedTicket.priority}</Badge>
-                            </div>
-                        </div>
-                    </div>
+                  <div>
+                    <p className="text-[10px] text-slate-500 mb-1">STATUS</p>
+                    <select
+                      value={selectedTicket.status}
+                      onChange={(e) => handleUpdateStatus(selectedTicket.id, e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
+                    >
+                      <option value="open">Open</option>
+                      <option value="in_progress">In Progress</option>
+                      <option value="waiting_customer">Waiting Customer</option>
+                      <option value="resolved">Resolved</option>
+                      <option value="closed">Closed</option>
+                    </select>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-slate-500 mb-1">PRIORITY</p>
+                    <Badge className={getPriorityColor(selectedTicket.priority)}>{selectedTicket.priority}</Badge>
+                  </div>
                 </div>
+              </div>
             </div>
+          </div>
         </Card>
       )}
 
-      <div className="grid gap-4">
+      <div className="grid gap-3 sm:gap-4">
         {loading ? (
           <div className="text-center py-10 text-slate-500 animate-pulse">Loading tickets...</div>
         ) : tickets.length === 0 ? (
@@ -136,28 +148,36 @@ export default function TicketsClient({ params, searchParams }: { params: any; s
             <p className="text-slate-500 text-sm">No support tickets found for this store.</p>
           </div>
         ) : (
-          tickets.map((ticket) => (
-            <Card key={ticket.id} className="p-4 bg-slate-900/40 border-slate-800 hover:border-slate-700 transition-colors">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3 mb-1">
-                    <span className="font-bold text-slate-100 uppercase text-xs">#{ticket.id.slice(0, 8)}</span>
-                    <Badge variant="info" className={`text-[10px] px-1.5 py-0 capitalize ${getPriorityColor(ticket.priority)}`}>
-                      {ticket.priority}
-                     priority</Badge>
-                    <Badge className="text-[10px] px-1.5 py-0 capitalize">{ticket.status.replace('_', ' ')}</Badge>
+          tickets.map((ticket) => {
+            const directChat = chatHref(ticket);
+            return (
+              <Card key={ticket.id} className="p-4 bg-slate-900/40 border-slate-800 hover:border-slate-700 transition-colors">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-1">
+                      <span className="font-bold text-slate-100 uppercase text-xs">#{ticket.id.slice(0, 8)}</span>
+                      <Badge variant="info" className={`text-[10px] px-1.5 py-0 capitalize ${getPriorityColor(ticket.priority)}`}>
+                        {ticket.priority} priority
+                      </Badge>
+                      <Badge className="text-[10px] px-1.5 py-0 capitalize">{ticket.status.replace('_', ' ')}</Badge>
+                    </div>
+                    <h3 className="font-medium text-slate-200 truncate capitalize">{ticket.category.replace('_', ' ')}</h3>
+                    <p className="text-xs text-slate-500 mt-1">Created {formatFullDate(ticket.created_at)}</p>
                   </div>
-                  <h3 className="font-medium text-slate-200 truncate capitalize">{ticket.category.replace('_', ' ')}</h3>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Created {formatFullDate(ticket.created_at)}
-                  </p>
+                  <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full sm:w-auto">
+                    {directChat ? (
+                      <Link href={directChat} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-cyan-500 px-3 py-2 text-xs font-black text-slate-950 active:scale-[.98]">
+                        Go to chat
+                      </Link>
+                    ) : (
+                      <span className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-800 px-3 py-2 text-[10px] text-slate-600">No linked chat</span>
+                    )}
+                    <Button variant="secondary" onClick={() => setSelectedTicket(ticket)}>View Details</Button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="secondary" onClick={() => setSelectedTicket(ticket)}>View Details</Button>
-                </div>
-              </div>
-            </Card>
-          ))
+              </Card>
+            );
+          })
         )}
       </div>
 
@@ -165,8 +185,8 @@ export default function TicketsClient({ params, searchParams }: { params: any; s
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         onCreated={() => {
-            loadTickets();
-            alert('Ticket created successfully');
+          loadTickets();
+          alert('Ticket created successfully');
         }}
         initialData={{ store_id: selectedStoreId }}
       />
