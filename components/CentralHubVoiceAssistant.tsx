@@ -233,6 +233,8 @@ export default function CentralHubVoiceAssistant() {
   const themeRef = useRef<NoraThemeId>('signature');
   const cloudAudioRef = useRef<HTMLAudioElement | null>(null);
   const cloudAudioUrlRef = useRef<string | null>(null);
+  const turnGenerationRef = useRef(0);
+  const speechGenerationRef = useRef(0);
 
   const theme = useMemo(() => THEMES.find((item) => item.id === themeId) || THEMES[0], [themeId]);
   const prompts = useMemo(() => quickPrompts(pathname), [pathname]);
@@ -271,6 +273,7 @@ export default function CentralHubVoiceAssistant() {
   }, []);
 
   const stopSpeech = useCallback(() => {
+    speechGenerationRef.current += 1;
     if (speechVisualTimerRef.current) window.clearTimeout(speechVisualTimerRef.current);
     speechVisualTimerRef.current = null;
     const cloudAudio = cloudAudioRef.current;
@@ -290,7 +293,16 @@ export default function CentralHubVoiceAssistant() {
     bridge?.setTaraSpeaking?.(false);
   }, []);
 
+  const interruptPendingTurn = useCallback(() => {
+    turnGenerationRef.current += 1;
+    processingRef.current = false;
+    setProcessing(false);
+    stopSpeech();
+    setError('');
+  }, [stopSpeech]);
+
   useEffect(() => () => {
+    turnGenerationRef.current += 1;
     stopTracks();
     stopSpeech();
   }, [stopSpeech, stopTracks]);
@@ -303,6 +315,7 @@ export default function CentralHubVoiceAssistant() {
 
     const bridge = getNativeBridge();
     stopSpeech();
+    const speechGeneration = speechGenerationRef.current;
     setSpeaking(true);
     bridge?.setTaraSpeaking?.(true);
 
@@ -320,6 +333,7 @@ export default function CentralHubVoiceAssistant() {
     void (async () => {
       try {
         const speech = await invokeShruthiSpeech(text);
+        if (speechGeneration !== speechGenerationRef.current) return;
         if (!speech.success || !speech.audioBase64) throw new Error(speech.error || 'No Shruthi speech audio returned.');
 
         const binary = atob(speech.audioBase64);
@@ -430,7 +444,8 @@ export default function CentralHubVoiceAssistant() {
 
   const runCommand = useCallback(async (text: string) => {
     const clean = text.trim();
-    if (!clean || processingRef.current) return;
+    if (!clean) return;
+    const turnGeneration = ++turnGenerationRef.current;
     processingRef.current = true;
     setProcessing(true);
     setOpen(true);
@@ -440,6 +455,7 @@ export default function CentralHubVoiceAssistant() {
 
     try {
       if (await tryResumePendingBrowserQuestion(clean)) return;
+      if (turnGeneration !== turnGenerationRef.current) return;
 
       const mode = inferMode(pathname, clean);
       const result = await invokeVoice({
@@ -450,22 +466,27 @@ export default function CentralHubVoiceAssistant() {
         assistant_name: 'SHRUTHI',
         adaptive_behavior: true,
       });
+      if (turnGeneration !== turnGenerationRef.current) return;
       if (!result.success || !result.reply) throw new Error(result.error || 'Shruthi could not answer.');
       setResponse(result);
       responseRef.current = result;
       if (result.speak !== false) speak(result.reply);
       else stopSpeech();
     } catch (e: any) {
+      if (turnGeneration !== turnGenerationRef.current) return;
       setError(e?.message || 'Shruthi failed.');
       stopSpeech();
     } finally {
-      processingRef.current = false;
-      setProcessing(false);
+      if (turnGeneration === turnGenerationRef.current) {
+        processingRef.current = false;
+        setProcessing(false);
+      }
     }
   }, [pathname, speak, stopSpeech, tryResumePendingBrowserQuestion]);
 
   const handleNativeTranscript = useCallback((rawText: string) => {
-    if (processingRef.current || recordingRef.current) return;
+    if (recordingRef.current) return;
+    if (processingRef.current) interruptPendingTurn();
     const heard = String(rawText || '').trim();
     if (!heard) return;
 
@@ -501,7 +522,7 @@ export default function CentralHubVoiceAssistant() {
     if (!command) return;
     const hasContext = Boolean(responseRef.current?.reply);
     if (woke || looksAddressedToNora(command, hasContext)) void runCommand(command);
-  }, [chooseTheme, runCommand, setSession, speak]);
+  }, [chooseTheme, interruptPendingTurn, runCommand, setSession, speak]);
 
   useEffect(() => {
     const bridge = getNativeBridge();
@@ -514,16 +535,21 @@ export default function CentralHubVoiceAssistant() {
     setNativeWakeAvailable(available);
     if (available) bridge?.setTaraEnabled?.(true);
 
+    const onSpeechStart = () => {
+      if (noraSessionRef.current) interruptPendingTurn();
+    };
     const onTranscript = (event: Event) => {
       const text = String((event as NativeTranscriptEvent).detail?.text || '').trim();
       if (text) handleNativeTranscript(text);
     };
+    window.addEventListener('centralhub:tara-user-speech-start', onSpeechStart as EventListener);
     window.addEventListener('centralhub:tara-transcript', onTranscript as EventListener);
     return () => {
+      window.removeEventListener('centralhub:tara-user-speech-start', onSpeechStart as EventListener);
       window.removeEventListener('centralhub:tara-transcript', onTranscript as EventListener);
       bridge?.setTaraEnabled?.(false);
     };
-  }, [handleNativeTranscript]);
+  }, [handleNativeTranscript, interruptPendingTurn]);
 
   const transcribeAndRun = useCallback(async (blob: Blob) => {
     setProcessing(true);

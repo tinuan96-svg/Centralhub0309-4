@@ -17,6 +17,8 @@ import java.io.OutputStream;
  * passive wake windows, which avoids the loud start/stop tones heard on the Fold.
  */
 final class ShruthiAudioPipe implements AutoCloseable {
+    interface LevelListener { void onLevel(float level); }
+
     static final int SAMPLE_RATE_HZ = 16000;
     static final int CHANNEL_COUNT = 1;
     static final int ENCODING = AudioFormat.ENCODING_PCM_16BIT;
@@ -48,7 +50,9 @@ final class ShruthiAudioPipe implements AutoCloseable {
         this.pumpThread = pumpThread;
     }
 
-    static ShruthiAudioPipe start() {
+    static ShruthiAudioPipe start() { return start(null); }
+
+    static ShruthiAudioPipe start(LevelListener levelListener) {
         ParcelFileDescriptor[] pipe = null;
         AudioRecord recorder = null;
         NoiseSuppressor noiseSuppressor = null;
@@ -104,9 +108,27 @@ final class ShruthiAudioPipe implements AutoCloseable {
                     while (holder[0] == null) {
                         try { Thread.sleep(2L); } catch (InterruptedException ignored) { return; }
                     }
+                    long lastLevelAt = 0L;
                     while (holder[0].running) {
                         int read = activeRecorder.read(buffer, 0, buffer.length);
                         if (read > 0) {
+                            if (levelListener != null) {
+                                long now = android.os.SystemClock.elapsedRealtime();
+                                if (now - lastLevelAt >= 50L) {
+                                    long sumSquares = 0L;
+                                    int sampleCount = read / 2;
+                                    for (int i = 0; i + 1 < read; i += 2) {
+                                        int sample = (short) (((buffer[i + 1] & 0xff) << 8) | (buffer[i] & 0xff));
+                                        sumSquares += (long) sample * (long) sample;
+                                    }
+                                    if (sampleCount > 0) {
+                                        double rms = Math.sqrt((double) sumSquares / (double) sampleCount) / 32768d;
+                                        float level = (float) Math.max(0d, Math.min(1d, rms * 8d));
+                                        try { levelListener.onLevel(level); } catch (Exception ignored) { }
+                                    }
+                                    lastLevelAt = now;
+                                }
+                            }
                             stream.write(buffer, 0, read);
                             stream.flush();
                         } else if (read == AudioRecord.ERROR_DEAD_OBJECT || read == AudioRecord.ERROR_INVALID_OPERATION) {

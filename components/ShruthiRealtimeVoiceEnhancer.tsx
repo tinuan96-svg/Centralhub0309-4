@@ -8,6 +8,7 @@ type NativeBridge = {
 };
 
 type NativeTranscriptEvent = CustomEvent<{ text?: string; liveStable?: boolean }>;
+type NativeRmsEvent = CustomEvent<{ level?: number }>;
 
 const BUSINESS_CUES = /\b(?:sell|selling|price|product|stock|offer|website|competitor|check|search|grocery|order|orders|revenue|sales|deploy|deployment|repo|repository)\b/i;
 let activeShruthiAudio: HTMLMediaElement | null = null;
@@ -65,8 +66,6 @@ function stopShruthiSpeechImmediately() {
 function setListeningBars(level: number) {
   const screen = document.querySelector<HTMLElement>('.nora-screen');
   if (!screen) return;
-  const stopButton = screen.querySelector<HTMLButtonElement>('button[aria-label="Stop listening"]');
-  if (!stopButton) return;
 
   const bars = Array.from(screen.querySelectorAll<HTMLElement>('.nora-wavebar'));
   const clamped = Math.max(0, Math.min(1, level));
@@ -283,6 +282,11 @@ export default function ShruthiRealtimeVoiceEnhancer() {
       }
     };
 
+    const onNativeRms = (event: Event) => {
+      const level = Number((event as NativeRmsEvent).detail?.level ?? 0);
+      if (Number.isFinite(level)) setListeningBars(level);
+    };
+
     const onClickCapture = (event: Event) => {
       const target = event.target instanceof Element ? event.target.closest('button') : null;
       if (!target) return;
@@ -291,12 +295,14 @@ export default function ShruthiRealtimeVoiceEnhancer() {
     };
 
     window.addEventListener('centralhub:tara-transcript', onTranscript as EventListener, true);
+    window.addEventListener('centralhub:tara-rms', onNativeRms as EventListener);
     document.addEventListener('click', onClickCapture, true);
     document.addEventListener('pause', onAudioStop, true);
     document.addEventListener('ended', onAudioStop, true);
 
     return () => {
       window.removeEventListener('centralhub:tara-transcript', onTranscript as EventListener, true);
+      window.removeEventListener('centralhub:tara-rms', onNativeRms as EventListener);
       document.removeEventListener('click', onClickCapture, true);
       document.removeEventListener('pause', onAudioStop, true);
       document.removeEventListener('ended', onAudioStop, true);

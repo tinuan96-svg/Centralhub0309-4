@@ -59,6 +59,7 @@ public class MainActivity extends BridgeActivity {
     private final Runnable taraRestartRunnable = this::startTaraRecognizerIfReady;
     private final Runnable taraStartWatchdogRunnable = this::recoverStalledTaraStart;
     private final Runnable taraPartialWakeDispatchRunnable = this::dispatchPendingPartialWake;
+    private final Runnable taraSegmentCommitRunnable = this::commitPendingSegmentTurn;
     private SpeechRecognizer taraRecognizer;
     private Intent taraRecognizerIntent;
     private CentralHubNativeBridge nativeBridge;
@@ -81,6 +82,8 @@ public class MainActivity extends BridgeActivity {
     private long taraLastBargeInAt = 0L;
     private long taraIgnoreWakeUntil = 0L;
     private long taraSpeechEndedAt = 0L;
+    private long taraLastRmsDispatchAt = 0L;
+    private final StringBuilder taraSegmentText = new StringBuilder();
     private String taraLastTranscriptText = "";
     private String taraPendingPartialWakeText = "";
     private String taraCurrentSpeechContext = "";
@@ -251,17 +254,17 @@ public class MainActivity extends BridgeActivity {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && taraUsingOnDeviceRecognizer) {
             taraSegmentedSession = true;
-            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 450L);
-            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 650L);
-            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1050L);
+            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 280L);
+            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 480L);
+            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 720L);
             taraRecognizerIntent.putExtra(
                     RecognizerIntent.EXTRA_SEGMENTED_SESSION,
                     RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS
             );
         } else {
-            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1050L);
-            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 650L);
-            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 450L);
+            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 720L);
+            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 480L);
+            taraRecognizerIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 280L);
         }
 
         taraRecognizer.setRecognitionListener(new RecognitionListener() {
@@ -270,10 +273,18 @@ public class MainActivity extends BridgeActivity {
                 taraHandler.removeCallbacks(taraStartWatchdogRunnable);
                 taraReadyForSpeech = true;
                 taraListening = true;
+                taraHandler.removeCallbacks(taraSegmentCommitRunnable);
+                taraSegmentText.setLength(0);
                 taraConsecutiveErrors = 0;
             }
-            @Override public void onBeginningOfSpeech() { }
-            @Override public void onRmsChanged(float rmsdB) { }
+            @Override
+            public void onBeginningOfSpeech() {
+                if (noraConversationActive && !taraSpeaking) dispatchTaraUserSpeechStart();
+            }
+            @Override
+            public void onRmsChanged(float rmsdB) {
+                if (noraConversationActive && !taraSpeaking) dispatchTaraRmsDb(rmsdB);
+            }
             @Override public void onBufferReceived(byte[] buffer) { }
             @Override public void onEndOfSpeech() { }
 
@@ -281,6 +292,8 @@ public class MainActivity extends BridgeActivity {
             public void onError(int error) {
                 taraHandler.removeCallbacks(taraStartWatchdogRunnable);
                 clearPendingPartialWake();
+                taraHandler.removeCallbacks(taraSegmentCommitRunnable);
+                taraSegmentText.setLength(0);
                 taraListening = false;
                 taraReadyForSpeech = false;
 
@@ -329,7 +342,7 @@ public class MainActivity extends BridgeActivity {
                 long delay;
                 if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) delay = 2200L;
                 else if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
-                    delay = taraSegmentedSession ? 1200L : 1000L;
+                    delay = taraSegmentedSession ? 650L : 600L;
                 } else {
                     delay = Math.min(10000L, 1800L + (taraConsecutiveErrors * 900L));
                 }
@@ -340,12 +353,14 @@ public class MainActivity extends BridgeActivity {
             public void onResults(Bundle results) {
                 taraHandler.removeCallbacks(taraStartWatchdogRunnable);
                 clearPendingPartialWake();
+                taraHandler.removeCallbacks(taraSegmentCommitRunnable);
+                taraSegmentText.setLength(0);
                 processNoraRecognitionBundle(results);
                 closeTaraAudioPipe();
                 taraListening = false;
                 taraReadyForSpeech = false;
                 taraConsecutiveErrors = 0;
-                scheduleTaraRestart(noraConversationActive ? 450L : (taraSegmentedSession ? 900L : 800L));
+                scheduleTaraRestart(noraConversationActive ? 180L : (taraSegmentedSession ? 700L : 650L));
             }
 
             @Override
@@ -369,7 +384,7 @@ public class MainActivity extends BridgeActivity {
                             taraPartialWakeDispatched = true;
                             taraPendingPartialWakeText = canonical;
                             taraHandler.removeCallbacks(taraPartialWakeDispatchRunnable);
-                            taraHandler.postDelayed(taraPartialWakeDispatchRunnable, 260L);
+                            taraHandler.postDelayed(taraPartialWakeDispatchRunnable, 180L);
                         }
                         return;
                     }
@@ -379,7 +394,16 @@ public class MainActivity extends BridgeActivity {
             @Override
             public void onSegmentResults(Bundle segmentResults) {
                 clearPendingPartialWake();
-                processNoraRecognitionBundle(segmentResults);
+                ArrayList<String> matches = segmentResults == null ? null : segmentResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                if (matches != null && !matches.isEmpty()) {
+                    String segment = matches.get(0) == null ? "" : matches.get(0).trim();
+                    if (!segment.isEmpty()) {
+                        if (taraSegmentText.length() > 0) taraSegmentText.append(' ');
+                        taraSegmentText.append(segment);
+                        taraHandler.removeCallbacks(taraSegmentCommitRunnable);
+                        taraHandler.postDelayed(taraSegmentCommitRunnable, 520L);
+                    }
+                }
                 taraConsecutiveErrors = 0;
                 taraListening = true;
             }
@@ -388,11 +412,12 @@ public class MainActivity extends BridgeActivity {
             public void onEndOfSegmentedSession() {
                 taraHandler.removeCallbacks(taraStartWatchdogRunnable);
                 clearPendingPartialWake();
+                commitPendingSegmentTurn();
                 closeTaraAudioPipe();
                 taraListening = false;
                 taraReadyForSpeech = false;
                 taraConsecutiveErrors = 0;
-                scheduleTaraRestart(noraConversationActive ? 450L : 900L);
+                scheduleTaraRestart(noraConversationActive ? 180L : 700L);
             }
 
             @Override public void onEvent(int eventType, Bundle params) { }
@@ -410,31 +435,41 @@ public class MainActivity extends BridgeActivity {
 
         for (String match : matches) {
             if (match == null || match.trim().isEmpty()) continue;
-            String canonical = canonicalizeNoraTranscript(match);
-            String lower = canonical.trim().toLowerCase(Locale.ROOT);
-            boolean explicitWake = lower.equals("shruthi") || lower.startsWith("shruthi ");
-
-            if (System.currentTimeMillis() - taraSpeechEndedAt < 1400L && isLikelyTaraEcho(canonical)) {
-                continue;
-            }
-
-            if (explicitWake) {
-                if (!noraConversationActive && System.currentTimeMillis() < taraIgnoreWakeUntil) continue;
-                activateNoraConversation();
-            } else if (!noraConversationActive) {
-                continue;
-            } else {
-                canonical = "SHRUTHI " + canonical;
-            }
-
-            dispatchTaraTranscriptDebounced(canonical);
+            processNoraRecognitionText(match);
             return;
         }
     }
 
+    private void processNoraRecognitionText(String rawText) {
+        if (rawText == null || rawText.trim().isEmpty()) return;
+        String canonical = canonicalizeNoraTranscript(rawText);
+        String lower = canonical.trim().toLowerCase(Locale.ROOT);
+        boolean explicitWake = lower.equals("shruthi") || lower.startsWith("shruthi ");
+
+        if (System.currentTimeMillis() - taraSpeechEndedAt < 1400L && isLikelyTaraEcho(canonical)) return;
+
+        if (explicitWake) {
+            if (!noraConversationActive && System.currentTimeMillis() < taraIgnoreWakeUntil) return;
+            activateNoraConversation();
+        } else if (!noraConversationActive) {
+            return;
+        } else {
+            canonical = "SHRUTHI " + canonical;
+        }
+
+        dispatchTaraTranscriptDebounced(canonical);
+    }
+
+    private void commitPendingSegmentTurn() {
+        taraHandler.removeCallbacks(taraSegmentCommitRunnable);
+        String completedTurn = taraSegmentText.toString().trim();
+        taraSegmentText.setLength(0);
+        if (!completedTurn.isEmpty()) processNoraRecognitionText(completedTurn);
+    }
+
     private void handleTaraBargeInMatches(ArrayList<String> matches) {
         long now = System.currentTimeMillis();
-        if (now - taraLastBargeInAt < 700L) return;
+        if (now - taraLastBargeInAt < 260L) return;
 
         for (String match : matches) {
             if (match == null || match.trim().isEmpty()) continue;
@@ -704,7 +739,7 @@ public class MainActivity extends BridgeActivity {
             clearPendingPartialWake();
         }
         if (taraEnabled && taraResumed && !taraListening) {
-            scheduleTaraRestart(active ? 350L : 800L);
+            scheduleTaraRestart(active ? 160L : 700L);
         }
     }
 
@@ -725,7 +760,7 @@ public class MainActivity extends BridgeActivity {
         }
 
         taraSpeechEndedAt = System.currentTimeMillis();
-        if (!taraListening) scheduleTaraRestart(noraConversationActive ? 350L : 800L);
+        if (!taraListening) scheduleTaraRestart(noraConversationActive ? 160L : 700L);
     }
 
     private void startTaraRecognizerIfReady() {
@@ -744,7 +779,9 @@ public class MainActivity extends BridgeActivity {
 
             Intent sessionIntent = taraRecognizerIntent;
             if (taraInjectedAudioEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                ShruthiAudioPipe audioPipe = ShruthiAudioPipe.start();
+                ShruthiAudioPipe audioPipe = ShruthiAudioPipe.start(level -> {
+                    if (noraConversationActive && !taraSpeaking) dispatchTaraRmsLevel(level);
+                });
                 if (audioPipe != null) {
                     taraAudioPipe = audioPipe;
                     taraInjectedAudioActive = true;
@@ -786,7 +823,7 @@ public class MainActivity extends BridgeActivity {
         taraHandler.removeCallbacks(taraRestartRunnable);
         if (!taraEnabled || !taraResumed || taraListening) return;
         if (taraSpeaking && !noraConversationActive) return;
-        long minimumDelay = noraConversationActive ? 300L : 750L;
+        long minimumDelay = noraConversationActive ? 120L : 650L;
         taraHandler.postDelayed(taraRestartRunnable, Math.max(minimumDelay, delayMs));
     }
 
@@ -802,6 +839,8 @@ public class MainActivity extends BridgeActivity {
     private void stopTaraRecognizer() {
         taraHandler.removeCallbacks(taraRestartRunnable);
         taraHandler.removeCallbacks(taraStartWatchdogRunnable);
+        taraHandler.removeCallbacks(taraSegmentCommitRunnable);
+        taraSegmentText.setLength(0);
         clearPendingPartialWake();
         closeTaraAudioPipe();
         taraListening = false;
@@ -814,6 +853,8 @@ public class MainActivity extends BridgeActivity {
     private void destroyTaraRecognizer() {
         taraHandler.removeCallbacks(taraRestartRunnable);
         taraHandler.removeCallbacks(taraStartWatchdogRunnable);
+        taraHandler.removeCallbacks(taraSegmentCommitRunnable);
+        taraSegmentText.setLength(0);
         clearPendingPartialWake();
         closeTaraAudioPipe();
         taraListening = false;
@@ -838,11 +879,34 @@ public class MainActivity extends BridgeActivity {
                 && clean.length() > 8
                 && clean.regionMatches(true, 0, "SHRUTHI ", 0, 8);
 
-        if (elapsed < 650L && (sameTranscript || !expandsPartialWake)) return;
+        if (elapsed < 260L && (sameTranscript || !expandsPartialWake)) return;
 
         taraLastTranscriptAt = now;
         taraLastTranscriptText = clean;
         dispatchTaraTranscript(clean);
+    }
+
+    private void dispatchTaraUserSpeechStart() {
+        WebView webView = bridge == null ? null : bridge.getWebView();
+        if (webView == null) return;
+        String script = "window.dispatchEvent(new CustomEvent('centralhub:tara-user-speech-start'));";
+        webView.post(() -> webView.evaluateJavascript(script, null));
+    }
+
+    private void dispatchTaraRmsDb(float rmsDb) {
+        double level = Math.max(0d, Math.min(1d, (rmsDb + 2d) / 12d));
+        dispatchTaraRmsLevel(level);
+    }
+
+    public void dispatchTaraRmsLevel(double level) {
+        long now = System.currentTimeMillis();
+        if (now - taraLastRmsDispatchAt < 50L) return;
+        taraLastRmsDispatchAt = now;
+        double safeLevel = Math.max(0d, Math.min(1d, level));
+        WebView webView = bridge == null ? null : bridge.getWebView();
+        if (webView == null) return;
+        String script = "window.dispatchEvent(new CustomEvent('centralhub:tara-rms',{detail:{level:" + safeLevel + "}}));";
+        webView.post(() -> webView.evaluateJavascript(script, null));
     }
 
     private void dispatchTaraTranscript(String text) {
@@ -863,7 +927,7 @@ public class MainActivity extends BridgeActivity {
             setupTaraRecognizer();
         }
         updateTaraWebAudioGuard(noraConversationActive);
-        scheduleTaraRestart(noraConversationActive ? 350L : 800L);
+        scheduleTaraRestart(noraConversationActive ? 160L : 700L);
     }
 
     @Override
