@@ -16,6 +16,11 @@ function isWebsiteIncident(value: unknown) {
   return mentionsSite && mentionsProblem;
 }
 
+function ticketLooksLikeWebsiteIncident(ticket: any) {
+  const text = [ticket?.subject, ticket?.description, ticket?.ai_summary].filter(Boolean).join(' ');
+  return isWebsiteIncident(text) || String(ticket?.ai_summary || '').includes('Shruthi incident classification: website error reported');
+}
+
 export default async function shruthiIncidentIntake() {
   const supabaseUrl = env('NEXT_PUBLIC_SUPABASE_URL') || env('SUPABASE_URL');
   const serviceRoleKey = env('CENTRALHUB_SUPABASE_SERVICE_ROLE_KEY') || env('SUPABASE_SERVICE_ROLE_KEY') || env('SUPABASE_SECRET_KEY');
@@ -54,14 +59,33 @@ export default async function shruthiIncidentIntake() {
     const conversation: any = conversationById.get(conversationId);
     if (!conversation?.store_id) continue;
 
-    const { data: existing } = await db.from('support_tickets')
-      .select('id,ai_summary,status')
+    // Look at recent tickets of every status. A complaint that was already
+    // verified and resolved must not create a fresh ticket on the next scan.
+    const { data: recentTickets } = await db.from('support_tickets')
+      .select('id,ai_summary,status,subject,description,created_at,resolved_at')
       .eq('conversation_id', conversationId)
-      .in('status', OPEN_TICKET_STATUSES)
+      .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
       .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(10);
 
+    const relevantTickets = (recentTickets || []).filter(ticketLooksLikeWebsiteIncident);
+    const messageAt = Date.parse(String(message.created_at || '')) || 0;
+    const alreadyHandled = relevantTickets.find((ticket: any) => {
+      if (!['resolved', 'closed'].includes(String(ticket.status || '').toLowerCase())) return false;
+      const resolvedAt = Date.parse(String(ticket.resolved_at || '')) || 0;
+      return resolvedAt >= messageAt;
+    });
+
+    if (alreadyHandled?.id) {
+      await db.from('whatsapp_conversations').update({
+        status: 'open',
+        handling_mode: 'AI',
+        updated_at: new Date().toISOString(),
+      }).eq('id', conversationId).eq('handling_mode', 'AI_DRAFT');
+      continue;
+    }
+
+    const existing = relevantTickets.find((ticket: any) => OPEN_TICKET_STATUSES.includes(String(ticket.status || '')));
     const reported = String(message.message_text || message.media_caption || 'Customer reported a website problem.').slice(0, 1500);
     let ticketId = existing?.id || null;
     if (existing?.id) {
