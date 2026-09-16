@@ -274,21 +274,33 @@ export async function POST(req: Request) {
   const attempted = webResults.length + nativeResults.length;
   const enabledNativeDevices = nativeDevices?.length || 0;
   const enabledWebSubscriptions = subscriptions?.length || 0;
+  const previousMetadata = notification.metadata && typeof notification.metadata === 'object' ? notification.metadata : {};
+  const previousWebSent = Number(previousMetadata.push_web_sent || 0);
+  const previousNativeSent = Number(previousMetadata.push_native_sent || 0);
+  const cumulativeWebSent = Math.max(previousWebSent, webSent);
+  const cumulativeNativeSent = Math.max(previousNativeSent, nativeSent);
 
   let deliveryState: 'accepted' | 'partial' | 'failed';
-  if (nativeOnly) deliveryState = nativeSent > 0 ? 'accepted' : 'failed';
-  else if (enabledNativeDevices > 0 && nativeSent === 0 && sent > 0) deliveryState = 'partial';
-  else deliveryState = sent > 0 ? 'accepted' : 'failed';
+  if (nativeOnly) {
+    deliveryState = cumulativeNativeSent > 0
+      ? 'accepted'
+      : cumulativeWebSent > 0
+        ? 'partial'
+        : 'failed';
+  } else if (enabledNativeDevices > 0 && cumulativeNativeSent === 0 && (sent > 0 || cumulativeWebSent > 0)) {
+    deliveryState = 'partial';
+  } else {
+    deliveryState = sent > 0 || cumulativeWebSent > 0 || cumulativeNativeSent > 0 ? 'accepted' : 'failed';
+  }
 
-  const previousMetadata = notification.metadata && typeof notification.metadata === 'object' ? notification.metadata : {};
   const auditMetadata = {
     ...previousMetadata,
     push_delivery_state: deliveryState,
-    push_provider_accepted: sent > 0,
+    push_provider_accepted: sent > 0 || Boolean(previousMetadata.push_provider_accepted),
     push_attempted: attempted,
-    push_sent: sent,
-    push_web_sent: webSent,
-    push_native_sent: nativeSent,
+    push_sent: Math.max(Number(previousMetadata.push_sent || 0), cumulativeWebSent + cumulativeNativeSent, sent),
+    push_web_sent: cumulativeWebSent,
+    push_native_sent: cumulativeNativeSent,
     push_web_configured: webConfig.configured,
     push_native_configured: firebaseConfig.configured,
     push_enabled_web_subscriptions: enabledWebSubscriptions,
