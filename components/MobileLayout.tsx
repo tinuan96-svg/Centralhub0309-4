@@ -26,6 +26,7 @@ interface MobileLayoutProps { children: React.ReactNode; }
 export default function MobileLayout({ children }: MobileLayoutProps) {
   const pathname = usePathname();
   const isLoginPage = pathname === '/login';
+  const isDashboard = pathname === '/dashboard';
   const section = pathname.split('/')[1] || 'dashboard';
   const isSupportInbox = pathname.startsWith('/customer-care/inbox') || pathname.startsWith('/customer-care/tickets/chat');
   const isMobile = useMediaQuery('(max-width: 699px)');
@@ -35,9 +36,63 @@ export default function MobileLayout({ children }: MobileLayoutProps) {
   if (isLoginPage) return <>{children}</>;
   if (!mounted) return <div className="h-[100dvh] w-full max-w-full overflow-hidden bg-slate-950" />;
 
+  const dashboardFloatingControlStyles = (
+    <style jsx global>{`
+      @media (max-width: 699px) {
+        .ch-dashboard-route div:has(> button[aria-label="Open quick actions"]),
+        .ch-dashboard-route div:has(> button[aria-label="Close quick actions"]) {
+          right: 5.25rem !important;
+          bottom: calc(5.5rem + env(safe-area-inset-bottom)) !important;
+        }
+
+        .ch-dashboard-route [role="menu"][aria-label="Quick actions"] {
+          position: fixed !important;
+          left: 0.75rem !important;
+          right: 0.75rem !important;
+          bottom: calc(10rem + env(safe-area-inset-bottom)) !important;
+          width: auto !important;
+          max-height: calc(100dvh - 12rem) !important;
+        }
+
+        .ch-dashboard-route button[aria-label="Open SHRUTHI"],
+        .ch-dashboard-route button[aria-label="Talk to SHRUTHI"] {
+          right: 1rem !important;
+          bottom: calc(5.5rem + env(safe-area-inset-bottom)) !important;
+        }
+      }
+
+      @media (min-width: 700px) {
+        .ch-dashboard-route div:has(> button[aria-label="Open quick actions"]),
+        .ch-dashboard-route div:has(> button[aria-label="Close quick actions"]) {
+          right: 1rem !important;
+          bottom: 5.25rem !important;
+        }
+
+        .ch-dashboard-route [role="menu"][aria-label="Quick actions"] {
+          position: absolute !important;
+          left: auto !important;
+          right: 0 !important;
+          bottom: 4.25rem !important;
+          width: min(92vw, 420px) !important;
+          max-height: min(70vh, 560px) !important;
+        }
+
+        .ch-dashboard-route button[aria-label="Open SHRUTHI"],
+        .ch-dashboard-route button[aria-label="Talk to SHRUTHI"] {
+          right: 1rem !important;
+          bottom: 1rem !important;
+        }
+      }
+    `}</style>
+  );
+
   if (isMobile) return (
     <ShruthiSecurityGate>
-      <div data-section={section} className="ch-workspace flex flex-col h-[100dvh] w-full max-w-full min-w-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden relative">
+      <div
+        data-section={section}
+        className={`ch-workspace flex flex-col h-[100dvh] w-full max-w-full min-w-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden relative ${isDashboard ? 'ch-dashboard-route' : ''}`}
+      >
+        {isDashboard && dashboardFloatingControlStyles}
         <DhlInvoiceAutoSync />
         <CentralHubLiveUpdate />
         <MobileHeader />
@@ -46,13 +101,18 @@ export default function MobileLayout({ children }: MobileLayoutProps) {
             ? 'flex-1 min-h-0 min-w-0 w-full max-w-full overflow-hidden px-safe-left pr-safe-right pb-[calc(4rem+env(safe-area-inset-bottom))]'
             : 'flex-1 min-h-0 min-w-0 w-full max-w-full overflow-y-auto overflow-x-hidden overscroll-contain px-safe-left pr-safe-right'}
         >
-          <div className={isSupportInbox
-            ? 'h-full min-h-0 min-w-0 w-full max-w-full overflow-hidden'
-            : 'min-w-0 w-full max-w-full pb-32'}>
+          <div
+            className={isSupportInbox
+              ? 'h-full min-h-0 min-w-0 w-full max-w-full overflow-hidden'
+              : 'min-w-0 w-full max-w-full'}
+            style={!isSupportInbox
+              ? { paddingBottom: isDashboard ? 'calc(11rem + env(safe-area-inset-bottom))' : '8rem' }
+              : undefined}
+          >
             {children}
           </div>
         </main>
-        {pathname === '/dashboard' && <QuickActionsFab />}
+        {isDashboard && <QuickActionsFab />}
         <ShruthiLearningPulse />
         <ShruthiIdentitySkin />
         <NoraAdaptiveVoiceNormalizer />
@@ -69,7 +129,11 @@ export default function MobileLayout({ children }: MobileLayoutProps) {
 
   return (
     <ShruthiSecurityGate>
-      <div data-section={section} className="ch-workspace centralhub-desktop-shell flex h-[100dvh] min-w-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden">
+      <div
+        data-section={section}
+        className={`ch-workspace centralhub-desktop-shell flex h-[100dvh] min-w-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden ${isDashboard ? 'ch-dashboard-route' : ''}`}
+      >
+        {isDashboard && dashboardFloatingControlStyles}
         <DhlInvoiceAutoSync />
         <CentralHubLiveUpdate />
         <ClassifiedSidebar />
@@ -80,14 +144,19 @@ export default function MobileLayout({ children }: MobileLayoutProps) {
               ? 'flex-1 min-h-0 min-w-0 overflow-hidden pb-safe-bottom pr-safe-right pl-safe-left'
               : 'flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain pb-safe-bottom pr-safe-right pl-safe-left'}
           >
-            <div className={isSupportInbox
-              ? 'h-full min-h-0 min-w-0 w-full max-w-[1920px] mx-auto overflow-hidden'
-              : 'max-w-[1920px] min-w-0 mx-auto w-full'}>
+            <div
+              className={isSupportInbox
+                ? 'h-full min-h-0 min-w-0 w-full max-w-[1920px] mx-auto overflow-hidden'
+                : 'max-w-[1920px] min-w-0 mx-auto w-full'}
+              style={!isSupportInbox && isDashboard
+                ? { paddingRight: '5.75rem', paddingBottom: '6rem' }
+                : undefined}
+            >
               {children}
             </div>
           </main>
         </div>
-        {pathname === '/dashboard' && <QuickActionsFab />}
+        {isDashboard && <QuickActionsFab />}
         <ShruthiLearningPulse />
         <ShruthiIdentitySkin />
         <NoraAdaptiveVoiceNormalizer />
