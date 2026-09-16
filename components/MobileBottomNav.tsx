@@ -32,7 +32,7 @@ export default function MobileBottomNav() {
   return (
     <nav
       aria-label="Mobile navigation"
-      className="fixed bottom-0 left-0 right-0 w-full max-w-full bg-slate-900/98 border-t border-slate-800 z-40 shadow-[0_-8px_30px_rgba(0,0,0,0.5)] pb-safe-bottom"
+      className="shrink-0 w-full max-w-full bg-slate-900/98 border-t border-slate-800 z-40 shadow-[0_-8px_30px_rgba(0,0,0,0.5)] pb-safe-bottom"
     >
       <div className="grid grid-cols-5 min-h-16 h-16 w-full max-w-full px-safe-left pr-safe-right">
         {navItems.map(item => {
