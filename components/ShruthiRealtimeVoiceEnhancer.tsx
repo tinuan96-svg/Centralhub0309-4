@@ -10,6 +10,7 @@ type NativeBridge = {
 type NativeTranscriptEvent = CustomEvent<{ text?: string }>;
 
 const BUSINESS_CUES = /\b(?:sell|selling|price|product|stock|offer|website|competitor|check|search|grocery|order|orders|revenue|sales|deploy|deployment|repo|repository)\b/i;
+let activeShruthiAudio: HTMLMediaElement | null = null;
 
 function nativeBridge(): NativeBridge | undefined {
   if (typeof window === 'undefined') return undefined;
@@ -44,10 +45,19 @@ function stopShruthiSpeechImmediately() {
   try { nativeBridge()?.stopTaraTts?.(); } catch { }
   try { nativeBridge()?.setTaraSpeaking?.(false); } catch { }
 
+  const tracked = activeShruthiAudio;
+  activeShruthiAudio = null;
+  if (tracked) {
+    try { tracked.pause(); } catch { }
+    try { tracked.currentTime = 0; } catch { }
+    try { tracked.dispatchEvent(new Event('ended')); } catch { }
+  }
+
   document.querySelectorAll<HTMLAudioElement>('audio').forEach((audio) => {
     const src = String(audio.currentSrc || audio.src || '');
     if (!src.startsWith('blob:')) return;
     try { audio.pause(); } catch { }
+    try { audio.currentTime = 0; } catch { }
     try { audio.dispatchEvent(new Event('ended')); } catch { }
   });
 }
@@ -84,10 +94,24 @@ export default function ShruthiRealtimeVoiceEnhancer() {
     if (!mediaDevices?.getUserMedia) return;
 
     const originalGetUserMedia = mediaDevices.getUserMedia.bind(mediaDevices);
+    const originalMediaPlay = HTMLMediaElement.prototype.play;
     let audioContext: AudioContext | null = null;
     let animationFrame = 0;
     let monitoredStream: MediaStream | null = null;
     let autoStopIssued = false;
+
+    HTMLMediaElement.prototype.play = function patchedShruthiPlay(this: HTMLMediaElement) {
+      const src = String(this.currentSrc || this.getAttribute('src') || '');
+      if (document.querySelector('.nora-screen') && src.startsWith('blob:')) {
+        activeShruthiAudio = this;
+        const clear = () => {
+          if (activeShruthiAudio === this) activeShruthiAudio = null;
+        };
+        this.addEventListener('ended', clear, { once: true });
+        this.addEventListener('error', clear, { once: true });
+      }
+      return originalMediaPlay.call(this);
+    };
 
     const cleanupMeter = () => {
       if (animationFrame) cancelAnimationFrame(animationFrame);
@@ -105,7 +129,7 @@ export default function ShruthiRealtimeVoiceEnhancer() {
       monitoredStream = stream;
       autoStopIssued = false;
 
-      const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
+      const AudioContextCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!AudioContextCtor) return;
 
       audioContext = new AudioContextCtor();
@@ -206,6 +230,11 @@ export default function ShruthiRealtimeVoiceEnhancer() {
       window.removeEventListener('centralhub:tara-transcript', onTranscript as EventListener, true);
       document.removeEventListener('click', onClickCapture, true);
       mediaDevices.getUserMedia = originalGetUserMedia;
+      HTMLMediaElement.prototype.play = originalMediaPlay;
+      if (activeShruthiAudio) {
+        try { activeShruthiAudio.pause(); } catch { }
+        activeShruthiAudio = null;
+      }
       cleanupMeter();
     };
   }, []);
