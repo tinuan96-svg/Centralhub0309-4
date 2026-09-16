@@ -21,6 +21,8 @@ type NativeComputerBridge = {
 
 type Target = { key: string; system: string; url: string };
 
+const COMMAND_AUTO_LAUNCH_MAX_AGE_MS = 5 * 60 * 1000;
+
 const TARGETS: Target[] = [
   { key: 'meta_business', system: 'Meta Business', url: 'https://business.facebook.com/' },
   { key: 'facebook', system: 'Facebook', url: 'https://www.facebook.com/' },
@@ -125,7 +127,9 @@ export default function NoraComputerLauncher() {
 
     const now = Date.now();
     const unlockCutoff = securityUnlockCutoffMs();
-    const commandCutoffMs = Math.max(now - 2 * 60 * 60 * 1000, unlockCutoff);
+    // Auto-launch only a command that was just created by the current Shruthi interaction.
+    // Old abandoned ready_for_computer rows must never reopen Live Web later.
+    const commandCutoffMs = Math.max(now - COMMAND_AUTO_LAUNCH_MAX_AGE_MS, unlockCutoff);
     const commandCutoff = new Date(commandCutoffMs).toISOString();
     const activeCutoff = new Date(now - 15 * 60 * 1000).toISOString();
     const { data: auth } = await supabase.auth.getUser();
@@ -178,7 +182,12 @@ export default function NoraComputerLauncher() {
   const start = useCallback(async () => {
     if (!command || !target || busy || launchingRef.current) return;
     const unlockCutoff = securityUnlockCutoffMs();
-    if (unlockCutoff > 0 && new Date(command.created_at).getTime() < unlockCutoff) {
+    const commandCreatedAt = new Date(command.created_at).getTime();
+    if (
+      !Number.isFinite(commandCreatedAt) ||
+      Date.now() - commandCreatedAt > COMMAND_AUTO_LAUNCH_MAX_AGE_MS ||
+      (unlockCutoff > 0 && commandCreatedAt < unlockCutoff)
+    ) {
       setCommand(null);
       return;
     }
