@@ -68,7 +68,6 @@ serve(async (req) => {
         .eq('store_id', storeId)
         .maybeSingle()
 
-      // Limit active challenges before creating another one.
       const { count: recentCount } = await supabase
         .from('whatsapp_auth_challenges')
         .select('id', { count: 'exact', head: true })
@@ -144,7 +143,6 @@ serve(async (req) => {
         .update({ whatsapp_message_id: sendRes.message_id })
         .eq('id', challenge.id)
 
-      // Never return the OTP to the browser. The only delivery channel is WhatsApp.
       return json({
         success: true,
         request_id: challenge.id,
@@ -153,7 +151,7 @@ serve(async (req) => {
       })
     }
 
-    if (action === 'verify') {
+    if (action === 'verify' || action === 'verify_external') {
       if (!requestId || !otp || !storeId) return json({ error: 'Request ID, store ID and OTP are required' }, 400)
       if (!/^\d{6}$/.test(String(otp))) return json({ error: 'Invalid OTP code' }, 400)
 
@@ -202,6 +200,18 @@ serve(async (req) => {
         .eq('id', requestId)
         .eq('status', 'pending')
 
+      // Storefronts such as MalluSpices need only a proof that this phone number
+      // successfully completed the CentralHub WhatsApp challenge. They create
+      // their own customer session in their own Supabase project.
+      if (action === 'verify_external') {
+        return json({
+          success: true,
+          request_id: challenge.id,
+          verified_phone: challenge.phone_number,
+          purpose: challenge.purpose,
+        })
+      }
+
       const { data: customer } = await supabase
         .from('customers')
         .select('email')
@@ -211,8 +221,6 @@ serve(async (req) => {
 
       if (!customer?.email) return json({ error: 'No account linked to this number.' }, 400)
 
-      // generateLink creates a one-time Auth OTP/link. We use the returned email OTP
-      // to establish the browser session after the WhatsApp factor has been verified.
       const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
         type: 'magiclink',
         email: customer.email,
