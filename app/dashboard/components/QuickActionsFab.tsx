@@ -115,16 +115,16 @@ export default function QuickActionsFab() {
     <div ref={panelRef} className="fixed z-[70] right-[5.25rem] bottom-[calc(5.5rem+env(safe-area-inset-bottom))] sm:right-6 sm:bottom-6">
       {open && (
         <div
-          className="absolute bottom-[4.25rem] right-0 w-[min(92vw,420px)] max-h-[min(70vh,560px)] overflow-y-auto rounded-3xl border border-slate-700/70 bg-slate-950/98 shadow-2xl shadow-black/50 backdrop-blur-xl p-3 overscroll-contain"
+          className="fixed inset-x-3 bottom-[calc(10rem+env(safe-area-inset-bottom))] max-h-[calc(100dvh-12rem)] overflow-y-auto rounded-3xl border border-slate-700/70 bg-slate-950/98 shadow-2xl shadow-black/50 backdrop-blur-xl p-3 overscroll-contain sm:absolute sm:inset-x-auto sm:bottom-[4.25rem] sm:right-0 sm:w-[min(92vw,420px)] sm:max-h-[min(70vh,560px)]"
           role="menu"
           aria-label="Quick actions"
         >
           <div className="flex items-center justify-between px-2 py-2 mb-1">
-            <div>
+            <div className="min-w-0 pr-2">
               <p className="text-[9px] uppercase tracking-[.2em] font-black text-cyan-400">Quick access</p>
-              <h2 className="text-base font-black text-white">Frequently used</h2>
+              <h2 className="text-base font-black text-white truncate">Frequently used</h2>
             </div>
-            <Link href="/settings#quick-shortcuts" onClick={() => setOpen(false)} className="px-3 py-2 rounded-xl border border-slate-700 bg-slate-900 text-[10px] font-black uppercase tracking-wider text-slate-300 hover:text-white hover:border-cyan-500/40">Edit</Link>
+            <Link href="/settings#quick-shortcuts" onClick={() => setOpen(false)} className="shrink-0 px-3 py-2 rounded-xl border border-slate-700 bg-slate-900 text-[10px] font-black uppercase tracking-wider text-slate-300 hover:text-white hover:border-cyan-500/40">Edit</Link>
           </div>
 
           {supportAlerts > 0 && (
