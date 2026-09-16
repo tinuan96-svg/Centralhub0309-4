@@ -29,18 +29,6 @@ jobs:
       - name: Checkout CentralHub
         uses: actions/checkout@v4
 
-      - name: Apply Shruthi live-turn source patch
-        shell: bash
-        run: |
-          python3 scripts/patch_shruthi_live_turn.py
-          git config user.name "Tinu Antony"
-          git config user.email "tinuan96@gmail.com"
-          git add android/app/src/main/java/com/centralhub/network/MainActivity.java android/app/src/main/java/com/centralhub/network/ShruthiAudioPipe.java components/CentralHubVoiceAssistant.tsx components/ShruthiRealtimeVoiceEnhancer.tsx
-          if ! git diff --cached --quiet; then
-            git commit -m "Fix Shruthi native realtime turn taking"
-            git push origin HEAD:main
-          fi
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -176,6 +164,5 @@ jobs:
           fi
 
 # CentralHub's installed Android shell loads https://centralhub.network directly.
-# Normal UI, dashboard, database and API changes therefore arrive through the
-# live deployment and must not trigger another APK build/install cycle.
+# Normal UI, dashboard, database and API changes therefore arrive automatically and do not need a new APK.
 # This workflow is reserved for actual Android shell/config/dependency changes.
