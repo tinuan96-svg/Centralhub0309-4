@@ -5,6 +5,8 @@ const root = process.cwd();
 const reportPath = path.join(root, 'feature-continuity-audit-output.txt');
 const exists = (file) => fs.existsSync(path.join(root, file));
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
+const normalizeQuotedSource = (value) => value.replace(/[\"`]/g, "'");
+const includesToken = (text, token) => text.includes(token) || normalizeQuotedSource(text).includes(normalizeQuotedSource(token));
 
 const requiredFiles = [
   'app/analytics/page.tsx',
@@ -153,8 +155,8 @@ for (const assertion of assertions) {
     continue;
   }
   const text = read(assertion.file);
-  const missingAll = (assertion.all || []).filter((token) => !text.includes(token));
-  const anyOk = !assertion.any || assertion.any.some((token) => text.includes(token));
+  const missingAll = (assertion.all || []).filter((token) => !includesToken(text, token));
+  const anyOk = !assertion.any || assertion.any.some((token) => includesToken(text, token));
   if (missingAll.length || !anyOk) {
     if (missingAll.length) failures.push(`${assertion.label}: missing ${missingAll.map((x) => JSON.stringify(x)).join(', ')}`);
     if (!anyOk) failures.push(`${assertion.label}: none of the accepted alternatives were found: ${assertion.any.map((x) => JSON.stringify(x)).join(', ')}`);
