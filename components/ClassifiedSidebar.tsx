@@ -58,6 +58,9 @@ const sections: NavSection[] = [
   { key: '08-finance', label: 'Finance & Control', icon: '💰', description: 'Bank, expenses, ledgers, payables, P&L and profitability', items: [
     { href: '/finance', label: 'Finance Overview' }, { href: '/finance/planning', label: 'Planning & Growth' }, { href: '/profit-analysis', label: 'Profit Analysis' }, { href: '/banking', label: 'Bank Accounts & Cashflow' }, { href: '/finance/ledger', label: 'Chart of Accounts & Ledger' }, { href: '/finance/transactions', label: 'Bank Reconciliation' }, { href: '/finance/mollie', label: 'Mollie Audit' }, { href: '/finance/payables', label: 'Supplier Payables' }, { href: '/expenses', label: 'Business Expenses' }, { href: '/finance/p-and-l', label: 'Profit & Loss' }, { href: '/finance/profitability', label: 'Profitability' }, { href: '/finance/alerts', label: 'Financial Alerts' }, { href: '/finance/vat', label: 'VAT Control' },
   ] },
+  { key: '08.5-developer', label: 'Developer & CI/CD', icon: '🛠️', description: 'Builds, artifacts, releases and deployment automation', items: [
+    { href: '/developer/ci-cd', label: 'Builds & CI/CD' }, { href: '/developer/ci-cd/releases', label: 'App Releases' },
+  ] },
   { key: '09-system', label: 'Administration & System', icon: '⚙️', description: 'Users, configuration and audit controls', items: [
     { href: '/settings', label: 'System Settings' }, { href: '/settings/notifications', label: 'Notifications & Phone Alerts' }, { href: '/site-health', label: 'Site Health' }, { href: '/settings/users', label: 'User Management' }, { href: '/inventory-management/reports/audit', label: 'Audit Logs' },
   ] },
