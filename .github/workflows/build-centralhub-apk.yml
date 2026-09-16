@@ -1,7 +1,13 @@
 name: Build CentralHub Android APK
+run-name: ${{ github.event_name == 'workflow_dispatch' && inputs.centralhub_build_id != '' && format('CentralHub Android • {0}', inputs.centralhub_build_id) || format('CentralHub Android • {0}', github.ref_name) }}
 
 on:
   workflow_dispatch:
+    inputs:
+      centralhub_build_id:
+        description: 'CentralHub CI build record ID'
+        required: false
+        type: string
   push:
     branches: [main]
     paths:
@@ -37,7 +43,7 @@ jobs:
           cache: gradle
 
       # Direct APK upgrades only work when every APK is signed by the same key.
-      # Keep the internal signing keystore private in GitHub Actions cache.
+      # Keep the current identity unchanged until it has a durable encrypted backup.
       - name: Restore stable Android signing identity
         uses: actions/cache@v4
         with:
@@ -104,13 +110,28 @@ jobs:
       - name: Prepare dashboard update package
         shell: bash
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk "centralhub-android-v${{ steps.version.outputs.name }}.apk"
+          APK="centralhub-android-v${{ steps.version.outputs.name }}.apk"
+          cp android/app/build/outputs/apk/debug/app-debug.apk "$APK"
+          cat > centralhub-ci-manifest.json <<EOF
+          {
+            "centralhub_build_id": "${{ inputs.centralhub_build_id }}",
+            "github_run_id": "${{ github.run_id }}",
+            "github_run_number": "${{ github.run_number }}",
+            "commit_sha": "${{ github.sha }}",
+            "version_name": "${{ steps.version.outputs.name }}",
+            "version_code": "${{ steps.version.outputs.code }}",
+            "artifact_file": "$APK",
+            "platform": "android"
+          }
+          EOF
 
       - name: Upload installable APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: centralhub-android-v${{ steps.version.outputs.name }}
-          path: centralhub-android-v${{ steps.version.outputs.name }}.apk
+          path: |
+            centralhub-android-v${{ steps.version.outputs.name }}.apk
+            centralhub-ci-manifest.json
           if-no-files-found: error
           retention-days: 30
 
@@ -127,6 +148,7 @@ jobs:
           Version: ${{ steps.version.outputs.name }}
           Version code: ${{ steps.version.outputs.code }}
           Commit: ${{ github.sha }}
+          CentralHub CI build: ${{ inputs.centralhub_build_id }}
           Signing identity SHA-256: ${{ steps.signing.outputs.fingerprint }}
 
           Normal CentralHub website/dashboard/database/API changes arrive automatically and do not need a new APK. This package is published only when Android/native configuration changes require an installed-app update.
@@ -145,4 +167,3 @@ jobs:
 # Normal UI, dashboard, database and API changes therefore arrive through the
 # live deployment and must not trigger another APK build/install cycle.
 # This workflow is reserved for actual Android shell/config/dependency changes.
-# Wake-listener lifecycle recovery and alternative-candidate handling are native Android fixes.
