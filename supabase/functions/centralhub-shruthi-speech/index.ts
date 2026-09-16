@@ -47,62 +47,67 @@ Deno.serve(async (req: Request) => {
 
   const text = String(body?.text ?? "").trim().slice(0, 2800);
   if (!text) return reply(400, { success: false, error: "missing_text" });
-
-  // The Android app already has a native TTS engine kept warm in-process. Returning
-  // immediately here makes the web client fall back to that engine instead of waiting
-  // for a full cloud MP3 generation/download cycle before Shruthi starts talking.
-  const userAgent = req.headers.get("user-agent") ?? "";
-  const preferNative = body?.prefer_native_tts === true || /Android/i.test(userAgent);
-  if (preferNative) {
-    return reply(200, {
-      success: false,
-      error: "native_tts_preferred",
-      provider: "android-native",
-      fast_path: true,
-    });
-  }
-
-  if (!openaiKey) return reply(503, { success: false, error: "openai_not_configured" });
+  if (!openaiKey) return reply(503, { success: false, error: "openai_not_configured", voice_locked: true });
 
   const customVoiceId = String(Deno.env.get("SHRUTHI_CUSTOM_VOICE_ID") ?? "").trim();
   const namedVoice = String(Deno.env.get("SHRUTHI_TTS_VOICE") ?? "marin").trim() || "marin";
   const language = /[\u0D00-\u0D7F]/.test(text) ? "Malayalam-English bilingual" : "British English";
   const voice: string | { id: string } = customVoiceId ? { id: customVoiceId } : namedVoice;
+  const model = Deno.env.get("SHRUTHI_TTS_MODEL") ?? "gpt-4o-mini-tts";
 
+  let lastStatus = 0;
+  let lastCode: string | null = null;
   try {
-    const response = await fetch("https://api.openai.com/v1/audio/speech", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: Deno.env.get("SHRUTHI_TTS_MODEL") ?? "gpt-4o-mini-tts",
-        voice,
-        input: text,
-        instructions: `Speak as Shruthi, a natural, calm, warm, professional female executive assistant. Use ${language}. Sound human and conversational, not robotic. Keep a confident executive tone, natural pauses, and clear pronunciation.`,
-        response_format: "mp3",
-      }),
-    });
-
-    if (!response.ok) {
-      const payload = await response.json().catch(() => null);
-      return reply(502, {
-        success: false,
-        error: "speech_generation_failed",
-        status: response.status,
-        upstream_code: payload?.error?.code ?? payload?.error?.type ?? null,
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const response = await fetch("https://api.openai.com/v1/audio/speech", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          voice,
+          input: text,
+          instructions: `Speak as Shruthi, a natural, calm, warm, professional female executive assistant. Use ${language}. Sound human and conversational, not robotic. Keep a confident executive tone, natural pauses, and clear pronunciation.`,
+          response_format: "mp3",
+        }),
+        signal: AbortSignal.timeout(30_000),
       });
+
+      if (response.ok) {
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (!bytes.length) {
+          lastStatus = 502;
+          lastCode = "empty_speech_audio";
+        } else {
+          return reply(200, {
+            success: true,
+            audioBase64: toBase64(bytes),
+            mimeType: "audio/mpeg",
+            provider: "openai",
+            voice: customVoiceId ? "custom" : namedVoice,
+            voice_locked: true,
+          });
+        }
+      } else {
+        lastStatus = response.status;
+        const payload = await response.json().catch(() => null);
+        lastCode = payload?.error?.code ?? payload?.error?.type ?? "speech_generation_failed";
+      }
+
+      if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 180));
     }
 
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    if (!bytes.length) return reply(502, { success: false, error: "empty_speech_audio" });
-
-    return reply(200, {
-      success: true,
-      audioBase64: toBase64(bytes),
-      mimeType: "audio/mpeg",
-      provider: "openai",
-      voice: customVoiceId ? "custom" : namedVoice,
+    return reply(502, {
+      success: false,
+      error: "speech_generation_failed_same_voice_only",
+      status: lastStatus || 502,
+      upstream_code: lastCode,
+      voice_locked: true,
     });
   } catch (error) {
-    return reply(500, { success: false, error: error instanceof Error ? error.message : "speech_generation_error" });
+    return reply(500, {
+      success: false,
+      error: error instanceof Error ? error.message : "speech_generation_error",
+      voice_locked: true,
+    });
   }
 });
