@@ -62,7 +62,6 @@ export default function NoraLiveActionOverlay() {
   const [session, setSession] = useState<ActionSession | null>(null);
   const [steps, setSteps] = useState<ActionStep[]>([]);
   const [questions, setQuestions] = useState<ActionQuestion[]>([]);
-  const [answer, setAnswer] = useState('');
   const [busy, setBusy] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -121,20 +120,6 @@ export default function NoraLiveActionOverlay() {
     }
   }, [refresh, session]);
 
-  const submitAnswer = useCallback(async () => {
-    if (!pendingQuestion || !session || !answer.trim()) return;
-    setBusy(true);
-    try {
-      const now = new Date().toISOString();
-      await supabase.from('nora_action_questions').update({ answer: answer.trim(), status: 'answered', answered_at: now }).eq('id', pendingQuestion.id);
-      await supabase.from('nora_action_sessions').update({ status: 'running', awaiting_input: false, current_step: 'Continuing with your answer' }).eq('id', session.id);
-      setAnswer('');
-      await refresh();
-    } finally {
-      setBusy(false);
-    }
-  }, [answer, pendingQuestion, refresh, session]);
-
   if (!session) return null;
 
   if (collapsed) {
@@ -184,7 +169,8 @@ export default function NoraLiveActionOverlay() {
             <div className="mt-3 rounded-2xl border border-amber-400/25 bg-amber-400/10 p-3">
               <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-100"><MessageCircleQuestion className="h-4 w-4" />Shruthi needs your input</div>
               <p className="text-sm text-slate-200">{pendingQuestion.question}</p>
-              <div className="mt-3 flex gap-2"><input type={pendingQuestion.is_sensitive ? 'password' : 'text'} value={answer} onChange={(event) => setAnswer(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submitAnswer(); }} placeholder="Answer Shruthi…" className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-base outline-none focus:border-cyan-400/50" /><button type="button" disabled={busy || !answer.trim()} onClick={() => void submitAnswer()} className="rounded-xl bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-40">Continue</button></div>
+              <p className="mt-2 text-xs leading-relaxed text-slate-400">Keep using the normal Shruthi input. There is no second browser chat or answer box.</p>
+              <button type="button" onClick={() => setCollapsed(true)} className="mt-3 rounded-xl border border-cyan-400/25 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-cyan-100">Reply in main Shruthi</button>
             </div>
           )}
 
