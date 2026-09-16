@@ -92,25 +92,11 @@ Deno.serve(async (req) => {
     const label = String(body?.label || title || new URL(url).hostname).trim().slice(0, 300);
     const { data: existing } = await db.from("live_web_monitors").select("id").eq("user_id", user.id).eq("url", url).maybeSingle();
     if (existing?.id) {
-      const { error } = await db.from("live_web_monitors").update({
-        enabled: true,
-        interval_minutes: interval,
-        label,
-        next_check_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        last_error: null,
-      }).eq("id", existing.id).eq("user_id", user.id);
+      const { error } = await db.from("live_web_monitors").update({ enabled: true, interval_minutes: interval, label, next_check_at: new Date().toISOString(), updated_at: new Date().toISOString(), last_error: null }).eq("id", existing.id).eq("user_id", user.id);
       if (error) return json(500, { success: false, error: error.message });
       return json(200, { success: true, kind: "monitor_enabled", monitor_id: existing.id });
     }
-    const { data: created, error } = await db.from("live_web_monitors").insert({
-      user_id: user.id,
-      url,
-      label,
-      interval_minutes: interval,
-      enabled: true,
-      next_check_at: new Date().toISOString(),
-    }).select("id").single();
+    const { data: created, error } = await db.from("live_web_monitors").insert({ user_id: user.id, url, label, interval_minutes: interval, enabled: true, next_check_at: new Date().toISOString() }).select("id").single();
     if (error) return json(500, { success: false, error: error.message });
     return json(200, { success: true, kind: "monitor_created", monitor_id: created.id });
   }
@@ -126,6 +112,49 @@ Deno.serve(async (req) => {
     if (!url) return json(400, { success: false, error: "invalid_url" });
     const goal = String(body?.goal || "Inspect the current page and help the CentralHub admin.").trim().slice(0, 4000);
     const hostname = new URL(url).hostname;
+    const requestedId = String(body?.session_id || "").trim();
+
+    let existing: any = null;
+    if (requestedId) {
+      const { data } = await db.from("nora_action_sessions")
+        .select("id,metadata")
+        .eq("id", requestedId)
+        .eq("user_id", user.id)
+        .in("status", ["planned", "running", "waiting_input", "waiting_approval", "paused"])
+        .maybeSingle();
+      existing = data || null;
+    }
+    if (!existing) {
+      const { data } = await db.from("nora_action_sessions")
+        .select("id,metadata")
+        .eq("user_id", user.id)
+        .in("status", ["planned", "running", "waiting_input", "waiting_approval", "paused"])
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      existing = data || null;
+    }
+
+    if (existing?.id) {
+      const metadata = existing.metadata && typeof existing.metadata === "object" ? existing.metadata : {};
+      const { error } = await db.from("nora_action_sessions").update({
+        title: `Live Web · ${hostname}`,
+        goal,
+        target_system: hostname,
+        target_url: url,
+        status: "planned",
+        current_step: `Inspecting ${hostname}`,
+        requires_approval: false,
+        approval_reason: null,
+        awaiting_input: false,
+        last_error: null,
+        completed_at: null,
+        metadata: { ...metadata, source: metadata.source || "voice_assistant", browser_mode: true, reused_live_web_session: true },
+      }).eq("id", existing.id).eq("user_id", user.id);
+      if (error) return json(500, { success: false, error: error.message });
+      return json(200, { success: true, kind: "session_reused", session_id: existing.id });
+    }
+
     const { data: created, error } = await db.from("nora_action_sessions").insert({
       user_id: user.id,
       title: `Live Web · ${hostname}`,
@@ -135,7 +164,7 @@ Deno.serve(async (req) => {
       status: "planned",
       risk_level: "medium",
       current_step: `Opening ${hostname}`,
-      metadata: { source: "android_live_web", browser_mode: true },
+      metadata: { source: "voice_assistant", browser_mode: true },
     }).select("id").single();
     if (error || !created?.id) return json(500, { success: false, error: error?.message || "session_create_failed" });
     return json(200, { success: true, kind: "new_session", session_id: created.id });
