@@ -112,7 +112,7 @@ export default function QuickActionsFab() {
   if (!mounted) return null;
 
   return (
-    <div ref={panelRef} className="fixed z-[70] right-4 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] sm:right-6 sm:bottom-6">
+    <div ref={panelRef} className="fixed z-[70] right-[5.25rem] bottom-[calc(5.5rem+env(safe-area-inset-bottom))] sm:right-6 sm:bottom-6">
       {open && (
         <div
           className="absolute bottom-[4.25rem] right-0 w-[min(92vw,420px)] max-h-[min(70vh,560px)] overflow-y-auto rounded-3xl border border-slate-700/70 bg-slate-950/98 shadow-2xl shadow-black/50 backdrop-blur-xl p-3 overscroll-contain"

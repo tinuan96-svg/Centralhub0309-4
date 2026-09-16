@@ -1,0 +1,8 @@
+CentralHub Android release marker — 2026-09-16
+
+Purpose:
+- publish a fresh signed Android APK after the CentralHub customer-support shortcut and automatic notification reliability fixes;
+- keep the installed shell aligned with the current Shruthi continuous-microphone native changes;
+- make the new package appear through the existing dashboard app-update feed.
+
+This file contains no runtime configuration or secrets.
