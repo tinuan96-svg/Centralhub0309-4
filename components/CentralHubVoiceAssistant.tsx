@@ -39,6 +39,7 @@ type NativeBridge = {
   isTaraTtsReady?: () => boolean;
   speakTara?: (text: string, languageTag: string) => boolean;
   stopTaraTts?: () => void;
+  openNoraComputerMode?: (sessionId: string, targetUrl: string, accessToken: string, supabaseUrl: string) => boolean;
 };
 
 type NativeTranscriptEvent = CustomEvent<{ text?: string }>;
@@ -101,6 +102,17 @@ function looksAddressedToNora(text: string, hasConversationContext: boolean) {
   if (!clean || clean.length > 260) return false;
   if (ASSISTANT_CUES.test(clean)) return true;
   return hasConversationContext && FOLLOW_UP_CUES.test(clean);
+}
+
+function safePublicHttps(value: unknown) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text) return '';
+  try {
+    const url = new URL(text);
+    return url.protocol === 'https:' ? url.toString() : '';
+  } catch {
+    return '';
+  }
 }
 
 function blobToBase64(blob: Blob): Promise<string> {
@@ -259,24 +271,24 @@ export default function CentralHubVoiceAssistant() {
   }, []);
 
   const stopSpeech = useCallback(() => {
-  if (speechVisualTimerRef.current) window.clearTimeout(speechVisualTimerRef.current);
-  speechVisualTimerRef.current = null;
-  const cloudAudio = cloudAudioRef.current;
-  if (cloudAudio) {
-    try { cloudAudio.pause(); } catch { }
-    cloudAudio.src = '';
-    cloudAudioRef.current = null;
-  }
-  if (cloudAudioUrlRef.current) {
-    URL.revokeObjectURL(cloudAudioUrlRef.current);
-    cloudAudioUrlRef.current = null;
-  }
-  setSpeaking(false);
-  window.speechSynthesis?.cancel();
-  const bridge = getNativeBridge();
-  bridge?.stopTaraTts?.();
-  bridge?.setTaraSpeaking?.(false);
-}, []);
+    if (speechVisualTimerRef.current) window.clearTimeout(speechVisualTimerRef.current);
+    speechVisualTimerRef.current = null;
+    const cloudAudio = cloudAudioRef.current;
+    if (cloudAudio) {
+      try { cloudAudio.pause(); } catch { }
+      cloudAudio.src = '';
+      cloudAudioRef.current = null;
+    }
+    if (cloudAudioUrlRef.current) {
+      URL.revokeObjectURL(cloudAudioUrlRef.current);
+      cloudAudioUrlRef.current = null;
+    }
+    setSpeaking(false);
+    window.speechSynthesis?.cancel();
+    const bridge = getNativeBridge();
+    bridge?.stopTaraTts?.();
+    bridge?.setTaraSpeaking?.(false);
+  }, []);
 
   useEffect(() => () => {
     stopTracks();
@@ -284,65 +296,137 @@ export default function CentralHubVoiceAssistant() {
   }, [stopSpeech, stopTracks]);
 
   const speak = useCallback((text: string) => {
-  if (!text || typeof window === 'undefined' || !autoSpeak) {
-    stopSpeech();
-    return;
-  }
-
-  const bridge = getNativeBridge();
-  stopSpeech();
-  setSpeaking(true);
-  bridge?.setTaraSpeaking?.(true);
-
-  const finish = () => {
-    bridge?.setTaraSpeaking?.(false);
-    if (speechVisualTimerRef.current) window.clearTimeout(speechVisualTimerRef.current);
-    speechVisualTimerRef.current = null;
-    setSpeaking(false);
-  };
-
-  if (speechVisualTimerRef.current) window.clearTimeout(speechVisualTimerRef.current);
-  const estimatedMs = Math.min(30_000, Math.max(2200, text.length * 62));
-  speechVisualTimerRef.current = window.setTimeout(finish, estimatedMs);
-
-  void (async () => {
-    try {
-      const speech = await invokeShruthiSpeech(text);
-      if (!speech.success || !speech.audioBase64) throw new Error(speech.error || 'No Shruthi speech audio returned.');
-
-      const binary = atob(speech.audioBase64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-      const blob = new Blob([bytes], { type: speech.mimeType || 'audio/mpeg' });
-      const url = URL.createObjectURL(blob);
-      cloudAudioUrlRef.current = url;
-      const audio = new Audio(url);
-      cloudAudioRef.current = audio;
-      audio.preload = 'auto';
-      audio.onended = () => {
-        if (cloudAudioRef.current === audio) cloudAudioRef.current = null;
-        if (cloudAudioUrlRef.current === url) {
-          URL.revokeObjectURL(url);
-          cloudAudioUrlRef.current = null;
-        }
-        finish();
-      };
-      audio.onerror = () => {
-        if (cloudAudioRef.current === audio) cloudAudioRef.current = null;
-        if (cloudAudioUrlRef.current === url) {
-          URL.revokeObjectURL(url);
-          cloudAudioUrlRef.current = null;
-        }
-        finish();
-      };
-      await audio.play();
-    } catch {
-      // Voice identity is locked. Never fall back to Android/browser/default TTS.
-      // A speech failure stays silent rather than changing Shruthi's voice/persona.
-      finish();
+    if (!text || typeof window === 'undefined' || !autoSpeak) {
+      stopSpeech();
+      return;
     }
-  })();
-}, [autoSpeak, stopSpeech]);
+
+    const bridge = getNativeBridge();
+    stopSpeech();
+    setSpeaking(true);
+    bridge?.setTaraSpeaking?.(true);
+
+    const finish = () => {
+      bridge?.setTaraSpeaking?.(false);
+      if (speechVisualTimerRef.current) window.clearTimeout(speechVisualTimerRef.current);
+      speechVisualTimerRef.current = null;
+      setSpeaking(false);
+    };
+
+    if (speechVisualTimerRef.current) window.clearTimeout(speechVisualTimerRef.current);
+    const estimatedMs = Math.min(30_000, Math.max(2200, text.length * 62));
+    speechVisualTimerRef.current = window.setTimeout(finish, estimatedMs);
+
+    void (async () => {
+      try {
+        const speech = await invokeShruthiSpeech(text);
+        if (!speech.success || !speech.audioBase64) throw new Error(speech.error || 'No Shruthi speech audio returned.');
+
+        const binary = atob(speech.audioBase64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+        const blob = new Blob([bytes], { type: speech.mimeType || 'audio/mpeg' });
+        const url = URL.createObjectURL(blob);
+        cloudAudioUrlRef.current = url;
+        const audio = new Audio(url);
+        cloudAudioRef.current = audio;
+        audio.preload = 'auto';
+        audio.onended = () => {
+          if (cloudAudioRef.current === audio) cloudAudioRef.current = null;
+          if (cloudAudioUrlRef.current === url) {
+            URL.revokeObjectURL(url);
+            cloudAudioUrlRef.current = null;
+          }
+          finish();
+        };
+        audio.onerror = () => {
+          if (cloudAudioRef.current === audio) cloudAudioRef.current = null;
+          if (cloudAudioUrlRef.current === url) {
+            URL.revokeObjectURL(url);
+            cloudAudioUrlRef.current = null;
+          }
+          finish();
+        };
+        await audio.play();
+      } catch {
+        // Voice identity is locked. Never fall back to Android/browser/default TTS.
+        // A speech failure stays silent rather than changing Shruthi's voice/persona.
+        finish();
+      }
+    })();
+  }, [autoSpeak, stopSpeech]);
+
+  const tryResumePendingBrowserQuestion = useCallback(async (answerText: string) => {
+    const { data: authData } = await supabase.auth.getSession();
+    const authSession = authData.session;
+    if (!authSession?.user) return false;
+
+    const { data: sessions, error: sessionsError } = await supabase
+      .from('nora_action_sessions')
+      .select('id,target_url,status,metadata,updated_at')
+      .eq('user_id', authSession.user.id)
+      .in('status', ['waiting_input', 'paused'])
+      .order('updated_at', { ascending: false })
+      .limit(5);
+    if (sessionsError) throw sessionsError;
+
+    let pendingSession: any = null;
+    let pendingQuestion: any = null;
+    for (const candidate of sessions || []) {
+      const { data: question, error: questionError } = await supabase
+        .from('nora_action_questions')
+        .select('id,question,is_sensitive,status')
+        .eq('session_id', candidate.id)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (questionError) throw questionError;
+      if (question) {
+        pendingSession = candidate;
+        pendingQuestion = question;
+        break;
+      }
+    }
+    if (!pendingSession || !pendingQuestion) return false;
+
+    const metadata = pendingSession.metadata && typeof pendingSession.metadata === 'object' ? pendingSession.metadata as Record<string, unknown> : {};
+    const activeUrl = safePublicHttps(metadata.active_url) || safePublicHttps(pendingSession.target_url);
+    const native = getNativeBridge();
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+    if (native?.getPlatform?.() !== 'android' || !native.openNoraComputerMode || !activeUrl || !supabaseUrl) {
+      throw new Error('Shruthi Live Web needs the current CentralHub Android app to continue this browser task.');
+    }
+
+    if (pendingQuestion.is_sensitive) {
+      const launched = native.openNoraComputerMode(pendingSession.id, activeUrl, authSession.access_token, supabaseUrl) === true;
+      if (!launched) throw new Error('Could not reopen Shruthi Live Web for the secure step.');
+      const secureReply = 'That step is sensitive, so I will not use or store that answer here. Complete it directly in the visible browser, then tap Continue Shruthi.';
+      const localResult: AssistantReply = { success: true, reply: secureReply, intent: 'browser_secure_handoff', mode: 'operations', risk_level: 'read_only', requires_confirmation: false, speak: true, status: 'waiting_input' };
+      setResponse(localResult);
+      responseRef.current = localResult;
+      speak(secureReply);
+      return true;
+    }
+
+    const { data: resumed, error: resumeError } = await supabase.rpc('shruthi_resume_browser_question', {
+      p_session_id: pendingSession.id,
+      p_answer: answerText,
+    });
+    if (resumeError) throw resumeError;
+
+    const resumePayload = resumed && typeof resumed === 'object' ? resumed as Record<string, unknown> : {};
+    const resumeUrl = safePublicHttps(resumePayload.active_url) || activeUrl;
+    const launched = native.openNoraComputerMode(pendingSession.id, resumeUrl, authSession.access_token, supabaseUrl) === true;
+    if (!launched) throw new Error('Could not reopen the same Shruthi Live Web session.');
+
+    const reply = 'Got it — I’m continuing the same Live Web task from your answer.';
+    const localResult: AssistantReply = { success: true, reply, intent: 'browser_question_answered', mode: 'operations', risk_level: 'read_only', requires_confirmation: false, speak: true, status: 'running' };
+    setResponse(localResult);
+    responseRef.current = localResult;
+    speak(reply);
+    return true;
+  }, [speak]);
 
   const runCommand = useCallback(async (text: string) => {
     const clean = text.trim();
@@ -355,6 +439,8 @@ export default function CentralHubVoiceAssistant() {
     setResponse(null);
 
     try {
+      if (await tryResumePendingBrowserQuestion(clean)) return;
+
       const mode = inferMode(pathname, clean);
       const result = await invokeVoice({
         action: 'command',
@@ -376,7 +462,7 @@ export default function CentralHubVoiceAssistant() {
       processingRef.current = false;
       setProcessing(false);
     }
-  }, [pathname, speak, stopSpeech]);
+  }, [pathname, speak, stopSpeech, tryResumePendingBrowserQuestion]);
 
   const handleNativeTranscript = useCallback((rawText: string) => {
     if (processingRef.current || recordingRef.current) return;
