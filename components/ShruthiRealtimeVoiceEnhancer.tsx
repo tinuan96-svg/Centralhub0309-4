@@ -7,7 +7,7 @@ type NativeBridge = {
   setTaraSpeaking?: (speaking: boolean) => void;
 };
 
-type NativeTranscriptEvent = CustomEvent<{ text?: string }>;
+type NativeTranscriptEvent = CustomEvent<{ text?: string; liveStable?: boolean }>;
 
 const BUSINESS_CUES = /\b(?:sell|selling|price|product|stock|offer|website|competitor|check|search|grocery|order|orders|revenue|sales|deploy|deployment|repo|repository)\b/i;
 let activeShruthiAudio: HTMLMediaElement | null = null;
@@ -99,6 +99,31 @@ export default function ShruthiRealtimeVoiceEnhancer() {
     let animationFrame = 0;
     let monitoredStream: MediaStream | null = null;
     let autoStopIssued = false;
+    let lastShruthiAudioStopAt = -10_000;
+    let pendingBargeText = '';
+    let pendingBargeTimer: number | null = null;
+    let waitingForBargeFinal = false;
+
+    const clearBargeTimer = () => {
+      if (pendingBargeTimer) window.clearTimeout(pendingBargeTimer);
+      pendingBargeTimer = null;
+    };
+
+    const dispatchStableTranscript = (text: string) => {
+      const clean = String(text || '').trim();
+      if (!clean) return;
+      window.dispatchEvent(new CustomEvent('centralhub:tara-transcript', {
+        detail: { text: clean, liveStable: true },
+      }));
+    };
+
+    const flushBargeDraft = () => {
+      const finalText = pendingBargeText;
+      pendingBargeText = '';
+      waitingForBargeFinal = false;
+      clearBargeTimer();
+      if (finalText) dispatchStableTranscript(finalText);
+    };
 
     HTMLMediaElement.prototype.play = function patchedShruthiPlay(this: HTMLMediaElement) {
       const src = String(this.currentSrc || this.getAttribute('src') || '');
@@ -106,6 +131,7 @@ export default function ShruthiRealtimeVoiceEnhancer() {
         activeShruthiAudio = this;
         const clear = () => {
           if (activeShruthiAudio === this) activeShruthiAudio = null;
+          lastShruthiAudioStopAt = performance.now();
         };
         this.addEventListener('ended', clear, { once: true });
         this.addEventListener('error', clear, { once: true });
@@ -133,9 +159,10 @@ export default function ShruthiRealtimeVoiceEnhancer() {
       if (!AudioContextCtor) return;
 
       audioContext = new AudioContextCtor();
+      void audioContext.resume().catch(() => undefined);
       const analyser = audioContext.createAnalyser();
       analyser.fftSize = 512;
-      analyser.smoothingTimeConstant = 0.35;
+      analyser.smoothingTimeConstant = 0.3;
       const source = audioContext.createMediaStreamSource(stream);
       source.connect(analyser);
       const samples = new Uint8Array(analyser.fftSize);
@@ -165,7 +192,7 @@ export default function ShruthiRealtimeVoiceEnhancer() {
         if (!voiceStarted && now - startedAt < 420) noiseFloor = noiseFloor * 0.82 + rms * 0.18;
         const threshold = Math.max(0.018, noiseFloor * 2.35);
         const speechLevel = Math.max(0, Math.min(1, (rms - threshold * 0.55) / Math.max(0.045, threshold * 3.2)));
-        displayed = displayed * 0.56 + speechLevel * 0.44;
+        displayed = displayed * 0.54 + speechLevel * 0.46;
         setListeningBars(displayed);
 
         if (rms >= threshold) {
@@ -179,9 +206,9 @@ export default function ShruthiRealtimeVoiceEnhancer() {
         }
 
         const stopButton = document.querySelector<HTMLButtonElement>('.nora-screen button[aria-label="Stop listening"]');
-        const speechLongEnough = voiceStarted && now - voiceStartedAt >= 260;
-        const naturalEnd = speechLongEnough && lastVoiceAt > 0 && now - lastVoiceAt >= 700;
-        const noSpeechTimeout = !voiceStarted && now - startedAt >= 7000;
+        const speechLongEnough = voiceStarted && now - voiceStartedAt >= 220;
+        const naturalEnd = speechLongEnough && lastVoiceAt > 0 && now - lastVoiceAt >= 560;
+        const noSpeechTimeout = !voiceStarted && now - startedAt >= 6000;
 
         if (!autoStopIssued && stopButton && (naturalEnd || noSpeechTimeout)) {
           autoStopIssued = true;
@@ -209,11 +236,51 @@ export default function ShruthiRealtimeVoiceEnhancer() {
 
     mediaDevices.getUserMedia = patchedGetUserMedia as typeof mediaDevices.getUserMedia;
 
+    const onAudioStop = (event: Event) => {
+      const audio = event.target;
+      if (!(audio instanceof HTMLAudioElement)) return;
+      const src = String(audio.currentSrc || audio.src || '');
+      if (!src.startsWith('blob:') && activeShruthiAudio !== audio) return;
+      if (activeShruthiAudio === audio) activeShruthiAudio = null;
+      lastShruthiAudioStopAt = performance.now();
+    };
+
     const onTranscript = (event: Event) => {
       const transcriptEvent = event as NativeTranscriptEvent;
-      if (!transcriptEvent.detail) return;
+      if (!transcriptEvent.detail || transcriptEvent.detail.liveStable) return;
+
       const normalized = normalizeCentralHubSpeech(String(transcriptEvent.detail.text || ''));
-      if (normalized) transcriptEvent.detail.text = normalized;
+      if (!normalized) return;
+      transcriptEvent.detail.text = normalized;
+
+      const now = performance.now();
+      const justInterruptedShruthi = activeShruthiAudio !== null || now - lastShruthiAudioStopAt < 800;
+
+      // Android may emit an early partial phrase as soon as the user interrupts.
+      // Stop Shruthi immediately, but hold that partial until the recognizer sends
+      // the completed phrase after the user naturally finishes speaking.
+      if (justInterruptedShruthi || waitingForBargeFinal) {
+        event.stopImmediatePropagation();
+        event.preventDefault();
+        stopShruthiSpeechImmediately();
+
+        if (!waitingForBargeFinal) {
+          waitingForBargeFinal = true;
+          pendingBargeText = normalized;
+          clearBargeTimer();
+          pendingBargeTimer = window.setTimeout(flushBargeDraft, 3000);
+          return;
+        }
+
+        if (normalized.length >= pendingBargeText.length || normalized.toLowerCase() !== pendingBargeText.toLowerCase()) {
+          pendingBargeText = normalized;
+        }
+        const finalText = pendingBargeText;
+        pendingBargeText = '';
+        waitingForBargeFinal = false;
+        clearBargeTimer();
+        window.setTimeout(() => dispatchStableTranscript(finalText), 70);
+      }
     };
 
     const onClickCapture = (event: Event) => {
@@ -225,12 +292,17 @@ export default function ShruthiRealtimeVoiceEnhancer() {
 
     window.addEventListener('centralhub:tara-transcript', onTranscript as EventListener, true);
     document.addEventListener('click', onClickCapture, true);
+    document.addEventListener('pause', onAudioStop, true);
+    document.addEventListener('ended', onAudioStop, true);
 
     return () => {
       window.removeEventListener('centralhub:tara-transcript', onTranscript as EventListener, true);
       document.removeEventListener('click', onClickCapture, true);
+      document.removeEventListener('pause', onAudioStop, true);
+      document.removeEventListener('ended', onAudioStop, true);
       mediaDevices.getUserMedia = originalGetUserMedia;
       HTMLMediaElement.prototype.play = originalMediaPlay;
+      clearBargeTimer();
       if (activeShruthiAudio) {
         try { activeShruthiAudio.pause(); } catch { }
         activeShruthiAudio = null;
