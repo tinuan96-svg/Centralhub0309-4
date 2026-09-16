@@ -20,6 +20,7 @@ type ProbeResult = {
   latency_ms: number;
   content_type: string | null;
   html_ok: boolean | null;
+  angular_app_shell: boolean;
   error: string | null;
 };
 
@@ -34,19 +35,21 @@ async function probe(origin: string, path: string): Promise<ProbeResult> {
       cache: "no-store",
       signal: AbortSignal.timeout(10000),
       headers: {
-        "user-agent": "CentralHub-Security-Monitor/2.0",
+        "user-agent": "CentralHub-Security-Monitor/2.1",
         "cache-control": "no-cache",
         "pragma": "no-cache",
       },
     });
     const contentType = response.headers.get("content-type");
     let htmlOk: boolean | null = null;
+    let angularAppShell = false;
     if (path === "/" || path === "/index.html") {
       const body = await response.text();
       const lower = body.toLowerCase();
-      htmlOk = response.ok && Boolean(contentType?.includes("text/html")) &&
-        (lower.includes("<!doctype html") || lower.includes("<html")) &&
-        lower.includes("<app-root");
+      const looksLikeHtml = Boolean(contentType?.includes("text/html")) &&
+        (lower.includes("<!doctype html") || lower.includes("<html"));
+      htmlOk = response.ok && looksLikeHtml;
+      angularAppShell = looksLikeHtml && lower.includes("<app-root");
     } else {
       await response.body?.cancel();
     }
@@ -57,6 +60,7 @@ async function probe(origin: string, path: string): Promise<ProbeResult> {
       latency_ms: Math.round(performance.now() - started),
       content_type: contentType,
       html_ok: htmlOk,
+      angular_app_shell: angularAppShell,
       error: null,
     };
   } catch (cause) {
@@ -67,6 +71,7 @@ async function probe(origin: string, path: string): Promise<ProbeResult> {
       latency_ms: Math.round(performance.now() - started),
       content_type: null,
       html_ok: null,
+      angular_app_shell: false,
       error: cause instanceof Error ? cause.message.slice(0, 240) : "probe_failed",
     };
   }
@@ -94,13 +99,14 @@ Deno.serve(async () => {
     let missing: string[] = importantHeaders;
     let detail: string | null = null;
 
-    const [rootProbe, indexProbe] = await Promise.all([
-      probe(origin, "/"),
-      probe(origin, "/index.html"),
-    ]);
+    const rootProbe = await probe(origin, "/");
+    const requiresIndexHtml = rootProbe.angular_app_shell === true;
+    const indexProbe = requiresIndexHtml ? await probe(origin, "/index.html") : null;
 
-    const appShellFailed = !rootProbe.ok || !indexProbe.ok || rootProbe.html_ok === false || indexProbe.html_ok === false;
-    httpStatus = indexProbe.status ?? rootProbe.status;
+    const rootFailed = !rootProbe.ok || rootProbe.html_ok === false;
+    const indexFailed = requiresIndexHtml && (!indexProbe?.ok || indexProbe?.html_ok === false);
+    const appShellFailed = rootFailed || indexFailed;
+    httpStatus = indexProbe?.status ?? rootProbe.status;
 
     try {
       const headerResponse = await fetch(`${origin}/?centralhub_headers=${Date.now()}`, {
@@ -109,20 +115,20 @@ Deno.serve(async () => {
         cache: "no-store",
         signal: AbortSignal.timeout(10000),
         headers: {
-          "user-agent": "CentralHub-Security-Monitor/2.0",
+          "user-agent": "CentralHub-Security-Monitor/2.1",
           "cache-control": "no-cache",
         },
       });
       missing = importantHeaders.filter((header) => !headerResponse.headers.get(header));
       await headerResponse.body?.cancel();
     } catch {
-      // Root/index probes already determine availability.
+      // Availability is determined by the route probes above.
     }
 
     if (appShellFailed) {
       status = "offline";
-      const failed = [rootProbe, indexProbe].filter((p) => !p.ok || p.html_ok === false);
-      detail = failed.map((p) => `${p.path}:${p.status ?? "network"}${p.error ? `:${p.error}` : p.html_ok === false ? ":invalid_html" : ""}`).join(" | ").slice(0, 240) || "app_shell_probe_failed";
+      const failed = [rootProbe, indexProbe].filter((p): p is ProbeResult => Boolean(p) && (!p!.ok || p!.html_ok === false));
+      detail = failed.map((p) => `${p.path}:${p.status ?? "network"}${p.error ? `:${p.error}` : p.html_ok === false ? ":invalid_html" : ""}`).join(" | ").slice(0, 240) || "storefront_probe_failed";
     } else {
       status = missing.length <= 1 ? "online" : "degraded";
     }
@@ -142,6 +148,7 @@ Deno.serve(async () => {
 
     const probeDetails = {
       missing,
+      framework_mode: requiresIndexHtml ? "angular_app_shell" : "generic_html",
       probes: {
         root: rootProbe,
         index_html: indexProbe,
@@ -154,7 +161,7 @@ Deno.serve(async () => {
       status,
       latency_ms: latency,
       http_status: httpStatus,
-      tls_valid: rootProbe.status !== null || indexProbe.status !== null,
+      tls_valid: rootProbe.status !== null || indexProbe?.status !== null,
       security_headers: probeDetails,
       security_score: score,
       detail,
@@ -191,6 +198,7 @@ Deno.serve(async () => {
       latency_ms: latency,
       missing_headers: missing,
       detail,
+      framework_mode: probeDetails.framework_mode,
       probes: probeDetails.probes,
     };
 
@@ -250,6 +258,7 @@ Deno.serve(async () => {
       latency_ms: latency,
       security_score: score,
       missing_headers: missing,
+      framework_mode: probeDetails.framework_mode,
       probes: probeDetails.probes,
     });
   }
