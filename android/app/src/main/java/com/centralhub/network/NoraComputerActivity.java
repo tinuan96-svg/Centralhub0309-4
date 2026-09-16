@@ -12,12 +12,10 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.speech.tts.TextToSpeech;
 import android.util.Base64;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
-import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
@@ -48,22 +46,22 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Visible, human-supervised browser for Shruthi Live Web.
+ * Visible, human-supervised browser tool for the single Shruthi conversation.
  *
- * Shruthi can operate ordinary browser UI through structured screenshot-coordinate
- * actions. Authentication secrets, OTP/2FA, CAPTCHA and identity verification are
- * always handed back to the human. Consequential actions are approved before Shruthi
- * continues. Nothing here attempts to bypass a site's security controls.
+ * This Activity deliberately contains no second Shruthi chat or assistant input. The
+ * address bar is only browser chrome. Authentication secrets, OTP/2FA, CAPTCHA and
+ * identity verification remain manual, and consequential final actions require approval.
  */
 public final class NoraComputerActivity extends android.app.Activity {
     private static final String EXTRA_SESSION_ID = "nora_session_id";
     private static final String EXTRA_TARGET_URL = "nora_target_url";
     private static final String EXTRA_ACCESS_TOKEN = "nora_access_token";
     private static final String EXTRA_SUPABASE_URL = "nora_supabase_url";
-
     private static final String BROWSER_PREFS = "centralhub_live_web_browser";
     private static final int MAX_TABS = 8;
     private static final int WEB_PERMISSION_REQUEST_CODE = 4517;
+    private static final long PAGE_STABLE_MS = 700L;
+    private static final int PAGE_READY_MAX_ATTEMPTS = 28;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
@@ -74,7 +72,6 @@ public final class NoraComputerActivity extends android.app.Activity {
     private TextView statusView;
     private EditText addressView;
     private Button takeoverButton;
-    private Button closeButton;
     private String sessionId;
     private String targetUrl;
     private String accessToken;
@@ -82,22 +79,24 @@ public final class NoraComputerActivity extends android.app.Activity {
     private String agentEndpoint;
     private String controlEndpoint;
     private int activeTabIndex = 0;
+    private int navigationGeneration = 0;
     private boolean agentStarted = false;
     private boolean finishedOrDestroyed = false;
     private boolean manualControl = false;
     private boolean syntheticInput = false;
     private boolean waitingSensitiveHandoff = false;
+    private boolean pageLoading = true;
+    private boolean sessionCompleted = false;
+    private long lastPageFinishedAt = 0L;
+    private long lastSyntheticActionAt = 0L;
     private String lastResponseId = "";
     private String lastCallId = "";
     private String lastStepId = "";
     private PermissionRequest pendingWebPermissionRequest;
-    private TextToSpeech liveWebTts;
-    private volatile boolean liveWebTtsReady = false;
 
     private static final class BrowserTab {
         String title;
         String url;
-
         BrowserTab(String title, String url) {
             this.title = title == null || title.trim().isEmpty() ? "New tab" : title.trim();
             this.url = url == null ? "" : url.trim();
@@ -107,7 +106,6 @@ public final class NoraComputerActivity extends android.app.Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
         Intent intent = getIntent();
         sessionId = safe(intent.getStringExtra(EXTRA_SESSION_ID));
         targetUrl = safe(intent.getStringExtra(EXTRA_TARGET_URL));
@@ -123,29 +121,10 @@ public final class NoraComputerActivity extends android.app.Activity {
         }
 
         buildUi();
-        initializeLiveWebTts();
         configureWebView();
         restoreTabs();
         setManualControl(false, "Shruthi is opening Live Web…");
         webView.loadUrl(targetUrl);
-    }
-
-    private void initializeLiveWebTts() {
-        liveWebTts = new TextToSpeech(getApplicationContext(), status -> {
-            liveWebTtsReady = status == TextToSpeech.SUCCESS;
-            if (liveWebTtsReady && liveWebTts != null) {
-                liveWebTts.setLanguage(Locale.UK);
-                liveWebTts.setSpeechRate(0.96f);
-                liveWebTts.setPitch(1.03f);
-            }
-        });
-    }
-
-    private void speakPrompt(String text) {
-        if (!liveWebTtsReady || liveWebTts == null || text == null || text.trim().isEmpty()) return;
-        try {
-            liveWebTts.speak(text.trim(), TextToSpeech.QUEUE_FLUSH, null, "shruthi-live-web");
-        } catch (Exception ignored) { }
     }
 
     private void buildUi() {
@@ -171,15 +150,14 @@ public final class NoraComputerActivity extends android.app.Activity {
         statusView.setTextColor(Color.rgb(220, 232, 244));
         statusView.setTextSize(12f);
         statusView.setSingleLine(true);
-        LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(0, dp(46), 1f);
         statusView.setGravity(Gravity.CENTER_VERTICAL);
-        bar.addView(statusView, statusParams);
+        bar.addView(statusView, new LinearLayout.LayoutParams(0, dp(46), 1f));
 
         takeoverButton = browserButton("Take over");
         takeoverButton.setOnClickListener(v -> toggleTakeover());
         bar.addView(takeoverButton, new LinearLayout.LayoutParams(dp(104), dp(44)));
 
-        closeButton = browserButton("End");
+        Button closeButton = browserButton("End");
         closeButton.setOnClickListener(v -> cancelAndClose());
         bar.addView(closeButton, new LinearLayout.LayoutParams(dp(68), dp(44)));
 
@@ -192,12 +170,8 @@ public final class NoraComputerActivity extends android.app.Activity {
         Button back = browserButton("‹");
         back.setOnClickListener(v -> {
             takeOverForBrowser();
-            if (webView != null && webView.canGoBack()) {
-                webView.goBack();
-            } else {
-                requestAgent("pause", null);
-                finish();
-            }
+            if (webView != null && webView.canGoBack()) webView.goBack();
+            else { requestAgent("pause", null); finish(); }
         });
         nav.addView(back, new LinearLayout.LayoutParams(dp(44), dp(42)));
 
@@ -223,10 +197,7 @@ public final class NoraComputerActivity extends android.app.Activity {
         addressView.setPadding(dp(12), 0, dp(10), 0);
         addressView.setBackgroundColor(Color.rgb(12, 22, 38));
         addressView.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_GO);
-        addressView.setOnEditorActionListener((v, actionId, event) -> {
-            navigateAddress(addressView.getText().toString());
-            return true;
-        });
+        addressView.setOnEditorActionListener((v, actionId, event) -> { navigateAddress(addressView.getText().toString()); return true; });
         nav.addView(addressView, new LinearLayout.LayoutParams(0, dp(42), 1f));
 
         Button go = browserButton("Go");
@@ -272,11 +243,8 @@ public final class NoraComputerActivity extends android.app.Activity {
                 tabs.add(new BrowserTab(item.optString("title", "Tab"), url));
             }
         } catch (Exception ignored) { }
-
         int found = -1;
-        for (int i = 0; i < tabs.size(); i++) {
-            if (targetUrl.equals(tabs.get(i).url)) found = i;
-        }
+        for (int i = 0; i < tabs.size(); i++) if (targetUrl.equals(tabs.get(i).url)) found = i;
         if (found < 0) {
             if (tabs.size() >= MAX_TABS) tabs.remove(0);
             tabs.add(new BrowserTab("Opening…", targetUrl));
@@ -295,18 +263,12 @@ public final class NoraComputerActivity extends android.app.Activity {
                 item.put("url", tab.url);
                 array.put(item);
             }
-            getSharedPreferences(BROWSER_PREFS, MODE_PRIVATE).edit()
-                    .putString("tabs", array.toString())
-                    .putInt("active", activeTabIndex)
-                    .apply();
+            getSharedPreferences(BROWSER_PREFS, MODE_PRIVATE).edit().putString("tabs", array.toString()).putInt("active", activeTabIndex).apply();
         } catch (Exception ignored) { }
     }
 
     private void updateActiveTab(String url, String title) {
-        if (tabs.isEmpty()) {
-            tabs.add(new BrowserTab(title, url));
-            activeTabIndex = 0;
-        }
+        if (tabs.isEmpty()) { tabs.add(new BrowserTab(title, url)); activeTabIndex = 0; }
         if (activeTabIndex < 0 || activeTabIndex >= tabs.size()) activeTabIndex = 0;
         BrowserTab tab = tabs.get(activeTabIndex);
         tab.url = safe(url);
@@ -318,30 +280,20 @@ public final class NoraComputerActivity extends android.app.Activity {
         if (index < 0 || index >= tabs.size()) return;
         activeTabIndex = index;
         BrowserTab tab = tabs.get(index);
-        agentStarted = true;
-        lastResponseId = "";
-        lastCallId = "";
-        lastStepId = "";
-        waitingSensitiveHandoff = false;
         setManualControl(true, "Tab " + (index + 1) + "/" + tabs.size() + " · " + tab.title);
         webView.loadUrl(tab.url);
         persistTabs();
     }
 
     private void newTab() {
-        if (tabs.size() >= MAX_TABS) {
-            Toast.makeText(this, "Maximum " + MAX_TABS + " tabs.", Toast.LENGTH_SHORT).show();
-            return;
-        }
+        if (tabs.size() >= MAX_TABS) { Toast.makeText(this, "Maximum " + MAX_TABS + " tabs.", Toast.LENGTH_SHORT).show(); return; }
         tabs.add(new BrowserTab("New tab", "https://www.google.com/"));
         switchTab(tabs.size() - 1);
     }
 
     private void closeCurrentTab() {
         if (tabs.size() <= 1) {
-            tabs.clear();
-            tabs.add(new BrowserTab("Google", "https://www.google.com/"));
-            activeTabIndex = 0;
+            tabs.clear(); tabs.add(new BrowserTab("Google", "https://www.google.com/")); activeTabIndex = 0;
         } else {
             tabs.remove(activeTabIndex);
             activeTabIndex = Math.max(0, Math.min(activeTabIndex, tabs.size() - 1));
@@ -355,13 +307,11 @@ public final class NoraComputerActivity extends android.app.Activity {
             BrowserTab tab = tabs.get(i);
             labels[i] = (i == activeTabIndex ? "● " : "○ ") + (i + 1) + " · " + tab.title + "\n" + tab.url;
         }
-        new AlertDialog.Builder(this)
-                .setTitle("Live Web tabs · " + tabs.size() + "/" + MAX_TABS)
+        new AlertDialog.Builder(this).setTitle("Live Web tabs · " + tabs.size() + "/" + MAX_TABS)
                 .setItems(labels, (dialog, which) -> switchTab(which))
                 .setPositiveButton("+ New tab", (dialog, which) -> newTab())
                 .setNeutralButton("Close current", (dialog, which) -> closeCurrentTab())
-                .setNegativeButton("Done", null)
-                .show();
+                .setNegativeButton("Done", null).show();
     }
 
     private JSONObject postControl(JSONObject body) throws Exception {
@@ -372,55 +322,37 @@ public final class NoraComputerActivity extends android.app.Activity {
         connection.setDoOutput(true);
         connection.setRequestProperty("Authorization", "Bearer " + accessToken);
         connection.setRequestProperty("Content-Type", "application/json");
-        try (OutputStream output = connection.getOutputStream()) {
-            output.write(body.toString().getBytes(StandardCharsets.UTF_8));
-        }
+        try (OutputStream output = connection.getOutputStream()) { output.write(body.toString().getBytes(StandardCharsets.UTF_8)); }
         int status = connection.getResponseCode();
         InputStream stream = status >= 200 && status < 300 ? connection.getInputStream() : connection.getErrorStream();
         StringBuilder text = new StringBuilder();
-        if (stream != null) {
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) text.append(line);
-            }
+        if (stream != null) try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+            String line; while ((line = reader.readLine()) != null) text.append(line);
         }
         connection.disconnect();
         JSONObject result = text.length() == 0 ? new JSONObject() : new JSONObject(text.toString());
-        if (status < 200 || status >= 300 || !result.optBoolean("success", false)) {
-            throw new IllegalStateException(result.optString("error", "HTTP " + status));
-        }
+        if (status < 200 || status >= 300 || !result.optBoolean("success", false)) throw new IllegalStateException(result.optString("error", "HTTP " + status));
         return result;
     }
 
     private void recordHistory(String url, String title) {
         if (!isAllowedUrl(url)) return;
         browserExecutor.execute(() -> {
-            try {
-                JSONObject body = new JSONObject();
-                body.put("action", "history");
-                body.put("url", url);
-                body.put("title", title);
-                postControl(body);
-            } catch (Exception ignored) { }
+            try { JSONObject body = new JSONObject(); body.put("action", "history"); body.put("url", url); body.put("title", title); postControl(body); }
+            catch (Exception ignored) { }
         });
     }
 
     private void showTools() {
-        String[] items = new String[]{
-                "Save/remove bookmark", "Bookmarks", "History", "Monitor 24×7", "Check page", "Ask Shruthi"
-        };
-        new AlertDialog.Builder(this)
-                .setTitle("Live Web tools")
+        String[] items = new String[]{"Save/remove bookmark", "Bookmarks", "History", "Monitor 24×7"};
+        new AlertDialog.Builder(this).setTitle("Live Web tools")
+                .setMessage("Browser utilities only. Use the single Shruthi input in CentralHub for assistant commands.")
                 .setItems(items, (dialog, which) -> {
                     if (which == 0) toggleBookmark();
                     else if (which == 1) showSavedList("bookmarks", "Bookmarks");
                     else if (which == 2) showSavedList("history", "History");
                     else if (which == 3) showMonitorMenu();
-                    else if (which == 4) askShruthi("Check the current page for meaningful changes, risks, unusual information, or anything relevant to CentralHub. Summarize what matters.");
-                    else askShruthi(null);
-                })
-                .setNegativeButton("Close", null)
-                .show();
+                }).setNegativeButton("Close", null).show();
     }
 
     private void toggleBookmark() {
@@ -428,108 +360,48 @@ public final class NoraComputerActivity extends android.app.Activity {
         final String title = safe(webView.getTitle());
         browserExecutor.execute(() -> {
             try {
-                JSONObject body = new JSONObject();
-                body.put("action", "toggle_bookmark");
-                body.put("url", url);
-                body.put("title", title);
+                JSONObject body = new JSONObject(); body.put("action", "toggle_bookmark"); body.put("url", url); body.put("title", title);
                 boolean saved = postControl(body).optBoolean("bookmarked", false);
                 mainHandler.post(() -> Toast.makeText(this, saved ? "Bookmark saved." : "Bookmark removed.", Toast.LENGTH_SHORT).show());
-            } catch (Exception error) {
-                mainHandler.post(() -> failVisible("Bookmark failed."));
-            }
+            } catch (Exception error) { mainHandler.post(() -> failVisible("Bookmark failed.")); }
         });
     }
 
     private void showSavedList(String key, String title) {
         browserExecutor.execute(() -> {
             try {
-                JSONObject body = new JSONObject();
-                body.put("action", "state");
+                JSONObject body = new JSONObject(); body.put("action", "state");
                 JSONArray rows = postControl(body).optJSONArray(key);
                 mainHandler.post(() -> {
-                    if (rows == null || rows.length() == 0) {
-                        Toast.makeText(this, "No " + title.toLowerCase(Locale.ROOT) + " yet.", Toast.LENGTH_SHORT).show();
-                        return;
-                    }
+                    if (rows == null || rows.length() == 0) { Toast.makeText(this, "No " + title.toLowerCase(Locale.ROOT) + " yet.", Toast.LENGTH_SHORT).show(); return; }
                     int count = Math.min(50, rows.length());
                     String[] labels = new String[count];
-                    for (int i = 0; i < count; i++) {
-                        JSONObject item = rows.optJSONObject(i);
-                        labels[i] = item.optString("title", item.optString("url")) + "\n" + item.optString("url");
-                    }
-                    new AlertDialog.Builder(this)
-                            .setTitle(title)
-                            .setItems(labels, (dialog, which) -> {
-                                JSONObject item = rows.optJSONObject(which);
-                                if (item != null) navigateAddress(item.optString("url"));
-                            })
-                            .setNegativeButton("Close", null)
-                            .show();
+                    for (int i = 0; i < count; i++) { JSONObject item = rows.optJSONObject(i); labels[i] = item.optString("title", item.optString("url")) + "\n" + item.optString("url"); }
+                    new AlertDialog.Builder(this).setTitle(title).setItems(labels, (dialog, which) -> {
+                        JSONObject item = rows.optJSONObject(which); if (item != null) navigateAddress(item.optString("url"));
+                    }).setNegativeButton("Close", null).show();
                 });
-            } catch (Exception error) {
-                mainHandler.post(() -> failVisible("Could not load " + title.toLowerCase(Locale.ROOT) + "."));
-            }
+            } catch (Exception error) { mainHandler.post(() -> failVisible("Could not load " + title.toLowerCase(Locale.ROOT) + ".")); }
         });
     }
 
     private void showMonitorMenu() {
         final String url = safe(webView.getUrl());
         final String title = safe(webView.getTitle());
-        String[] choices = new String[]{
-                "Every 15 minutes", "Every 30 minutes", "Every 1 hour", "Every 3 hours",
-                "Every 6 hours", "Every 12 hours", "Every 24 hours", "Stop monitoring"
-        };
+        String[] choices = new String[]{"Every 15 minutes", "Every 30 minutes", "Every 1 hour", "Every 3 hours", "Every 6 hours", "Every 12 hours", "Every 24 hours", "Stop monitoring"};
         int[] values = new int[]{15, 30, 60, 180, 360, 720, 1440};
-        new AlertDialog.Builder(this)
-                .setTitle("Monitor this website 24×7")
-                .setMessage("Runs on CentralHub's backend even when this app is closed.")
+        new AlertDialog.Builder(this).setTitle("Monitor this website 24×7").setMessage("Runs on CentralHub's backend even when this app is closed.")
                 .setItems(choices, (dialog, which) -> {
                     boolean enable = which < values.length;
                     int minutes = enable ? values[which] : 0;
                     browserExecutor.execute(() -> {
                         try {
-                            JSONObject body = new JSONObject();
-                            body.put("action", enable ? "monitor" : "unmonitor");
-                            body.put("url", url);
-                            body.put("title", title);
-                            if (enable) body.put("interval_minutes", minutes);
-                            postControl(body);
+                            JSONObject body = new JSONObject(); body.put("action", enable ? "monitor" : "unmonitor"); body.put("url", url); body.put("title", title);
+                            if (enable) body.put("interval_minutes", minutes); postControl(body);
                             mainHandler.post(() -> Toast.makeText(this, enable ? "24×7 monitoring enabled." : "Monitoring stopped.", Toast.LENGTH_SHORT).show());
-                        } catch (Exception error) {
-                            mainHandler.post(() -> failVisible("Monitor update failed."));
-                        }
+                        } catch (Exception error) { mainHandler.post(() -> failVisible("Monitor update failed.")); }
                     });
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    private void startFreshAgentSession(String goal) {
-        final String url = safe(webView.getUrl());
-        if (!isAllowedUrl(url)) return;
-        setManualControl(true, "Preparing a fresh Shruthi session…");
-        browserExecutor.execute(() -> {
-            try {
-                JSONObject body = new JSONObject();
-                body.put("action", "new_session");
-                body.put("url", url);
-                body.put("goal", goal);
-                String freshId = safe(postControl(body).optString("session_id"));
-                if (freshId.isEmpty()) throw new IllegalStateException("session_create_failed");
-                mainHandler.post(() -> {
-                    sessionId = freshId;
-                    lastResponseId = "";
-                    lastCallId = "";
-                    lastStepId = "";
-                    waitingSensitiveHandoff = false;
-                    agentStarted = true;
-                    setManualControl(false, "Shruthi is inspecting this page…");
-                    requestAgent("start", null);
-                });
-            } catch (Exception error) {
-                mainHandler.post(() -> failVisible("Shruthi could not start a fresh page session."));
-            }
-        });
+                }).setNegativeButton("Cancel", null).show();
     }
 
     private void takeOverForBrowser() {
@@ -544,38 +416,10 @@ public final class NoraComputerActivity extends android.app.Activity {
         takeOverForBrowser();
         String value = raw == null ? "" : raw.trim();
         if (value.isEmpty()) return;
-        if (value.contains(" ") || (!value.contains(".") && !value.startsWith("https://"))) {
-            value = "https://www.google.com/search?q=" + Uri.encode(value);
-        } else if (!value.startsWith("https://")) {
-            value = "https://" + value.replaceFirst("^http://", "");
-        }
-        if (!isAllowedUrl(value)) {
-            Toast.makeText(this, "Only public HTTPS websites can open in Live Web.", Toast.LENGTH_LONG).show();
-            return;
-        }
+        if (value.contains(" ") || (!value.contains(".") && !value.startsWith("https://"))) value = "https://www.google.com/search?q=" + Uri.encode(value);
+        else if (!value.startsWith("https://")) value = "https://" + value.replaceFirst("^http://", "");
+        if (!isAllowedUrl(value)) { Toast.makeText(this, "Only public HTTPS websites can open in Live Web.", Toast.LENGTH_LONG).show(); return; }
         webView.loadUrl(value);
-    }
-
-    private void askShruthi(String preset) {
-        takeOverForBrowser();
-        if (preset != null && !preset.isEmpty()) {
-            startFreshAgentSession(preset + " Current page: " + safe(webView.getUrl()));
-            return;
-        }
-        EditText input = new EditText(this);
-        input.setSingleLine(false);
-        input.setHint("Ask Shruthi about this page…");
-        new AlertDialog.Builder(this)
-                .setTitle("Ask Shruthi")
-                .setMessage("Shruthi can inspect the visible page. Login secrets, OTPs and CAPTCHA stay manual.")
-                .setView(input)
-                .setPositiveButton("Ask", (dialog, which) -> {
-                    String question = input.getText().toString().trim();
-                    if (question.isEmpty()) return;
-                    startFreshAgentSession(question + " Current page: " + safe(webView.getUrl()));
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
     }
 
     private void configureWebView() {
@@ -596,84 +440,86 @@ public final class NoraComputerActivity extends android.app.Activity {
         cookies.setAcceptThirdPartyCookies(webView, true);
 
         webView.setWebChromeClient(new WebChromeClient() {
-            @Override
-            public void onPermissionRequest(PermissionRequest request) {
-                runOnUiThread(() -> handleWebPermissionRequest(request));
+            @Override public void onPermissionRequest(PermissionRequest request) { runOnUiThread(() -> handleWebPermissionRequest(request)); }
+            @Override public void onProgressChanged(WebView view, int newProgress) {
+                if (newProgress < 100) pageLoading = true;
             }
         });
         webView.setOnTouchListener((v, event) -> !manualControl && !syntheticInput);
         webView.setWebViewClient(new WebViewClient() {
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+            @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 String value = request.getUrl().toString();
                 if (isAllowedUrl(value)) return false;
                 setStatus("Blocked unsafe or non-HTTPS navigation");
                 return true;
             }
-
-            @Override
-            public void onPageFinished(WebView view, String url) {
+            @Override public void onPageStarted(WebView view, String url, Bitmap favicon) {
+                super.onPageStarted(view, url, favicon);
+                navigationGeneration += 1;
+                pageLoading = true;
+                lastPageFinishedAt = 0L;
+                if (addressView != null) addressView.setText(url);
+                setStatus(manualControl ? "Loading…" : "Shruthi is waiting for the page…");
+            }
+            @Override public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
+                pageLoading = false;
+                lastPageFinishedAt = System.currentTimeMillis();
                 if (addressView != null) addressView.setText(url);
                 if (!isAllowedUrl(url)) return;
                 updateActiveTab(url, safe(view.getTitle()));
+                CookieManager.getInstance().flush();
                 recordHistory(url, safe(view.getTitle()));
                 if (!agentStarted) {
                     agentStarted = true;
-                    setStatus("Shruthi is inspecting the page…");
-                    mainHandler.postDelayed(() -> requestAgent("start", null), 900L);
-                } else if (manualControl) {
-                    setStatus("Live Web · " + safe(view.getTitle()));
-                }
+                    setStatus("Shruthi is waiting for the page to settle…");
+                    waitForPageReady(() -> requestAgent("start", null), 0);
+                } else if (manualControl) setStatus("Live Web · " + safe(view.getTitle()));
             }
+        });
+    }
+
+    private void waitForPageReady(Runnable ready, int attempt) {
+        if (finishedOrDestroyed || webView == null) return;
+        if (attempt >= PAGE_READY_MAX_ATTEMPTS) { failVisible("This page did not become ready in time. You can take over or retry from Shruthi."); return; }
+        long now = System.currentTimeMillis();
+        boolean stable = !pageLoading && webView.getProgress() >= 100 && lastPageFinishedAt > 0
+                && now - lastPageFinishedAt >= PAGE_STABLE_MS && now - lastSyntheticActionAt >= PAGE_STABLE_MS;
+        String current = safe(webView.getUrl());
+        if (!stable || !isAllowedUrl(current)) {
+            mainHandler.postDelayed(() -> waitForPageReady(ready, attempt + 1), 250L);
+            return;
+        }
+        webView.evaluateJavascript("(function(){try{return document.readyState==='complete'?'ready':'loading'}catch(e){return 'loading'}})()", value -> {
+            if (value != null && value.contains("ready")) ready.run();
+            else mainHandler.postDelayed(() -> waitForPageReady(ready, attempt + 1), 250L);
         });
     }
 
     private void handleWebPermissionRequest(PermissionRequest request) {
         if (request == null) return;
         ArrayList<String> supportedResources = new ArrayList<>();
-        boolean wantsMic = false;
-        boolean wantsCamera = false;
+        boolean wantsMic = false, wantsCamera = false;
         for (String resource : request.getResources()) {
-            if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)) {
-                wantsMic = true;
-                supportedResources.add(resource);
-            } else if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)) {
-                wantsCamera = true;
-                supportedResources.add(resource);
-            }
+            if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)) { wantsMic = true; supportedResources.add(resource); }
+            else if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)) { wantsCamera = true; supportedResources.add(resource); }
         }
-        if (supportedResources.isEmpty()) {
-            request.deny();
-            return;
-        }
-
-        if (!manualControl) {
-            setManualControl(true, "Site permission requires your approval");
-            requestAgent("pause", null);
-        }
+        if (supportedResources.isEmpty()) { request.deny(); return; }
+        if (!manualControl) { setManualControl(true, "Site permission requires your approval"); requestAgent("pause", null); }
         String host = request.getOrigin() == null ? "this website" : safe(request.getOrigin().getHost());
         String what = wantsMic && wantsCamera ? "microphone and camera" : wantsMic ? "microphone" : "camera";
-        final boolean finalWantsMic = wantsMic;
-        final boolean finalWantsCamera = wantsCamera;
-        speakPrompt("This website is asking to use your " + what + ". I need your approval before allowing it.");
-        new AlertDialog.Builder(this)
-                .setTitle("Allow website permission?")
-                .setMessage((host.isEmpty() ? "This website" : host) + " wants access to your " + what + ". Shruthi will never grant website camera or microphone access automatically.")
+        final boolean finalWantsMic = wantsMic, finalWantsCamera = wantsCamera;
+        new AlertDialog.Builder(this).setTitle("Allow website permission?")
+                .setMessage((host.isEmpty() ? "This website" : host) + " wants access to your " + what + ". Shruthi never grants website camera or microphone access automatically.")
                 .setPositiveButton("Allow", (dialog, which) -> grantWebPermissionWithRuntimeCheck(request, finalWantsMic, finalWantsCamera))
-                .setNegativeButton("Deny", (dialog, which) -> request.deny())
-                .setCancelable(false)
-                .show();
+                .setNegativeButton("Deny", (dialog, which) -> request.deny()).setCancelable(false).show();
     }
 
     private void grantWebPermissionWithRuntimeCheck(PermissionRequest request, boolean wantsMic, boolean wantsCamera) {
         ArrayList<String> missing = new ArrayList<>();
         if (wantsMic && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) missing.add(Manifest.permission.RECORD_AUDIO);
         if (wantsCamera && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) missing.add(Manifest.permission.CAMERA);
-        if (missing.isEmpty()) {
-            grantSupportedWebResources(request);
-            return;
-        }
+        if (missing.isEmpty()) { grantSupportedWebResources(request); return; }
         pendingWebPermissionRequest = request;
         requestPermissions(missing.toArray(new String[0]), WEB_PERMISSION_REQUEST_CODE);
     }
@@ -685,33 +531,27 @@ public final class NoraComputerActivity extends android.app.Activity {
             if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource) && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) grant.add(resource);
             if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource) && checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) grant.add(resource);
         }
-        if (grant.isEmpty()) request.deny();
-        else request.grant(grant.toArray(new String[0]));
+        if (grant.isEmpty()) request.deny(); else request.grant(grant.toArray(new String[0]));
     }
 
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode != WEB_PERMISSION_REQUEST_CODE) return;
         PermissionRequest request = pendingWebPermissionRequest;
         pendingWebPermissionRequest = null;
-        if (request == null) return;
-        grantSupportedWebResources(request);
+        if (request != null) grantSupportedWebResources(request);
     }
 
     private void toggleTakeover() {
+        if (sessionCompleted) { finish(); return; }
         if (manualControl) {
             setManualControl(false, "Shruthi is resuming…");
             if (waitingSensitiveHandoff) {
                 waitingSensitiveHandoff = false;
                 requestResume(false, "completed manually");
-            } else if (!lastCallId.isEmpty()) {
-                captureAndContinue();
-            } else if (!lastResponseId.isEmpty()) {
-                requestResume(false, "Continue from the current screen after my manual check.");
-            } else {
-                startFreshAgentSession("Continue helping from the current visible page. Inspect it first, then proceed carefully.");
-            }
+            } else if (!lastCallId.isEmpty()) captureAndContinue();
+            else if (!lastResponseId.isEmpty()) requestResume(false, "Continue from the current screen after my manual check.");
+            else waitForPageReady(() -> requestAgent("start", null), 0);
         } else {
             setManualControl(true, "You have control · Shruthi is paused");
             requestAgent("pause", null);
@@ -720,22 +560,36 @@ public final class NoraComputerActivity extends android.app.Activity {
 
     private void setManualControl(boolean enabled, String status) {
         manualControl = enabled;
-        if (takeoverButton != null) takeoverButton.setText(enabled ? "Continue Shruthi" : "Take over");
+        if (takeoverButton != null) takeoverButton.setText(sessionCompleted ? "Return to Shruthi" : enabled ? "Continue Shruthi" : "Take over");
         setStatus(status);
+    }
+
+    private void addBrowserState(JSONObject body) {
+        try {
+            String current = webView == null ? targetUrl : safe(webView.getUrl());
+            if (!isAllowedUrl(current)) current = targetUrl;
+            body.put("current_url", current);
+            body.put("page_title", webView == null ? "" : safe(webView.getTitle()));
+            body.put("page_ready", isPageReadyNow());
+            body.put("active_tab", activeTabIndex);
+            body.put("navigation_generation", navigationGeneration);
+        } catch (Exception ignored) { }
+    }
+
+    private boolean isPageReadyNow() {
+        if (webView == null || pageLoading || webView.getProgress() < 100 || lastPageFinishedAt <= 0) return false;
+        long now = System.currentTimeMillis();
+        return now - lastPageFinishedAt >= PAGE_STABLE_MS && now - lastSyntheticActionAt >= PAGE_STABLE_MS;
     }
 
     private void requestAgent(String action, JSONObject extra) {
         if (finishedOrDestroyed) return;
+        final JSONObject body = extra == null ? new JSONObject() : extra;
+        try { body.put("action", action); body.put("session_id", sessionId); addBrowserState(body); }
+        catch (Exception error) { failVisible("Shruthi could not prepare the browser state."); return; }
         networkExecutor.execute(() -> {
-            try {
-                JSONObject body = extra == null ? new JSONObject() : extra;
-                body.put("action", action);
-                body.put("session_id", sessionId);
-                JSONObject result = postJson(body);
-                mainHandler.post(() -> handleAgentResult(result));
-            } catch (Exception error) {
-                mainHandler.post(() -> failVisible("Shruthi could not continue: " + safe(error.getMessage())));
-            }
+            try { JSONObject result = postJson(body); mainHandler.post(() -> handleAgentResult(result)); }
+            catch (Exception error) { mainHandler.post(() -> failVisible("Shruthi could not continue: " + safe(error.getMessage()))); }
         });
     }
 
@@ -747,24 +601,16 @@ public final class NoraComputerActivity extends android.app.Activity {
         connection.setDoOutput(true);
         connection.setRequestProperty("Authorization", "Bearer " + accessToken);
         connection.setRequestProperty("Content-Type", "application/json");
-        byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
-        try (OutputStream output = connection.getOutputStream()) {
-            output.write(bytes);
-        }
+        try (OutputStream output = connection.getOutputStream()) { output.write(body.toString().getBytes(StandardCharsets.UTF_8)); }
         int status = connection.getResponseCode();
         InputStream stream = status >= 200 && status < 300 ? connection.getInputStream() : connection.getErrorStream();
         StringBuilder text = new StringBuilder();
-        if (stream != null) {
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) text.append(line);
-            }
+        if (stream != null) try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+            String line; while ((line = reader.readLine()) != null) text.append(line);
         }
         connection.disconnect();
         JSONObject result = text.length() == 0 ? new JSONObject() : new JSONObject(text.toString());
-        if (status < 200 || status >= 300 || !result.optBoolean("success", false)) {
-            throw new IllegalStateException(result.optString("error", "HTTP " + status));
-        }
+        if (status < 200 || status >= 300 || !result.optBoolean("success", false)) throw new IllegalStateException(result.optString("error", "HTTP " + status));
         return result;
     }
 
@@ -773,7 +619,6 @@ public final class NoraComputerActivity extends android.app.Activity {
         String kind = result.optString("kind", "");
         String responseId = result.optString("response_id", "");
         if (!responseId.isEmpty()) lastResponseId = responseId;
-
         switch (kind) {
             case "computer_actions":
                 lastCallId = result.optString("call_id", "");
@@ -788,67 +633,35 @@ public final class NoraComputerActivity extends android.app.Activity {
                 showApproval(result.optString("reason", "Shruthi reached an action that requires your approval."));
                 break;
             case "completed":
-                lastCallId = "";
-                lastResponseId = "";
-                lastStepId = "";
+                lastCallId = ""; lastResponseId = ""; lastStepId = ""; sessionCompleted = true;
                 setManualControl(true, "Completed · " + result.optString("message", "Shruthi finished the task."));
                 showCompletion(result.optString("message", "Shruthi completed and verified the task."));
                 break;
-            case "paused":
-                setManualControl(true, "Paused · you have control");
-                break;
-            default:
-                failVisible("Shruthi returned an unexpected computer state.");
-                break;
+            case "paused": setManualControl(true, "Paused · you have control"); break;
+            default: failVisible("Shruthi returned an unexpected computer state.");
         }
     }
 
     private void executeActions(JSONArray actions, int index) {
         if (finishedOrDestroyed || manualControl) return;
-        if (actions == null || index >= actions.length()) {
-            mainHandler.postDelayed(this::captureAndContinue, 500L);
-            return;
-        }
+        if (actions == null || index >= actions.length()) { mainHandler.postDelayed(this::captureAndContinue, 450L); return; }
         JSONObject action = actions.optJSONObject(index);
-        if (action == null) {
-            executeActions(actions, index + 1);
-            return;
-        }
+        if (action == null) { executeActions(actions, index + 1); return; }
         String type = action.optString("type", "");
-        long delay = "wait".equals(type) ? 2000L : 260L;
-
+        long delay = "wait".equals(type) ? 2000L : 280L;
         try {
             switch (type) {
-                case "click":
-                    tap((float) action.optDouble("x", 0), (float) action.optDouble("y", 0), false);
-                    break;
-                case "double_click":
-                    tap((float) action.optDouble("x", 0), (float) action.optDouble("y", 0), true);
-                    break;
-                case "drag":
-                    drag(action.optJSONArray("path"));
-                    break;
-                case "scroll":
-                    scroll(action.optInt("scroll_x", 0), action.optInt("scroll_y", 0));
-                    break;
-                case "keypress":
-                    keypress(action.optJSONArray("keys"));
-                    break;
-                case "type":
-                    typeText(action.optString("text", ""));
-                    break;
-                case "move":
-                case "screenshot":
-                case "wait":
-                    break;
-                default:
-                    failVisible("Shruthi requested an unsupported action: " + type);
-                    return;
+                case "click": tap((float) action.optDouble("x", 0), (float) action.optDouble("y", 0), false); break;
+                case "double_click": tap((float) action.optDouble("x", 0), (float) action.optDouble("y", 0), true); break;
+                case "drag": drag(action.optJSONArray("path")); break;
+                case "scroll": scroll(action.optInt("scroll_x", 0), action.optInt("scroll_y", 0)); break;
+                case "keypress": keypress(action.optJSONArray("keys")); break;
+                case "type": typeText(action.optString("text", "")); break;
+                case "move": case "screenshot": case "wait": break;
+                default: failVisible("Shruthi requested an unsupported action: " + type); return;
             }
-        } catch (Exception error) {
-            failVisible("Shruthi action failed: " + safe(error.getMessage()));
-            return;
-        }
+        } catch (Exception error) { failVisible("Shruthi action failed: " + safe(error.getMessage())); return; }
+        if (!"wait".equals(type) && !"screenshot".equals(type) && !"move".equals(type)) lastSyntheticActionAt = System.currentTimeMillis();
         mainHandler.postDelayed(() -> executeActions(actions, index + 1), delay);
     }
 
@@ -866,58 +679,41 @@ public final class NoraComputerActivity extends android.app.Activity {
 
     private void drag(JSONArray path) {
         if (path == null || path.length() < 2) return;
-        JSONObject first = path.optJSONObject(0);
-        if (first == null) return;
+        JSONObject first = path.optJSONObject(0); if (first == null) return;
         syntheticInput = true;
         long start = android.os.SystemClock.uptimeMillis();
         webView.dispatchTouchEvent(MotionEvent.obtain(start, start, MotionEvent.ACTION_DOWN, (float) first.optDouble("x"), (float) first.optDouble("y"), 0));
         for (int i = 1; i < path.length(); i++) {
-            JSONObject point = path.optJSONObject(i);
-            if (point == null) continue;
-            long t = start + i * 35L;
-            webView.dispatchTouchEvent(MotionEvent.obtain(start, t, MotionEvent.ACTION_MOVE, (float) point.optDouble("x"), (float) point.optDouble("y"), 0));
+            JSONObject point = path.optJSONObject(i); if (point == null) continue;
+            webView.dispatchTouchEvent(MotionEvent.obtain(start, start + i * 35L, MotionEvent.ACTION_MOVE, (float) point.optDouble("x"), (float) point.optDouble("y"), 0));
         }
         JSONObject last = path.optJSONObject(path.length() - 1);
-        long end = start + path.length() * 35L;
-        webView.dispatchTouchEvent(MotionEvent.obtain(start, end, MotionEvent.ACTION_UP, (float) last.optDouble("x"), (float) last.optDouble("y"), 0));
+        webView.dispatchTouchEvent(MotionEvent.obtain(start, start + path.length() * 35L, MotionEvent.ACTION_UP, (float) last.optDouble("x"), (float) last.optDouble("y"), 0));
         syntheticInput = false;
     }
 
     private void scroll(int dx, int dy) {
         webView.scrollBy(dx, dy);
-        String js = "try{var e=document.elementFromPoint(innerWidth/2,innerHeight/2);" +
-                "for(;e&&e!==document.body;e=e.parentElement){var s=getComputedStyle(e);" +
-                "if(/auto|scroll/.test(s.overflowY)&&e.scrollHeight>e.clientHeight){e.scrollBy(" + dx + "," + dy + ");break;}}}catch(_){window.scrollBy(" + dx + "," + dy + ");}";
+        String js = "try{var e=document.elementFromPoint(innerWidth/2,innerHeight/2);for(;e&&e!==document.body;e=e.parentElement){var s=getComputedStyle(e);if(/auto|scroll/.test(s.overflowY)&&e.scrollHeight>e.clientHeight){e.scrollBy(" + dx + "," + dy + ");break;}}}catch(_){window.scrollBy(" + dx + "," + dy + ");}";
         webView.evaluateJavascript(js, null);
     }
 
     private void typeText(String text) {
         if (text == null || text.isEmpty()) return;
         String quoted = JSONObject.quote(text);
-        String js = "(function(){var e=document.activeElement;if(!e)return false;var t=" + quoted + ";" +
-                "try{if(document.execCommand&&document.execCommand('insertText',false,t))return true;}catch(_){}" +
-                "try{var p=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(e),'value');" +
-                "var v=(typeof e.value==='string'?e.value:'')+t;if(p&&p.set)p.set.call(e,v);else e.value=v;" +
-                "e.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:t}));" +
-                "e.dispatchEvent(new Event('change',{bubbles:true}));return true;}catch(_){return false;}})();";
+        String js = "(function(){var e=document.activeElement;if(!e)return false;var t=" + quoted + ";try{if(document.execCommand&&document.execCommand('insertText',false,t))return true;}catch(_){}try{var p=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(e),'value');var v=(typeof e.value==='string'?e.value:'')+t;if(p&&p.set)p.set.call(e,v);else e.value=v;e.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:t}));e.dispatchEvent(new Event('change',{bubbles:true}));return true;}catch(_){return false;}})();";
         webView.evaluateJavascript(js, null);
     }
 
     private void keypress(JSONArray keys) {
         if (keys == null || keys.length() == 0) return;
-        boolean ctrl = false;
-        String primary = "";
+        boolean ctrl = false; String primary = "";
         for (int i = 0; i < keys.length(); i++) {
             String k = keys.optString(i, "");
-            if ("CTRL".equalsIgnoreCase(k) || "CONTROL".equalsIgnoreCase(k)) ctrl = true;
-            else primary = k;
+            if ("CTRL".equalsIgnoreCase(k) || "CONTROL".equalsIgnoreCase(k)) ctrl = true; else primary = k;
         }
-        if (ctrl && "A".equalsIgnoreCase(primary)) {
-            webView.evaluateJavascript("try{document.activeElement&&document.activeElement.select&&document.activeElement.select()}catch(_){}", null);
-            return;
-        }
-        int code = keyCode(primary);
-        if (code == KeyEvent.KEYCODE_UNKNOWN) return;
+        if (ctrl && "A".equalsIgnoreCase(primary)) { webView.evaluateJavascript("try{document.activeElement&&document.activeElement.select&&document.activeElement.select()}catch(_){}", null); return; }
+        int code = keyCode(primary); if (code == KeyEvent.KEYCODE_UNKNOWN) return;
         webView.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, code));
         webView.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, code));
     }
@@ -934,32 +730,30 @@ public final class NoraComputerActivity extends android.app.Activity {
             case "ARROWDOWN": case "DOWN": return KeyEvent.KEYCODE_DPAD_DOWN;
             case "ARROWLEFT": case "LEFT": return KeyEvent.KEYCODE_DPAD_LEFT;
             case "ARROWRIGHT": case "RIGHT": return KeyEvent.KEYCODE_DPAD_RIGHT;
-            default:
-                if (key.length() == 1) return KeyEvent.keyCodeFromString("KEYCODE_" + key.toUpperCase(Locale.ROOT));
-                return KeyEvent.KEYCODE_UNKNOWN;
+            default: return key.length() == 1 ? KeyEvent.keyCodeFromString("KEYCODE_" + key.toUpperCase(Locale.ROOT)) : KeyEvent.KEYCODE_UNKNOWN;
         }
     }
 
     private void captureAndContinue() {
-        if (finishedOrDestroyed || manualControl || webView.getWidth() <= 0 || webView.getHeight() <= 0 || lastResponseId.isEmpty() || lastCallId.isEmpty()) return;
+        waitForPageReady(this::captureReadyPageAndContinue, 0);
+    }
+
+    private void captureReadyPageAndContinue() {
+        if (finishedOrDestroyed || manualControl || webView == null || webView.getWidth() <= 0 || webView.getHeight() <= 0 || lastResponseId.isEmpty() || lastCallId.isEmpty()) return;
         try {
             Bitmap bitmap = Bitmap.createBitmap(webView.getWidth(), webView.getHeight(), Bitmap.Config.ARGB_8888);
-            Canvas canvas = new Canvas(bitmap);
-            webView.draw(canvas);
+            Canvas canvas = new Canvas(bitmap); webView.draw(canvas);
             ByteArrayOutputStream output = new ByteArrayOutputStream();
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, output);
-            bitmap.recycle();
-            String encoded = Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP);
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, output); bitmap.recycle();
             JSONObject extra = new JSONObject();
             extra.put("previous_response_id", lastResponseId);
             extra.put("call_id", lastCallId);
             extra.put("step_id", lastStepId);
-            extra.put("screenshot_base64", encoded);
-            setStatus("Shruthi is checking the result…");
+            extra.put("screenshot_base64", Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP));
+            addBrowserState(extra);
+            setStatus("Shruthi is checking the current page…");
             requestAgent("continue", extra);
-        } catch (Exception error) {
-            failVisible("Could not capture Shruthi browser state.");
-        }
+        } catch (Exception error) { failVisible("Could not capture Shruthi browser state."); }
     }
 
     private void handleInputRequest(String question, boolean sensitive) {
@@ -967,90 +761,48 @@ public final class NoraComputerActivity extends android.app.Activity {
         if (sensitive) {
             waitingSensitiveHandoff = true;
             setManualControl(true, "Your turn · complete the secure step, then tap Continue Shruthi");
-            speakPrompt("I need you to complete the secure sign-in or verification directly in the browser. Please do not say or share your password or security code with me. When you finish, tap Continue Shruthi.");
-            new AlertDialog.Builder(this)
-                    .setTitle("Shruthi needs you")
+            new AlertDialog.Builder(this).setTitle("Shruthi needs you")
                     .setMessage(question + "\n\nComplete this directly in the browser. Shruthi will not read or store your password, OTP, passkey, CAPTCHA response, or other login secret.")
-                    .setPositiveButton("Take over", null)
-                    .show();
+                    .setPositiveButton("Take over", null).show();
             return;
         }
-
-        speakPrompt(question);
-        EditText input = new EditText(this);
-        input.setSingleLine(false);
-        input.setMinLines(1);
-        input.setMaxLines(4);
-        input.setPadding(dp(18), dp(10), dp(18), dp(10));
-        new AlertDialog.Builder(this)
-                .setTitle("Shruthi asks")
-                .setMessage(question)
-                .setView(input)
-                .setPositiveButton("Continue", (dialog, which) -> {
-                    String answer = input.getText().toString().trim();
-                    if (!answer.isEmpty()) requestResume(false, answer);
-                    else setManualControl(true, "Waiting for your answer");
-                })
-                .setNegativeButton("Pause", (dialog, which) -> {
-                    setManualControl(true, "Paused · waiting for your answer");
-                    requestAgent("pause", null);
-                })
-                .setCancelable(false)
-                .show();
+        setManualControl(true, "Shruthi needs an answer in the main conversation");
+        new AlertDialog.Builder(this).setTitle("Shruthi needs one detail")
+                .setMessage(question + "\n\nTo keep one Shruthi conversation and one input bar, answer this from the normal Shruthi input in CentralHub.")
+                .setPositiveButton("Return to Shruthi", (dialog, which) -> { requestAgent("pause", null); finish(); })
+                .setNegativeButton("Stay here", null).show();
     }
 
     private void showApproval(String reason) {
         lastCallId = "";
         setManualControl(true, "Approval required before Shruthi continues");
-        speakPrompt("I need your approval before I take the next consequential action. Please review the approval shown on screen.");
-        new AlertDialog.Builder(this)
-                .setTitle("Approve Shruthi action?")
-                .setMessage(reason)
-                .setPositiveButton("Approve", (dialog, which) -> {
-                    setManualControl(false, "Approved · Shruthi is continuing…");
-                    requestResume(true, "");
-                })
-                .setNegativeButton("Not now", (dialog, which) -> {
-                    setManualControl(true, "Not approved · Shruthi is paused");
-                    requestAgent("pause", null);
-                })
-                .setCancelable(false)
-                .show();
+        new AlertDialog.Builder(this).setTitle("Approve Shruthi action?").setMessage(reason)
+                .setPositiveButton("Approve", (dialog, which) -> { setManualControl(false, "Approved · Shruthi is continuing…"); requestResume(true, ""); })
+                .setNegativeButton("Not now", (dialog, which) -> { setManualControl(true, "Not approved · Shruthi is paused"); requestAgent("pause", null); })
+                .setCancelable(false).show();
     }
 
     private void requestResume(boolean approved, String answer) {
         try {
-            JSONObject extra = new JSONObject();
-            extra.put("previous_response_id", lastResponseId);
-            if (approved) extra.put("approved", true);
-            if (answer != null && !answer.isEmpty()) extra.put("answer", answer);
-            requestAgent("resume", extra);
-        } catch (Exception error) {
-            failVisible("Shruthi could not resume.");
-        }
+            JSONObject extra = new JSONObject(); extra.put("previous_response_id", lastResponseId);
+            if (approved) extra.put("approved", true); if (answer != null && !answer.isEmpty()) extra.put("answer", answer);
+            addBrowserState(extra); requestAgent("resume", extra);
+        } catch (Exception error) { failVisible("Shruthi could not resume."); }
     }
 
     private void showCompletion(String message) {
-        speakPrompt("Done. I have finished the Live Web task. Please review the result on screen.");
-        new AlertDialog.Builder(this)
-                .setTitle("Shruthi finished")
-                .setMessage(message)
+        new AlertDialog.Builder(this).setTitle("Shruthi finished").setMessage(message)
                 .setPositiveButton("Stay in Live Web", null)
-                .setNegativeButton("Return to CentralHub", (dialog, which) -> finish())
-                .show();
+                .setNegativeButton("Return to Shruthi", (dialog, which) -> finish()).show();
     }
 
     private void cancelAndClose() {
         if (finishedOrDestroyed) return;
+        if (sessionCompleted) { finish(); return; }
         setStatus("Ending Shruthi task…");
         networkExecutor.execute(() -> {
-            try {
-                JSONObject body = new JSONObject();
-                body.put("action", "cancel");
-                body.put("session_id", sessionId);
-                postJson(body);
-            } catch (Exception ignored) {
-            }
+            try { JSONObject body = new JSONObject(); body.put("action", "cancel"); body.put("session_id", sessionId); addBrowserState(body); postJson(body); }
+            catch (Exception ignored) { }
             mainHandler.post(this::finish);
         });
     }
@@ -1059,84 +811,43 @@ public final class NoraComputerActivity extends android.app.Activity {
         setManualControl(true, message);
         Toast.makeText(this, message, Toast.LENGTH_LONG).show();
     }
-
-    private void setStatus(String value) {
-        if (statusView != null) statusView.setText(value == null || value.isEmpty() ? "Shruthi Live Web" : value);
-    }
+    private void setStatus(String value) { if (statusView != null) statusView.setText(value == null || value.isEmpty() ? "Shruthi Live Web" : value); }
 
     private boolean isAllowedUrl(String value) {
         if (value == null || value.trim().isEmpty()) return false;
         try {
             Uri uri = Uri.parse(value.trim());
             if (!"https".equalsIgnoreCase(uri.getScheme())) return false;
-            String host = uri.getHost();
-            if (host == null) return false;
+            String host = uri.getHost(); if (host == null) return false;
             host = host.toLowerCase(Locale.ROOT);
-            if (host.equals("localhost") || host.endsWith(".local") || host.equals("::1")
-                    || host.startsWith("127.") || host.startsWith("10.") || host.startsWith("192.168.")
-                    || host.startsWith("169.254.")) return false;
+            if (host.equals("localhost") || host.endsWith(".local") || host.equals("::1") || host.startsWith("127.") || host.startsWith("10.") || host.startsWith("192.168.") || host.startsWith("169.254.")) return false;
             if (host.startsWith("172.")) {
                 String[] parts = host.split("\\.");
-                if (parts.length > 1) {
-                    try {
-                        int second = Integer.parseInt(parts[1]);
-                        if (second >= 16 && second <= 31) return false;
-                    } catch (Exception ignored) { }
-                }
+                if (parts.length > 1) try { int second = Integer.parseInt(parts[1]); if (second >= 16 && second <= 31) return false; } catch (Exception ignored) { }
             }
             return true;
-        } catch (Exception ignored) {
-            return false;
-        }
+        } catch (Exception ignored) { return false; }
     }
 
-    private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
+    private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
+    private String safe(String value) { return value == null ? "" : value.trim(); }
+
+    @Override public void onBackPressed() {
+        if (webView != null && webView.canGoBack()) { takeOverForBrowser(); webView.goBack(); return; }
+        new AlertDialog.Builder(this).setTitle("Return to Shruthi?")
+                .setMessage("The Live Web tool will close and the main Shruthi conversation will remain your only assistant input.")
+                .setPositiveButton("Return", (dialog, which) -> { if (!sessionCompleted) requestAgent("pause", null); finish(); })
+                .setNegativeButton("Stay", null).show();
     }
 
-    private String safe(String value) {
-        return value == null ? "" : value.trim();
-    }
-
-    @Override
-    public void onBackPressed() {
-        if (webView != null && webView.canGoBack()) {
-            takeOverForBrowser();
-            webView.goBack();
-            return;
-        }
-        new AlertDialog.Builder(this)
-                .setTitle("Return to CentralHub?")
-                .setMessage("Shruthi will pause this Live Web task and return you to CentralHub.")
-                .setPositiveButton("Return", (dialog, which) -> {
-                    requestAgent("pause", null);
-                    finish();
-                })
-                .setNegativeButton("Stay", null)
-                .show();
-    }
-
-    @Override
-    protected void onDestroy() {
+    @Override protected void onDestroy() {
         finishedOrDestroyed = true;
         mainHandler.removeCallbacksAndMessages(null);
-        if (pendingWebPermissionRequest != null) {
-            try { pendingWebPermissionRequest.deny(); } catch (Exception ignored) { }
-            pendingWebPermissionRequest = null;
-        }
-        if (liveWebTts != null) {
-            try { liveWebTts.stop(); liveWebTts.shutdown(); } catch (Exception ignored) { }
-            liveWebTts = null;
-            liveWebTtsReady = false;
-        }
-        networkExecutor.shutdownNow();
-        browserExecutor.shutdownNow();
+        if (pendingWebPermissionRequest != null) { try { pendingWebPermissionRequest.deny(); } catch (Exception ignored) { } pendingWebPermissionRequest = null; }
+        networkExecutor.shutdownNow(); browserExecutor.shutdownNow();
         if (webView != null) {
-            webView.stopLoading();
-            webView.setWebChromeClient(null);
-            webView.setWebViewClient(null);
-            webView.destroy();
-            webView = null;
+            CookieManager.getInstance().flush();
+            webView.stopLoading(); webView.setWebChromeClient(null); webView.setWebViewClient(null); webView.destroy(); webView = null;
         }
         super.onDestroy();
     }
