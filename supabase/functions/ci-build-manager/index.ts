@@ -1,5 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { unzipSync } from 'npm:fflate@0.8.2'
 
+const RELEASE_BUCKET = 'app-release-artifacts'
 const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -15,6 +17,7 @@ const adminClient = () => createClient(
   { auth: { persistSession: false } },
 )
 const githubToken = () => (Deno.env.get('GITHUB_TOKEN') || Deno.env.get('GITHUB_PAT') || '').trim()
+const safeFile = (value: string) => value.replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 160)
 
 async function requireAdmin(req: Request) {
   const token = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim()
@@ -61,6 +64,11 @@ function secondsBetween(start?: string | null, end?: string | null) {
   return Number.isFinite(value) && value >= 0 ? value : null
 }
 
+async function sha256Hex(bytes: Uint8Array) {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))
+  return Array.from(digest).map(value => value.toString(16).padStart(2, '0')).join('')
+}
+
 async function projectFor(db: any, projectId: string) {
   const { data, error } = await db.from('ci_projects').select('*').eq('id', projectId).eq('enabled', true).maybeSingle()
   if (error) throw error
@@ -75,6 +83,16 @@ async function buildFor(db: any, buildId: string) {
   const project = Array.isArray(data.project) ? data.project[0] : data.project
   if (!project) throw new Error('Build project not found')
   return { ...data, project }
+}
+
+async function artifactFor(db: any, artifactId: string) {
+  const { data, error } = await db.from('ci_artifacts').select('*, build:ci_builds(*, project:ci_projects(*))').eq('id', artifactId).maybeSingle()
+  if (error) throw error
+  if (!data) throw new Error('CI artifact not found')
+  const build = Array.isArray(data.build) ? data.build[0] : data.build
+  const project = Array.isArray(build?.project) ? build.project[0] : build?.project
+  if (!build || !project) throw new Error('CI artifact build context is incomplete')
+  return { ...data, build: { ...build, project } }
 }
 
 async function dispatch(db: any, user: any, projectId: string, branchInput?: string) {
@@ -110,12 +128,113 @@ async function resolveRun(build: any) {
   return runs.find((run: any) => String(run?.display_title || '').includes(build.id)) || null
 }
 
-async function syncBuild(db: any, buildId: string) {
+async function signedGithubArtifactUrl(project: any, externalArtifactId: number) {
+  const { owner, repo } = repoParts(project.repository_full_name)
+  const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/artifacts/${externalArtifactId}/zip`, { method: 'GET', headers: githubHeaders(), redirect: 'manual' })
+  const location = response.headers.get('location')
+  if (![302, 307].includes(response.status) || !location) throw new Error(`GitHub artifact download returned ${response.status}`)
+  return location
+}
+
+async function stageReleaseFromArtifact(db: any, userId: string, artifactId: string, trackInput?: string) {
+  const artifact = await artifactFor(db, artifactId)
+  if (artifact.app_release_id) {
+    const { data: existing, error } = await db.from('app_releases').select('*').eq('id', artifact.app_release_id).maybeSingle()
+    if (error) throw error
+    if (existing) return existing
+  }
+
+  const build = artifact.build
+  const project = build.project
+  if (project.platform !== 'android') throw new Error('Only Android CI artifacts can be staged into Google Play releases')
+  if (build.status !== 'success' && build.conclusion !== 'success') throw new Error('Only successful signed builds can be staged as releases')
+  if (!artifact.external_artifact_id) throw new Error('GitHub artifact ID is missing')
+  if (artifact.expires_at && new Date(artifact.expires_at).getTime() <= Date.now()) throw new Error('GitHub artifact has expired; rebuild the release')
+
+  const metadata = project.metadata || {}
+  const storeSlug = String(metadata.store_slug || '').trim()
+  const packageIdentifier = String(metadata.package_identifier || '').trim()
+  const expectedArtifactName = String(metadata.release_artifact_name || '').trim()
+  if (!storeSlug || !packageIdentifier) throw new Error('CI project is missing release-manager store/package metadata')
+  if (expectedArtifactName && artifact.name !== expectedArtifactName) throw new Error(`Artifact ${artifact.name} is not the configured Play release artifact`)
+
+  const { data: store, error: storeError } = await db.from('stores').select('id,slug').eq('slug', storeSlug).maybeSingle()
+  if (storeError) throw storeError
+  if (!store) throw new Error(`Store ${storeSlug} is not registered in CentralHub`)
+  const { data: app, error: appError } = await db.from('app_marketing_apps').select('*').eq('store_id', store.id).eq('platform', 'android').eq('package_identifier', packageIdentifier).maybeSingle()
+  if (appError) throw appError
+  if (!app) throw new Error(`Android app ${packageIdentifier} is not registered for ${storeSlug}`)
+  if (app.status === 'needs_native_sync' || app.metadata?.publishing_enabled === false) throw new Error(app.metadata?.blocking_reason || 'App publishing is blocked')
+
+  const signedUrl = await signedGithubArtifactUrl(project, Number(artifact.external_artifact_id))
+  const archiveResponse = await fetch(signedUrl)
+  if (!archiveResponse.ok) throw new Error(`Could not download GitHub release artifact (${archiveResponse.status})`)
+  const archiveBytes = new Uint8Array(await archiveResponse.arrayBuffer())
+  const files = unzipSync(archiveBytes)
+  const aabEntry = Object.entries(files).find(([name]) => name.toLowerCase().endsWith('.aab'))
+  if (!aabEntry) throw new Error('The signed GitHub artifact does not contain an .aab file')
+  const [entryName, aabBytes] = aabEntry
+  const fileName = safeFile(entryName.split('/').pop() || 'MalluSpices-release.aab')
+  const sha256 = await sha256Hex(aabBytes)
+
+  const checksumEntry = Object.entries(files).find(([name]) => name.toLowerCase().endsWith('.aab.sha256'))
+  if (checksumEntry) {
+    const expected = new TextDecoder().decode(checksumEntry[1]).trim().split(/\s+/)[0]?.toLowerCase()
+    if (expected && expected !== sha256) throw new Error('AAB checksum mismatch while transferring the GitHub artifact into CentralHub')
+  }
+
+  const artifactPath = `${store.slug}/android/${crypto.randomUUID()}/${fileName}`
+  const { error: uploadError } = await db.storage.from(RELEASE_BUCKET).upload(artifactPath, aabBytes, { contentType: 'application/octet-stream', upsert: false })
+  if (uploadError) throw uploadError
+
+  const requestedTrack = String(trackInput || metadata.default_track || 'internal').trim().toLowerCase()
+  const track = ['internal','alpha','beta','production'].includes(requestedTrack) ? requestedTrack : 'internal'
+  const { data: release, error: releaseError } = await db.from('app_releases').insert({
+    store_id: store.id,
+    app_id: app.id,
+    platform: 'android',
+    provider_id: 'google_play',
+    version_name: build.version_name || null,
+    build_number: build.version_code || null,
+    release_notes: null,
+    artifact_path: artifactPath,
+    artifact_file_name: fileName,
+    artifact_size: aabBytes.byteLength,
+    artifact_sha256: sha256,
+    artifact_content_type: 'application/octet-stream',
+    source_commit_sha: build.commit_sha || null,
+    source_branch: build.branch || 'main',
+    target_track: track,
+    rollout_fraction: 1,
+    status: 'ready',
+    external_build_id: build.external_run_id ? String(build.external_run_id) : null,
+    provider_response: { source: 'centralhub_ci_cd', github_artifact_id: artifact.external_artifact_id, github_artifact_name: artifact.name },
+    created_by: userId,
+  }).select('*').single()
+  if (releaseError) {
+    await db.storage.from(RELEASE_BUCKET).remove([artifactPath]).catch(() => undefined)
+    throw releaseError
+  }
+
+  await db.from('app_release_events').insert({
+    release_id: release.id,
+    store_id: store.id,
+    event_type: 'ci_artifact_staged',
+    status: 'ready',
+    message: 'Signed Android App Bundle transferred from GitHub Actions into the CentralHub release manager',
+    details: { ci_build_id: build.id, github_run_id: build.external_run_id || null, github_artifact_id: artifact.external_artifact_id, sha256, target_track: track },
+    created_by: userId,
+  })
+  await db.from('ci_artifacts').update({ app_release_id: release.id, kind: 'android_signed_release', sha256, metadata: { ...(artifact.metadata || {}), staged_to_release_manager: true, aab_file_name: fileName, aab_size: aabBytes.byteLength } }).eq('id', artifact.id)
+  return release
+}
+
+async function syncBuild(db: any, buildId: string, userId?: string) {
   const build = await buildFor(db, buildId)
   const run = await resolveRun(build)
   if (!run) {
     const { data } = await db.from('ci_builds').update({ last_synced_at: new Date().toISOString() }).eq('id', build.id).select('*').single()
-    return { build: data, steps: [], artifacts: [], waiting_for_run: true }
+    return { build: data, steps: [], artifacts: [], staged_releases: [], waiting_for_run: true }
   }
   const project = build.project
   const { owner, repo } = repoParts(project.repository_full_name)
@@ -145,31 +264,43 @@ async function syncBuild(db: any, buildId: string) {
   const patch = { external_run_id: runId, external_run_number: run.run_number == null ? null : Number(run.run_number), external_run_attempt: run.run_attempt == null ? null : Number(run.run_attempt), workflow_name: run.name || project.name, commit_sha: run.head_sha || null, status: safeStatus(run), conclusion: run.conclusion || null, run_url: run.html_url || null, started_at: startedAt, completed_at: completedAt, duration_seconds: secondsBetween(startedAt, completedAt), last_synced_at: new Date().toISOString(), error_message: run.conclusion === 'failure' ? 'GitHub Actions build failed. Open build steps for the failing stage.' : null, metadata: { ...(build.metadata || {}), event: run.event || null, actor: run.actor?.login || null, head_commit_message: run.head_commit?.message || null } }
   const { data: updated, error: updateError } = await db.from('ci_builds').update(patch).eq('id', build.id).select('*').single()
   if (updateError) throw updateError
-  return { build: updated, steps, artifacts, waiting_for_run: false }
+
+  const stagedReleases: any[] = []
+  const autoStage = Boolean(project.metadata?.auto_stage_release)
+  const expectedArtifact = String(project.metadata?.release_artifact_name || '').trim()
+  if (userId && autoStage && updated.status === 'success') {
+    for (const artifact of artifacts) {
+      if (artifact.app_release_id) continue
+      if (expectedArtifact && artifact.name !== expectedArtifact) continue
+      try {
+        stagedReleases.push(await stageReleaseFromArtifact(db, userId, artifact.id, String(project.metadata?.default_track || 'internal')))
+      } catch (error: any) {
+        await db.from('ci_artifacts').update({ metadata: { ...(artifact.metadata || {}), release_handoff_error: error?.message || 'Release handoff failed' } }).eq('id', artifact.id)
+      }
+    }
+  }
+
+  return { build: updated, steps, artifacts, staged_releases: stagedReleases, waiting_for_run: false }
 }
 
 async function artifactLink(db: any, artifactId: string) {
-  const { data: artifact, error } = await db.from('ci_artifacts').select('*, build:ci_builds(project:ci_projects(repository_full_name))').eq('id', artifactId).maybeSingle()
-  if (error) throw error
+  const artifact = await artifactFor(db, artifactId)
   if (!artifact?.external_artifact_id) throw new Error('Artifact not found or has no GitHub artifact ID')
-  const build = Array.isArray(artifact.build) ? artifact.build[0] : artifact.build
-  const project = Array.isArray(build?.project) ? build.project[0] : build?.project
-  const { owner, repo } = repoParts(project?.repository_full_name)
-  const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/artifacts/${artifact.external_artifact_id}/zip`, { method: 'GET', headers: githubHeaders(), redirect: 'manual' })
-  const location = response.headers.get('location')
-  if (![302, 307].includes(response.status) || !location) throw new Error(`GitHub artifact download returned ${response.status}`)
-  return { url: location, expires_at: artifact.expires_at || null, name: artifact.name }
+  const url = await signedGithubArtifactUrl(artifact.build.project, Number(artifact.external_artifact_id))
+  return { url, expires_at: artifact.expires_at || null, name: artifact.name }
 }
 
 async function health(db: any) {
-  const { data: projects, error } = await db.from('ci_projects').select('*').eq('enabled', true).order('created_at').limit(1)
+  const { data: projects, error } = await db.from('ci_projects').select('*').eq('enabled', true).order('created_at')
   if (error) throw error
   const project = projects?.[0] || null
   if (!githubToken()) return { ok: true, github_configured: false, github_connected: false, enabled_projects: projects?.length || 0, github_error: 'GitHub token not configured' }
   if (!project) return { ok: true, github_configured: true, github_connected: false, enabled_projects: 0, github_error: 'No enabled CI/CD project' }
   try {
-    const { owner, repo } = repoParts(project.repository_full_name)
-    await github(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`)
+    for (const item of projects || []) {
+      const { owner, repo } = repoParts(item.repository_full_name)
+      await github(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`)
+    }
     return { ok: true, github_configured: true, github_connected: true, enabled_projects: projects.length, github_error: null }
   } catch (error: any) {
     return { ok: true, github_configured: true, github_connected: false, enabled_projects: projects.length, github_error: error?.message || 'GitHub connection check failed' }
@@ -190,11 +321,15 @@ Deno.serve(async (req: Request) => {
     }
     if (action === 'sync') {
       if (!body?.build_id) return json({ error: 'build_id is required' }, 400)
-      return json({ ok: true, ...(await syncBuild(db, String(body.build_id))) })
+      return json({ ok: true, ...(await syncBuild(db, String(body.build_id), user.id)) })
     }
     if (action === 'artifact_link') {
       if (!body?.artifact_id) return json({ error: 'artifact_id is required' }, 400)
       return json({ ok: true, ...(await artifactLink(db, String(body.artifact_id))) })
+    }
+    if (action === 'stage_release') {
+      if (!body?.artifact_id) return json({ error: 'artifact_id is required' }, 400)
+      return json({ ok: true, release: await stageReleaseFromArtifact(db, user.id, String(body.artifact_id), body?.target_track ? String(body.target_track) : undefined) })
     }
     return json({ error: 'Unsupported action' }, 400)
   } catch (error: any) {
