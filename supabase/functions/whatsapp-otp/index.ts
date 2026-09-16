@@ -15,8 +15,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 })
 
 async function hashOTP(otp: string): Promise<string> {
-  const msgUint8 = new TextEncoder().encode(otp)
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(otp))
   return Array.from(new Uint8Array(hashBuffer)).map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
@@ -34,37 +33,54 @@ function getSiteUrl(req: Request): string {
   return 'http://localhost:3000'
 }
 
-async function sendMalluSpicesSmsCopy(storeId: string, phoneNumber: string, otp: string, challengeId: string): Promise<boolean> {
-  if (storeId !== MALLUSPICES_STORE_ID) return false
-  const secret = (Deno.env.get('CENTRALHUB_PUSH_API_SECRET') || Deno.env.get('CENTRALHUB_WEBHOOK_SECRET') || '').trim()
-  if (!secret) {
-    console.warn('[WhatsApp OTP] SMS relay secret is not configured')
-    return false
-  }
+async function resolveMalluSpicesRelaySecret(supabase: any): Promise<string> {
+  const { data } = await supabase.from('app_config').select('value').eq('key', 'malluspices_sync_secret').maybeSingle()
+  const dbSecret = String(data?.value || '').trim()
+  if (dbSecret) return dbSecret
+  return (Deno.env.get('CENTRALHUB_PUSH_API_SECRET') || Deno.env.get('CENTRALHUB_WEBHOOK_SECRET') || '').trim()
+}
+
+async function sendMalluSpicesSmsCopy(supabase: any, storeId: string, phoneNumber: string, otp: string, challengeId: string): Promise<{ sent: boolean; status: string }> {
+  if (storeId !== MALLUSPICES_STORE_ID) return { sent: false, status: 'not_applicable' }
+  const secret = await resolveMalluSpicesRelaySecret(supabase)
+  if (!secret) return { sent: false, status: 'secret_missing' }
   try {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 13000)
-    let response: Response
     try {
-      response = await fetch(MALLUSPICES_SMS_RELAY, {
+      const response = await fetch(MALLUSPICES_SMS_RELAY, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${secret}` },
         body: JSON.stringify({ phoneNumber, otp, challengeId }),
         signal: controller.signal,
       })
+      const data = await response.json().catch(() => ({}))
+      if (response.ok && data?.success === true) return { sent: true, status: 'sent' }
+      if (response.status === 401) return { sent: false, status: 'relay_unauthorized' }
+      if (response.status === 503) return { sent: false, status: 'relay_not_configured' }
+      if (response.status === 502) return { sent: false, status: 'provider_rejected' }
+      return { sent: false, status: `relay_${response.status}` }
     } finally {
       clearTimeout(timer)
     }
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok || data?.success !== true) {
-      console.warn('[WhatsApp OTP] SMS copy failed', response.status)
-      return false
-    }
-    return true
   } catch (error) {
-    console.warn('[WhatsApp OTP] SMS copy transport error', error instanceof Error ? error.message : 'unknown')
-    return false
+    console.warn('[WhatsApp OTP] SMS copy failed', error instanceof Error ? error.message : 'unknown')
+    return { sent: false, status: 'relay_transport_error' }
   }
+}
+
+async function sendWhatsAppInternal(supabaseUrl: string, serviceKey: string, payload: Record<string, unknown>) {
+  const response = await fetch(`${supabaseUrl}/functions/v1/whatsapp-send`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${serviceKey}`,
+      'x-centralhub-internal-key': serviceKey,
+    },
+    body: JSON.stringify(payload),
+  })
+  const data = await response.json().catch(() => ({}))
+  return { response, data }
 }
 
 serve(async (req) => {
@@ -73,7 +89,9 @@ serve(async (req) => {
 
   try {
     const { action, phoneNumber, storeId, requestId, otp, userAgent, ip } = await req.json()
-    const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '')
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    const supabase = createClient(supabaseUrl, serviceKey)
 
     if (action === 'generate') {
       if (!phoneNumber || !storeId) return json({ error: 'Phone number and Store ID required' }, 400)
@@ -113,38 +131,37 @@ serve(async (req) => {
       }).select('id').single()
       if (challengeError) throw challengeError
 
-      const { data: sendRes, error: sendError } = await supabase.functions.invoke('whatsapp-send', {
-        body: {
-          to: phoneNumber,
-          type: 'template',
-          template: {
-            name: mapping.template.meta_template_name,
-            language: mapping.template.language || 'en_GB',
-            components: [
-              { type: 'body', parameters: [{ type: 'text', text: generatedOtp }] },
-              { type: 'button', sub_type: 'url', index: 0, parameters: [{ type: 'text', text: generatedOtp }] },
-            ],
-          },
-          storeId,
-          notificationId: null,
+      const { response: waResponse, data: sendRes } = await sendWhatsAppInternal(supabaseUrl, serviceKey, {
+        to: phoneNumber,
+        type: 'template',
+        template: {
+          name: mapping.template.meta_template_name,
+          language: mapping.template.language || 'en_GB',
+          components: [
+            { type: 'body', parameters: [{ type: 'text', text: generatedOtp }] },
+            { type: 'button', sub_type: 'url', index: 0, parameters: [{ type: 'text', text: generatedOtp }] },
+          ],
         },
+        storeId,
+        notificationId: null,
       })
 
-      if (sendError || !sendRes?.success || !sendRes?.message_id) {
-        const message = sendError?.message || sendRes?.error || 'WhatsApp OTP could not be sent.'
+      if (!waResponse.ok || !sendRes?.success || !sendRes?.message_id) {
+        const message = String(sendRes?.error || 'WhatsApp OTP could not be sent.')
         await supabase.from('whatsapp_auth_challenges').update({ status: 'failed' }).eq('id', challenge.id)
-        return json({ error: message }, 502)
+        console.error('[WhatsApp OTP] WhatsApp send failed', waResponse.status, message)
+        return json({ error: message, upstream_status: waResponse.status }, 502)
       }
 
       await supabase.from('whatsapp_auth_challenges').update({ whatsapp_message_id: sendRes.message_id }).eq('id', challenge.id)
-      const smsSent = await sendMalluSpicesSmsCopy(String(storeId), String(phoneNumber), generatedOtp, challenge.id)
+      const sms = await sendMalluSpicesSmsCopy(supabase, String(storeId), String(phoneNumber), generatedOtp, challenge.id)
 
       return json({
         success: true,
         request_id: challenge.id,
         expires_in: 300,
         masked_phone: String(phoneNumber).replace(/.(?=.{4})/g, '*'),
-        delivery: { whatsapp: true, sms: smsSent },
+        delivery: { whatsapp: true, sms: sms.sent, sms_status: sms.status },
       })
     }
 
@@ -177,9 +194,7 @@ serve(async (req) => {
 
       await supabase.from('whatsapp_auth_challenges').update({ status: 'verified', consumed_at: new Date().toISOString() }).eq('id', requestId).eq('status', 'pending')
 
-      if (action === 'verify_external') {
-        return json({ success: true, request_id: challenge.id, verified_phone: challenge.phone_number, purpose: challenge.purpose })
-      }
+      if (action === 'verify_external') return json({ success: true, request_id: challenge.id, verified_phone: challenge.phone_number, purpose: challenge.purpose })
 
       const { data: customer } = await supabase.from('customers').select('email').eq('phone', challenge.phone_number).eq('store_id', storeId).maybeSingle()
       if (!customer?.email) return json({ error: 'No account linked to this number.' }, 400)
