@@ -27,7 +27,7 @@ export default function MobileLayout({ children }: MobileLayoutProps) {
   const pathname = usePathname();
   const isLoginPage = pathname === '/login';
   const section = pathname.split('/')[1] || 'dashboard';
-  const isSupportInbox = pathname.startsWith('/customer-care/inbox');
+  const isSupportInbox = pathname.startsWith('/customer-care/inbox') || pathname.startsWith('/customer-care/tickets/chat');
   const isMobile = useMediaQuery('(max-width: 699px)');
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
@@ -69,11 +69,24 @@ export default function MobileLayout({ children }: MobileLayoutProps) {
 
   return (
     <ShruthiSecurityGate>
-      <div data-section={section} className="ch-workspace centralhub-desktop-shell flex h-screen min-w-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden">
+      <div data-section={section} className="ch-workspace centralhub-desktop-shell flex h-[100dvh] min-w-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden">
         <DhlInvoiceAutoSync />
         <CentralHubLiveUpdate />
         <ClassifiedSidebar />
-        <div className="flex-1 min-w-0 flex flex-col overflow-hidden"><Topbar /><main className="flex-1 min-h-0 min-w-0 overflow-y-auto overscroll-contain pb-safe-bottom pr-safe-right pl-safe-left"><div className="max-w-[1920px] min-w-0 mx-auto w-full">{children}</div></main></div>
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
+          <Topbar />
+          <main
+            className={isSupportInbox
+              ? 'flex-1 min-h-0 min-w-0 overflow-hidden pb-safe-bottom pr-safe-right pl-safe-left'
+              : 'flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain pb-safe-bottom pr-safe-right pl-safe-left'}
+          >
+            <div className={isSupportInbox
+              ? 'h-full min-h-0 min-w-0 w-full max-w-[1920px] mx-auto overflow-hidden'
+              : 'max-w-[1920px] min-w-0 mx-auto w-full'}>
+              {children}
+            </div>
+          </main>
+        </div>
         {pathname === '/dashboard' && <QuickActionsFab />}
         <ShruthiLearningPulse />
         <ShruthiIdentitySkin />
