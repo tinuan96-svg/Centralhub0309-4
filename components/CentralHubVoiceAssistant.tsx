@@ -82,7 +82,6 @@ const WAKE_WORD = /(?:^|[\s,.:!?])(shruthi|sruthi|shruti|nora|norah|noora|noura|
 const STOP_WORDS = /\b(?:(?:shruthi|sruthi|shruti|nora|norah|noora)\s+stop|stop\s+(?:shruthi|sruthi|shruti|nora|norah|noora)|that(?:'s| is) all|thank you shruthi|thanks shruthi|thank you nora|thanks nora|go to sleep|sleep shruthi|sleep nora)\b|ശ്രുതി\s*(?:സ്റ്റോപ്പ്|മതി|നിർത്തു)|നോറാ?\s*(?:സ്റ്റോപ്പ്|മതി|നിർത്തു)|(?:മതി|നിർത്തു)\s*(?:ശ്രുതി|നോറാ?)|ஸ்ருதி\s*(?:ஸ்டாப்|போதும்)|நோரா?\s*(?:ஸ்டாப்|போதும்)/iu;
 const ASSISTANT_CUES = /(?:\?|\b(?:what|how|when|where|which|why|check|show|tell|give|find|look|open|scan|compare|calculate|order|orders|sale|sales|profit|stock|product|products|price|revenue|dashboard|store|today|yesterday|week|month|status|issue|risk|customer|competitor|finance|security|payment|marketing)\b|എന്ത|എത്ര|എങ്ങനെ|എപ്പോൾ|എവിടെ|ഏത്|നോക്ക്|പറ|കാണി|ചെക്ക്|ഓർഡർ|സെയിൽ|ലാഭം|സ്റ്റോക്ക്|പ്രോഡക്ട്|വില|റവന്യൂ|ഡാഷ്ബോർഡ്|സ്റ്റോർ|കസ്റ്റമർ|കോമ്പറ്റിറ്റർ|என்ன|எவ்வளவு|எப்படி|பார்|சொல்|ஆர்டர்|சேல்ஸ்|ஸ்டாக்|ப்ராடக்ட்|விலை)/iu;
 const FOLLOW_UP_CUES = /\b(?:that|this|it|same|those|these|and then|what about|how about|also|next)\b|അത്|അതിന്റെ|ഇത്|ഇതിന്റെ|അപ്പോ|പിന്നെ|അതേ|കൂടാതെ|அது|இது|அப்புறம்/iu;
-const FEMALE_VOICE_HINTS = ['female', 'sonia', 'serena', 'samantha', 'karen', 'moira', 'fiona', 'victoria', 'aria', 'ava', 'veena', 'heera', 'susan', 'hazel'];
 
 function getNativeBridge(): NativeBridge | undefined {
   if (typeof window === 'undefined') return undefined;
@@ -102,13 +101,6 @@ function looksAddressedToNora(text: string, hasConversationContext: boolean) {
   if (!clean || clean.length > 260) return false;
   if (ASSISTANT_CUES.test(clean)) return true;
   return hasConversationContext && FOLLOW_UP_CUES.test(clean);
-}
-
-function pickExecutiveVoice(voices: SpeechSynthesisVoice[], language: string) {
-  const prefix = language.toLowerCase().startsWith('ml') ? 'ml' : 'en-gb';
-  const languageMatches = voices.filter((voice) => voice.lang.toLowerCase().startsWith(prefix));
-  const pool = languageMatches.length ? languageMatches : voices.filter((voice) => voice.lang.toLowerCase().startsWith('en'));
-  return pool.find((voice) => FEMALE_VOICE_HINTS.some((hint) => voice.name.toLowerCase().includes(hint))) || voices.find((voice) => FEMALE_VOICE_HINTS.some((hint) => voice.name.toLowerCase().includes(hint)));
 }
 
 function blobToBase64(blob: Blob): Promise<string> {
@@ -298,8 +290,6 @@ export default function CentralHubVoiceAssistant() {
   }
 
   const bridge = getNativeBridge();
-  const hasMalayalam = /[\u0D00-\u0D7F]/.test(text);
-  const language = hasMalayalam ? 'ml-IN' : 'en-GB';
   stopSpeech();
   setSpeaking(true);
   bridge?.setTaraSpeaking?.(true);
@@ -315,42 +305,10 @@ export default function CentralHubVoiceAssistant() {
   const estimatedMs = Math.min(30_000, Math.max(2200, text.length * 62));
   speechVisualTimerRef.current = window.setTimeout(finish, estimatedMs);
 
-  const fallbackToLocalFemale = () => {
-    if (bridge?.getPlatform?.() === 'android' && bridge?.speakTara) {
-      window.speechSynthesis?.cancel();
-      try {
-        if (bridge.speakTara(text, language)) return;
-      } catch {
-        // Fall through to browser female voice only.
-      }
-    }
-
-    if (!('speechSynthesis' in window)) {
-      finish();
-      return;
-    }
-
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = language;
-    utterance.rate = 0.93;
-    utterance.pitch = 1.04;
-    utterance.volume = 1;
-    const preferred = pickExecutiveVoice(window.speechSynthesis.getVoices(), language);
-    if (!preferred) {
-      finish();
-      return;
-    }
-    utterance.voice = preferred;
-    utterance.onend = finish;
-    utterance.onerror = finish;
-    window.speechSynthesis.speak(utterance);
-  };
-
   void (async () => {
     try {
       const speech = await invokeShruthiSpeech(text);
-      if (!speech.success || !speech.audioBase64) throw new Error(speech.error || 'No speech audio returned.');
+      if (!speech.success || !speech.audioBase64) throw new Error(speech.error || 'No Shruthi speech audio returned.');
 
       const binary = atob(speech.audioBase64);
       const bytes = new Uint8Array(binary.length);
@@ -364,22 +322,24 @@ export default function CentralHubVoiceAssistant() {
       audio.onended = () => {
         if (cloudAudioRef.current === audio) cloudAudioRef.current = null;
         if (cloudAudioUrlRef.current === url) {
-URL.revokeObjectURL(url);
-cloudAudioUrlRef.current = null;
+          URL.revokeObjectURL(url);
+          cloudAudioUrlRef.current = null;
         }
         finish();
       };
       audio.onerror = () => {
         if (cloudAudioRef.current === audio) cloudAudioRef.current = null;
         if (cloudAudioUrlRef.current === url) {
-URL.revokeObjectURL(url);
-cloudAudioUrlRef.current = null;
+          URL.revokeObjectURL(url);
+          cloudAudioUrlRef.current = null;
         }
-        fallbackToLocalFemale();
+        finish();
       };
       await audio.play();
     } catch {
-      fallbackToLocalFemale();
+      // Voice identity is locked. Never fall back to Android/browser/default TTS.
+      // A speech failure stays silent rather than changing Shruthi's voice/persona.
+      finish();
     }
   })();
 }, [autoSpeak, stopSpeech]);
