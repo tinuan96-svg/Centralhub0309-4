@@ -7,7 +7,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" };
-const TRANSCRIBE_HINT = "Shruthi, ശ്രുതി, CentralHub, MalluSpices, KeralaGrocery, PocketGrocery, TamilRetail, DHL (D H L), WhatsApp, Supabase, Netlify, Mollie, Trust Payments, bank balance, stock, orders, revenue, profit.";
+const TRANSCRIBE_HINT = "Shruthi, ശ്രുതി, CentralHub, MalluSpices, KeralaGrocery, PocketGrocery, TamilRetail, KeralaTaste (Kerala Taste; may sound like Kerala test, camera taste, or camera test), Pickeasy, Veensa, The Indian Shelf, DHL (D H L), WhatsApp, Supabase, Netlify, Mollie, Trust Payments, bank balance, stock, orders, revenue, profit.";
 
 function send(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), { status, headers: jsonHeaders });
@@ -28,6 +28,35 @@ function decodeBase64(value: string): Uint8Array {
 }
 function words(value: string) {
   return String(value || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").split(/\s+/).filter(Boolean);
+}
+function normalizeCentralHubSpeech(raw: string) {
+  let text = String(raw || "").trim();
+  if (!text) return text;
+  const businessContext = /\b(?:sell|selling|price|prices|product|products|stock|offer|offers|website|competitor|check|search|grocery|order|orders|revenue|sales|deploy|deployment|repo|repository)\b/i.test(text);
+  if (businessContext) {
+    text = text
+      .replace(/\b(?:camera|kerala)\s+(?:test|taste|tasty)\b/gi, "KeralaTaste")
+      .replace(/\bkerala\s*taste\b/gi, "KeralaTaste")
+      .replace(/\bmallu\s+(?:spaces|spices?|spice)\b/gi, "MalluSpices")
+      .replace(/\bpocket\s+grocery\b/gi, "PocketGrocery")
+      .replace(/\bkerala\s+grocery\b/gi, "KeralaGrocery")
+      .replace(/\btamil\s+retail\b/gi, "TamilRetail")
+      .replace(/\bpick\s*easy\b/gi, "Pickeasy")
+      .replace(/\bindian\s+shelf\b/gi, "The Indian Shelf")
+      .replace(/\bnet(?:ified|lify|lifi|lefi)\b/gi, "Netlify")
+      .replace(/\bsupa\s*base\b/gi, "Supabase")
+      .replace(/\bcentral\s+hub\b/gi, "CentralHub");
+  }
+  return text.replace(/\s{2,}/g, " ").trim();
+}
+function competitorBrowserTask(text: string) {
+  const value = text.toLowerCase();
+  const externalCue = /\b(?:sell|selling|price|prices|product|products|stock|offer|offers|website|check|search|compare|today|launch|new|pack|packaging)\b/i.test(value);
+  if (!externalCue) return null;
+  if (/\bkeralataste\b|\bkerala\s*taste\b/i.test(value)) {
+    return { key: "external_web", system: "KeralaTaste", url: "https://keralataste.com/" };
+  }
+  return null;
 }
 function sum(rows: any[], keys: string[]) {
   return rows.reduce((total, row) => {
@@ -261,10 +290,17 @@ function fastReply(snapshot: any, learning: any, text: string) {
 async function storeHistory(db:any,userId:string,text:string,result:any,meta:any) {
   const latency=meta?.latency_ms || {};
   const model=String(meta?.model || (meta?.fast_path ? "deterministic-fast-path" : "unknown"));
+  const browserPayload = result?.browser_required ? {
+    browser_required:true,
+    browser_target_key:result.browser_target_key || "external_web",
+    browser_target_system:result.browser_target_system || "External web",
+    browser_target_url:result.browser_target_url || null,
+    browser_goal:result.browser_goal || text,
+  } : {};
   const [historyRes, usageRes] = await Promise.all([
     db.from("voice_assistant_commands").insert({
       user_id:userId, mode:result.mode || "operations", input_text:text, response_text:result.reply, intent:result.intent || "general", risk_level:result.risk_level || "read_only", requires_confirmation:false, action_name:null,
-      action_payload:{ assistant_name:"Shruthi", access_mode:"page_independent_read_only", ...meta }, status:"completed"
+      action_payload:{ assistant_name:"Shruthi", access_mode:"page_independent_read_only", ...browserPayload, ...meta }, status:"completed"
     }),
     db.from("ai_usage_logs").insert({
       feature:"centralhub_voice_assistant",
@@ -304,7 +340,7 @@ Deno.serve(async (req: Request) => {
       const response=await fetch("https://api.openai.com/v1/audio/transcriptions",{method:"POST",headers:{Authorization:`Bearer ${openaiKey}`},body:form,signal:AbortSignal.timeout(15000)});
       const payload=await response.json().catch(()=>null);
       if(!response.ok) return send(502,{success:false,error:"transcription_failed",status:response.status,upstream_code:upstreamCode(payload)});
-      const transcript=String(payload?.text||"").trim(); if(!transcript) return send(422,{success:false,error:"empty_transcript"});
+      const transcript=normalizeCentralHubSpeech(String(payload?.text||"").trim()); if(!transcript) return send(422,{success:false,error:"empty_transcript"});
       return send(200,{success:true,transcript,latency_ms:Date.now()-started});
     }catch(e:any){
       const timeout=e?.name==="TimeoutError" || e?.name==="AbortError";
@@ -313,8 +349,30 @@ Deno.serve(async (req: Request) => {
   }
 
   if(action!=="command") return send(400,{success:false,error:"invalid_action"});
-  const text=String(body?.text||"").trim().slice(0,6000), requestedMode=["operations","board","developer"].includes(String(body?.mode))?String(body.mode):"operations", pageContext=String(body?.page_context||"").trim().slice(0,300);
+  const text=normalizeCentralHubSpeech(String(body?.text||"").trim()).slice(0,6000), requestedMode=["operations","board","developer"].includes(String(body?.mode))?String(body.mode):"operations", pageContext=String(body?.page_context||"").trim().slice(0,300);
   if(!text) return send(400,{success:false,error:"missing_command"});
+
+  const competitorTask=competitorBrowserTask(text);
+  if(competitorTask){
+    const final={
+      reply:`I’ll check ${competitorTask.system} live now.`,
+      intent:"external_web_research",
+      mode:requestedMode,
+      risk_level:"read_only",
+      requires_confirmation:false,
+      suggested_action:null,
+      navigation_path:null,
+      speak:true,
+      browser_required:true,
+      browser_target_key:competitorTask.key,
+      browser_target_system:competitorTask.system,
+      browser_target_url:competitorTask.url,
+      browser_goal:text,
+    };
+    const total=Date.now()-started;
+    await storeHistory(db,user.id,text,final,{page_context:pageContext,fast_path:true,model:"deterministic-browser-intent",latency_ms:{snapshot:0,model:0,total}});
+    return send(200,{success:true,transcript:text,...final,status:"ready_for_computer",access_mode:"page_independent_read_only",latency_ms:{snapshot:0,model:0,total}});
+  }
 
   const instant=instantReply(text);
   if(instant){
