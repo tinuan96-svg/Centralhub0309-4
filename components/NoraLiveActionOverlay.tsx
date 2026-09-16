@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Check, CirclePause, CirclePlay, Globe2, Hand, MessageCircleQuestion, MousePointer2, ShieldAlert, Square, X } from 'lucide-react';
+import { CirclePause, CirclePlay, Globe2, Hand, MessageCircleQuestion, MousePointer2, ShieldAlert, Square, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 type ActionSession = {
@@ -21,6 +21,7 @@ type ActionSession = {
   last_error: string | null;
   completed_at: string | null;
   updated_at: string;
+  metadata: Record<string, unknown> | null;
 };
 
 type ActionStep = {
@@ -43,7 +44,28 @@ type ActionQuestion = {
   created_at: string;
 };
 
+type NativeComputerBridge = {
+  getPlatform?: () => string;
+  openNoraComputerMode?: (sessionId: string, targetUrl: string, accessToken: string, supabaseUrl: string) => boolean;
+};
+
 const ACTIVE_STATUSES = ['planned', 'running', 'waiting_input', 'waiting_approval', 'paused'];
+
+function nativeBridge(): NativeComputerBridge | undefined {
+  if (typeof window === 'undefined') return undefined;
+  return (window as unknown as { CentralHubNative?: NativeComputerBridge }).CentralHubNative;
+}
+
+function publicHttps(value: unknown) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text) return '';
+  try {
+    const url = new URL(text);
+    return url.protocol === 'https:' ? url.toString() : '';
+  } catch {
+    return '';
+  }
+}
 
 function statusText(status: ActionSession['status']) {
   switch (status) {
@@ -120,6 +142,27 @@ export default function NoraLiveActionOverlay() {
     }
   }, [refresh, session]);
 
+  const openVisibleBrowser = useCallback(async () => {
+    if (!session) return;
+    setBusy(true);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const authSession = data.session;
+      if (!authSession?.access_token) throw new Error('CentralHub session expired.');
+      const bridge = nativeBridge();
+      if (bridge?.getPlatform?.() !== 'android' || !bridge.openNoraComputerMode) throw new Error('Live Web requires the CentralHub Android app.');
+      const currentUrl = publicHttps(session.metadata?.active_url) || publicHttps(session.target_url);
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+      if (!currentUrl || !supabaseUrl) throw new Error('Live Web URL is unavailable.');
+      if (bridge.openNoraComputerMode(session.id, currentUrl, authSession.access_token, supabaseUrl) !== true) throw new Error('Could not reopen Shruthi Live Web.');
+      setCollapsed(true);
+    } catch (error: any) {
+      window.alert(error?.message || 'Could not reopen Shruthi Live Web.');
+    } finally {
+      setBusy(false);
+    }
+  }, [session]);
+
   if (!session) return null;
 
   if (collapsed) {
@@ -178,7 +221,8 @@ export default function NoraLiveActionOverlay() {
             <div className="mt-3 rounded-2xl border border-rose-400/25 bg-rose-400/10 p-3">
               <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-rose-100"><ShieldAlert className="h-4 w-4" />Approval required</div>
               <p className="text-sm text-slate-200">{session.approval_reason || 'This step can create an external or difficult-to-reverse change.'}</p>
-              <div className="mt-3 flex gap-2"><button type="button" disabled={busy} onClick={() => void updateSession({ requires_approval: false, status: 'running', current_step: 'Approved — continuing safely' })} className="flex items-center gap-2 rounded-xl bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-950"><Check className="h-4 w-4" />Approve</button><button type="button" disabled={busy} onClick={() => void updateSession({ status: 'paused', current_step: 'Approval declined — waiting' })} className="rounded-xl border border-white/15 px-4 py-2 text-sm text-slate-200">Not now</button></div>
+              <p className="mt-2 text-xs leading-relaxed text-slate-400">Approval is completed in the visible Live Web browser so Shruthi can resume the exact browser turn safely.</p>
+              <button type="button" disabled={busy} onClick={() => void openVisibleBrowser()} className="mt-3 rounded-xl bg-rose-200 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-40">Review in Live Web</button>
             </div>
           )}
         </div>
@@ -192,7 +236,7 @@ export default function NoraLiveActionOverlay() {
           {session.last_error && <p className="mt-3 rounded-xl border border-rose-400/20 bg-rose-400/10 p-3 text-xs text-rose-100">{session.last_error}</p>}
 
           <div className="mt-4 flex flex-wrap gap-2 border-t border-white/10 pt-3">
-            {session.status === 'paused' ? <button type="button" disabled={busy} onClick={() => void updateSession({ status: 'running', current_step: 'Resuming task' })} className="flex items-center gap-2 rounded-xl border border-cyan-400/25 px-3 py-2 text-xs text-cyan-200"><CirclePlay className="h-4 w-4" />Resume</button> : <button type="button" disabled={busy || session.status === 'waiting_approval'} onClick={() => void updateSession({ status: 'paused', current_step: 'Paused by admin' })} className="flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-xs text-slate-300"><CirclePause className="h-4 w-4" />Pause</button>}
+            {session.status === 'paused' ? <button type="button" disabled={busy} onClick={() => void openVisibleBrowser()} className="flex items-center gap-2 rounded-xl border border-cyan-400/25 px-3 py-2 text-xs text-cyan-200"><CirclePlay className="h-4 w-4" />Continue in Live Web</button> : <button type="button" disabled={busy || session.status === 'waiting_approval'} onClick={() => void updateSession({ status: 'paused', current_step: 'Paused by admin' })} className="flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-xs text-slate-300"><CirclePause className="h-4 w-4" />Pause</button>}
             <button type="button" disabled={busy} onClick={() => void updateSession({ status: 'cancelled', completed_at: new Date().toISOString(), current_step: 'Cancelled by admin' })} className="flex items-center gap-2 rounded-xl border border-rose-400/20 px-3 py-2 text-xs text-rose-200"><Square className="h-3.5 w-3.5" />End task</button>
           </div>
         </aside>
