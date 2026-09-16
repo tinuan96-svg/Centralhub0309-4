@@ -1,0 +1,98 @@
+name: One-time CentralHub continuity and dependency repair
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-centralhub-ci-and-deps.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout CentralHub
+        uses: actions/checkout@v4
+        with:
+          token: ${{ github.token }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.1'
+          cache: npm
+
+      - name: Make continuity assertions quote-style agnostic
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/feature-continuity-audit.mjs')
+          s = p.read_text()
+          anchor = "const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');\n"
+          helper = anchor + "const normalizeQuotedSource = (value) => value.replace(/[\\\"`]/g, \"'\");\nconst includesToken = (text, token) => text.includes(token) || normalizeQuotedSource(text).includes(normalizeQuotedSource(token));\n"
+          if 'const includesToken = ' not in s:
+              if anchor not in s:
+                  raise SystemExit('feature audit read helper anchor not found')
+              s = s.replace(anchor, helper, 1)
+          old_all = "const missingAll = (assertion.all || []).filter((token) => !text.includes(token));"
+          old_any = "const anyOk = !assertion.any || assertion.any.some((token) => text.includes(token));"
+          if old_all in s:
+              s = s.replace(old_all, "const missingAll = (assertion.all || []).filter((token) => !includesToken(text, token));", 1)
+          if old_any in s:
+              s = s.replace(old_any, "const anyOk = !assertion.any || assertion.any.some((token) => includesToken(text, token));", 1)
+          if '!includesToken(text, token)' not in s or 'some((token) => includesToken(text, token))' not in s:
+              raise SystemExit('feature audit matcher patch did not apply')
+          p.write_text(s)
+          PY
+
+      - name: Override vulnerable transitive uuid
+        run: |
+          npm pkg set overrides.uuid=11.1.1
+          npm install --package-lock-only --ignore-scripts
+
+      - name: Fresh install
+        run: npm ci
+
+      - name: Verify no moderate-or-higher npm advisories
+        run: npm audit --audit-level=moderate
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Route integrity audit
+        run: npm run audit:routes
+
+      - name: Feature continuity audit
+        run: npm run audit:features
+
+      - name: Runtime compatibility audit
+        run: npm run audit:runtime
+
+      - name: Order sync contract audit
+        run: npm run audit:order-sync
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Production build
+        run: npm run build
+
+      - name: Post-build smoke audit
+        run: npm run audit:smoke
+
+      - name: Commit verified repair
+        shell: bash
+        run: |
+          git config user.name "Tinu Antony"
+          git config user.email "tinuan96@gmail.com"
+          git add scripts/feature-continuity-audit.mjs package.json package-lock.json
+          if git diff --cached --quiet; then
+            echo 'No changes to commit.'
+          else
+            git commit -m "Fix continuity audit and uuid advisory"
+            git push origin HEAD:main
+          fi
