@@ -114,6 +114,9 @@
   z-index: 20;
   background: #202c33 !important;
   border-color: #2a3942 !important;
+  /* Reserve a dedicated lane for the floating SHRUTHI mic so the send button
+     can never sit underneath it on Fold/unfolded or desktop-width layouts. */
+  padding-inline-end: calc(4.75rem + env(safe-area-inset-right)) !important;
 }
 
 .shell :global(main footer textarea) {
@@ -155,5 +158,9 @@
 @media (max-width: 767px) {
   .shell :global(main div[style*="WebkitOverflowScrolling"] .group > div) {
     max-width: 88% !important;
+  }
+
+  .shell :global(main footer) {
+    padding-inline-end: calc(4.25rem + env(safe-area-inset-right)) !important;
   }
 }
