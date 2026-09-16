@@ -12,6 +12,12 @@
 /.next/
 /out/
 
+# Cloudflare / OpenNext generated output and local secrets
+/.open-next/
+/.wrangler/
+.dev.vars
+.dev.vars.*
+
 # production
 /build
 
