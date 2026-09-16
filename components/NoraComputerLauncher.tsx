@@ -17,8 +17,6 @@ type VoiceCommand = {
 type NativeComputerBridge = {
   getPlatform?: () => string;
   openNoraComputerMode?: (sessionId: string, targetUrl: string, accessToken: string, supabaseUrl: string) => boolean;
-  speakTara?: (text: string, languageTag: string) => boolean;
-  stopTaraTts?: () => void;
 };
 
 type Target = { key: string; system: string; url: string };
@@ -96,20 +94,6 @@ function targetFromCommand(command: VoiceCommand | null): Target | null {
     }
   }
   return targetFor(`${command.input_text || ''} ${command.action_name || ''}`);
-}
-
-function announceHandoff(target: Target) {
-  const native = bridge();
-  if (native?.getPlatform?.() !== 'android') return;
-  try {
-    native.stopTaraTts?.();
-    native.speakTara?.(
-      `I’m opening ${target.system} now. I’ll work visibly and pause if I need login, verification, missing details, or your approval for a consequential final step.`,
-      'en-GB',
-    );
-  } catch {
-    // Browser launch must not depend on speech.
-  }
 }
 
 function securityUnlockCutoffMs() {
@@ -236,7 +220,6 @@ export default function NoraComputerLauncher() {
       if (insertError || !actionSession?.id) throw new Error(insertError?.message || 'Could not create Shruthi Live Web session.');
 
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-      announceHandoff(target);
       const launched = native.openNoraComputerMode(actionSession.id, target.url, authSession.access_token, supabaseUrl) === true;
       if (!launched) {
         await supabase.from('nora_action_sessions').update({
