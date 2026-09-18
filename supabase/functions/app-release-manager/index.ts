@@ -33,6 +33,13 @@ async function cryptoKey() {
   return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['decrypt'])
 }
 async function decrypt(value: string) {
+  if (value?.startsWith('vault:')) {
+    const { data, error } = await admin().rpc('publisher_secret_get', { p_name: value.slice(6) })
+    if (error) throw error
+    const secret = typeof data === 'string' ? data : ''
+    if (!secret) throw new Error('Stored Vault provider credential is missing')
+    return secret
+  }
   if (!value?.startsWith('enc:v1:')) throw new Error('Stored provider credential has an unsupported encryption format')
   const raw = unb64(value.slice(7))
   const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: raw.slice(0, 12) }, await cryptoKey(), raw.slice(12))
