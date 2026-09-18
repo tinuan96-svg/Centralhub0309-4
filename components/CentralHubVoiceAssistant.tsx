@@ -44,7 +44,6 @@ type NativeBridge = {
   startShruthiRealtime?: (accessToken: string, supabaseUrl: string, publishableKey: string) => boolean;
   stopShruthiRealtime?: () => void;
   interruptShruthiRealtime?: () => void;
-  sendShruthiRealtimeText?: (text: string) => void;
 };
 
 type NativeTranscriptEvent = CustomEvent<{ text?: string }>;
@@ -531,7 +530,6 @@ export default function CentralHubVoiceAssistant() {
   const handleNativeTranscript = useCallback((rawText: string) => {
     if (realtimeActiveRef.current) return;
     if (recordingRef.current) return;
-    if (processingRef.current) interruptPendingTurn();
     const heard = String(rawText || '').trim();
     if (!heard) return;
 
@@ -546,40 +544,16 @@ export default function CentralHubVoiceAssistant() {
       return;
     }
 
-    const activateRealtime = (command: string) => {
-      chooseTheme(command || heard);
-      setSession(true);
-      setOpen(true);
-      setMinimized(false);
-      setError('');
-      setResponse(null);
-      if (command) setTranscript(command);
-      void startNativeRealtime().then((started) => {
-        if (started) {
-          if (command) {
-            getNativeBridge()?.sendShruthiRealtimeText?.(command);
-            routeRealtimeExternalTask(command);
-          }
-          return;
-        }
-        if (command) void runCommand(command);
-      }).catch(() => {
-        if (command) void runCommand(command);
-      });
-    };
-
-    if (!noraSessionRef.current) {
-      if (!woke) return;
-      const command = stripWakeWord(heard);
-      activateRealtime(command);
-      return;
-    }
-
-    const command = woke ? stripWakeWord(heard) : heard;
-    if (!command) return;
-    const hasContext = Boolean(responseRef.current?.reply);
-    if (woke || looksAddressedToNora(command, hasContext)) activateRealtime(command);
-  }, [chooseTheme, interruptPendingTurn, routeRealtimeExternalTask, runCommand, setSession, startNativeRealtime, stopNativeRealtime]);
+    // Nivo pattern: wake/open the assistant first, then let the persistent
+    // OpenAI Realtime audio channel own the conversation. No REST voice turn.
+    if (!noraSessionRef.current && !woke) return;
+    chooseTheme(heard);
+    setSession(true);
+    setOpen(true);
+    setMinimized(false);
+    setError('');
+    setResponse(null);
+  }, [chooseTheme, setSession, stopNativeRealtime]);
 
   useEffect(() => {
     const onState = (event: Event) => {
@@ -626,6 +600,17 @@ export default function CentralHubVoiceAssistant() {
       window.removeEventListener('centralhub:shruthi-realtime-error', onError as EventListener);
     };
   }, [pathname, routeRealtimeExternalTask, setSession]);
+
+  // Match Nivo exactly: opening the assistant starts the private Realtime
+  // voice channel automatically. There is no separate Talk step on Android.
+  useEffect(() => {
+    if (!open || realtimeActiveRef.current) return;
+    const native = getNativeBridge();
+    if (native?.getPlatform?.() !== 'android' || native?.isShruthiRealtimeAvailable?.() !== true) return;
+    void startNativeRealtime().catch(() => {
+      setError('Shruthi Live voice could not start. Text is still available.');
+    });
+  }, [open, startNativeRealtime]);
 
   useEffect(() => {
     const bridge = getNativeBridge();
@@ -679,7 +664,16 @@ export default function CentralHubVoiceAssistant() {
   const startRecording = useCallback(async () => {
     if (realtimeActiveRef.current) return;
     if (processingRef.current || recordingRef.current) return;
-    try { if (await startNativeRealtime()) return; } catch { /* use existing fallback */ }
+    const native = getNativeBridge();
+    if (native?.getPlatform?.() === 'android') {
+      try {
+        const started = await startNativeRealtime();
+        if (!started) setError('Shruthi Live voice could not start. Text is still available.');
+      } catch {
+        setError('Shruthi Live voice could not start. Text is still available.');
+      }
+      return;
+    }
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       setError('Microphone recording is not supported on this device. You can still type a command.');
       chooseTheme();
@@ -748,8 +742,7 @@ export default function CentralHubVoiceAssistant() {
     setMinimized(false);
     setOpen(true);
     setSession(true);
-    void startNativeRealtime().catch(() => {});
-  }, [chooseTheme, setSession, startNativeRealtime]);
+  }, [chooseTheme, setSession]);
 
   const voiceState: VoiceState = realtimeState === 'speaking' ? 'speaking' : (realtimeState === 'connecting' || realtimeState === 'thinking' || realtimeState === 'reconnecting') ? 'processing' : realtimeState === 'listening' ? 'listening' : processing ? 'processing' : speaking ? 'speaking' : recording ? 'listening' : (noraSession ? 'listening' : 'waiting');
   const statusLabel =
@@ -864,24 +857,27 @@ export default function CentralHubVoiceAssistant() {
                 <input
                   value={input}
                   onChange={(event) => setInput(event.target.value)}
-                  disabled={processing || recording}
+                  disabled={processing || (recording && !realtimeActiveRef.current)}
                   placeholder="Ask SHRUTHI"
                   className="min-w-0 flex-1 bg-transparent px-3 py-3.5 text-sm text-white outline-none placeholder:text-slate-500"
                 />
-                <button type="submit" disabled={!input.trim() || processing || recording} className="mr-2 rounded-full p-2 text-slate-300 disabled:opacity-30" aria-label="Send to SHRUTHI">
+                <button type="submit" disabled={!input.trim() || processing || (recording && !realtimeActiveRef.current)} className="mr-2 rounded-full p-2 text-slate-300 disabled:opacity-30" aria-label="Send to SHRUTHI">
                   <Send size={18} />
                 </button>
               </form>
 
               <button
                 type="button"
-                onClick={recording ? stopRecording : startRecording}
-                disabled={processing}
-                className={`nora-action-button ${recording ? 'nora-mic-active' : ''}`}
-                aria-label={recording ? 'Stop listening' : 'Talk to SHRUTHI'}
+                onClick={() => {
+                  if (realtimeState === 'speaking') getNativeBridge()?.interruptShruthiRealtime?.();
+                  else if (realtimeState === 'idle' || realtimeState === 'error') void startNativeRealtime();
+                  else if (!realtimeActiveRef.current) void startRecording();
+                }}
+                className={`nora-action-button ${realtimeState === 'listening' ? 'nora-mic-active' : ''}`}
+                aria-label={realtimeState === 'speaking' ? 'Interrupt SHRUTHI' : realtimeState === 'error' ? 'Retry SHRUTHI Live voice' : 'SHRUTHI Live voice status'}
               >
-                {recording ? <Square size={19} fill="currentColor" /> : <Mic size={21} />}
-                <span className="hidden sm:block">{recording ? 'Stop' : 'Talk'}</span>
+                <Mic size={21} />
+                <span className="hidden sm:block">{realtimeState === 'speaking' ? 'Interrupt' : realtimeState === 'connecting' || realtimeState === 'reconnecting' ? 'Connecting' : realtimeState === 'thinking' ? 'Heard you' : realtimeState === 'listening' ? 'Live' : realtimeState === 'error' ? 'Retry' : 'Voice'}</span>
               </button>
 
               <button
@@ -935,12 +931,15 @@ export default function CentralHubVoiceAssistant() {
 
           <button
             type="button"
-            onClick={recording ? stopRecording : startRecording}
-            disabled={processing}
-            className={`grid h-11 w-11 shrink-0 place-items-center rounded-full border border-cyan-300/25 ${recording ? 'bg-cyan-400 text-slate-950' : 'bg-white/[0.055] text-cyan-200'} disabled:opacity-40`}
-            aria-label={recording ? 'Stop listening' : 'Talk to SHRUTHI'}
+            onClick={() => {
+              if (realtimeState === 'speaking') getNativeBridge()?.interruptShruthiRealtime?.();
+              else if (realtimeState === 'idle' || realtimeState === 'error') void startNativeRealtime();
+              else if (!realtimeActiveRef.current) void startRecording();
+            }}
+            className={`grid h-11 w-11 shrink-0 place-items-center rounded-full border border-cyan-300/25 ${realtimeState === 'listening' ? 'bg-cyan-400 text-slate-950' : 'bg-white/[0.055] text-cyan-200'}`}
+            aria-label="SHRUTHI Live voice"
           >
-            {recording ? <Square size={17} fill="currentColor" /> : <Mic size={19} />}
+            <Mic size={19} />
           </button>
 
           <button

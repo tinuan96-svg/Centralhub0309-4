@@ -23,7 +23,6 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashSet;
 import java.util.Set;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -55,9 +54,6 @@ final class ShruthiRealtimeVoiceClient {
         static PlaybackItem audio(byte[] p){return new PlaybackItem(p,null,false);}
         static PlaybackItem end(String r){return new PlaybackItem(null,r,true);}
     }
-    private static final class SessionSecret {
-        final String value,model; SessionSecret(String v,String m){value=v;model=m;}
-    }
 
     private final Context context;
     private final String accessToken,supabaseUrl,publishableKey;
@@ -70,7 +66,6 @@ final class ShruthiRealtimeVoiceClient {
     private final AtomicBoolean running=new AtomicBoolean(false), reconnectScheduled=new AtomicBoolean(false), assistantAudioActive=new AtomicBoolean(false), captureEnabled=new AtomicBoolean(true);
     private final AtomicInteger generation=new AtomicInteger(0);
     private final Set<String> blockedResponses=new LinkedHashSet<>(), seenEvents=new LinkedHashSet<>();
-    private final ConcurrentLinkedQueue<String> pendingTextTurns=new ConcurrentLinkedQueue<>();
 
     private volatile WebSocket socket;
     private volatile AudioRecord recorder;
@@ -79,7 +74,6 @@ final class ShruthiRealtimeVoiceClient {
     private volatile NoiseSuppressor noiseSuppressor;
     private volatile Thread captureThread,playbackThread;
     private volatile boolean explicitlyClosed=false;
-    private volatile boolean socketOpen=false;
     private volatile int reconnectAttempt=0,previousAudioMode=AudioManager.MODE_NORMAL;
     private volatile long suppressMicUntilMs=0L;
     private volatile String activeResponseId="",audioEventType="",transcriptEventType="";
@@ -91,10 +85,10 @@ final class ShruthiRealtimeVoiceClient {
     void connect(){
         ShruthiRealtimeVoiceClient previous=ACTIVE.getAndSet(this); if(previous!=null&&previous!=this)previous.disconnect();
         if(running.getAndSet(true))return;
-        explicitlyClosed=false;socketOpen=false;reconnectAttempt=0;reconnectScheduled.set(false);assistantAudioActive.set(false);captureEnabled.set(true);suppressMicUntilMs=0;resetResponseState();state("connecting");io.execute(this::openSession);
+        explicitlyClosed=false;reconnectAttempt=0;reconnectScheduled.set(false);assistantAudioActive.set(false);captureEnabled.set(true);suppressMicUntilMs=0;resetResponseState();state("connecting");io.execute(this::openSession);
     }
     void disconnect(){
-        explicitlyClosed=true;socketOpen=false;running.set(false);reconnectScheduled.set(false);generation.incrementAndGet();captureEnabled.set(false);assistantAudioActive.set(false);playbackQueue.clear();pendingTextTurns.clear();resetResponseState();cleanupAudio();
+        explicitlyClosed=true;running.set(false);reconnectScheduled.set(false);generation.incrementAndGet();resetResponseState();assistantAudioActive.set(false);captureEnabled.set(false);suppressMicUntilMs=0;playbackQueue.clear();cleanupAudio();
         WebSocket s=socket;socket=null;if(s!=null)s.close(1000,"Shruthi voice closed");ACTIVE.compareAndSet(this,null);state("idle");
     }
     void interrupt(){
@@ -104,53 +98,19 @@ final class ShruthiRealtimeVoiceClient {
         WebSocket s=socket;if(s!=null){s.send("{\"type\":\"response.cancel\"}");s.send("{\"type\":\"input_audio_buffer.clear\"}");}
         scheduler.schedule(()->{if(running.get()&&!explicitlyClosed){resumeMicrophoneAfterPlayback();state("listening");}},MANUAL_INTERRUPT_GUARD_MS,TimeUnit.MILLISECONDS);
     }
-    void sendTextTurn(String rawText) {
-        String text = rawText == null ? "" : rawText.trim();
-        if (text.isEmpty() || !running.get() || explicitlyClosed) return;
-        if (!socketOpen || socket == null) {
-            pendingTextTurns.offer(text);
-            return;
-        }
-        sendTextTurnNow(text);
-    }
-
-    private void sendTextTurnNow(String text) {
-        WebSocket s = socket;
-        if (s == null || !socketOpen) {
-            pendingTextTurns.offer(text);
-            return;
-        }
-        try {
-            JSONObject item = new JSONObject()
-                    .put("type", "message")
-                    .put("role", "user")
-                    .put("content", new org.json.JSONArray().put(new JSONObject().put("type", "input_text").put("text", text)));
-            s.send(new JSONObject().put("type", "conversation.item.create").put("item", item).toString());
-            s.send("{\"type\":\"response.create\"}");
-            state("thinking");
-        } catch (Exception error) {
-            listener.onError(message(error, "Could not send Shruthi text turn"));
-        }
-    }
-
-    private void flushPendingTextTurns() {
-        String text;
-        while ((text = pendingTextTurns.poll()) != null) sendTextTurnNow(text);
-    }
-
     void release(){disconnect();io.shutdownNow();scheduler.shutdownNow();http.dispatcher().executorService().shutdown();}
 
     private void openSession(){
         int current=generation.incrementAndGet();
         try{
-            ensureMicPermission();SessionSecret secret=requestClientSecret();if(!isCurrent(current))return;
-            Request req=new Request.Builder().url("wss://api.openai.com/v1/realtime?model="+secret.model).header("Authorization","Bearer "+secret.value).build();
+            ensureMicPermission();String ephemeral=requestClientSecret();if(!isCurrent(current))return;
+            Request req=new Request.Builder().url("wss://api.openai.com/v1/realtime?model=gpt-realtime-1.5").header("Authorization","Bearer "+ephemeral).build();
             WebSocket ws=http.newWebSocket(req,new SocketListener(current));if(!isCurrent(current)){ws.close(1000,"Stale Shruthi session");return;}socket=ws;
         }catch(Exception e){if(isCurrent(current))failOrReconnect(message(e,"Unable to start Shruthi voice"));}
     }
     private boolean isCurrent(int current){return running.get()&&!explicitlyClosed&&current==generation.get();}
     private void ensureMicPermission(){if(ContextCompat.checkSelfPermission(context,Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED)throw new SecurityException("Microphone permission is required for Shruthi voice.");}
-    private SessionSecret requestClientSecret() throws Exception{
+    private String requestClientSecret() throws Exception{
         HttpURLConnection c=(HttpURLConnection)new URL(supabaseUrl+"/functions/v1/shruthi-realtime-session").openConnection();
         c.setRequestMethod("POST");c.setConnectTimeout(10000);c.setReadTimeout(15000);c.setDoOutput(true);
         if(!publishableKey.isEmpty())c.setRequestProperty("apikey",publishableKey);
@@ -163,13 +123,13 @@ final class ShruthiRealtimeVoiceClient {
             JSONObject p=new JSONObject(raw.toString());String value=p.optString("value");
             if(value.isEmpty()&&p.optJSONObject("client_secret")!=null)value=p.optJSONObject("client_secret").optString("value");
             if(value.isEmpty())throw new IllegalStateException("Realtime session did not return a client secret");
-            return new SessionSecret(value,p.optString("centralhub_model","gpt-realtime-1.5"));
+            return value;
         }finally{c.disconnect();}
     }
 
     private final class SocketListener extends WebSocketListener{
         private final int current;SocketListener(int c){current=c;}
-        @Override public void onOpen(WebSocket w,Response r){if(!isCurrent(current)){w.close(1000,"Stale Shruthi session");return;}socketOpen=true;reconnectScheduled.set(false);reconnectAttempt=0;try{startAudio(current);state("listening");flushPendingTextTurns();}catch(Exception e){if(isCurrent(current))failOrReconnect(message(e,"Unable to start voice audio"));}}
+        @Override public void onOpen(WebSocket w,Response r){if(!isCurrent(current)){w.close(1000,"Stale Shruthi session");return;}reconnectScheduled.set(false);reconnectAttempt=0;try{startAudio(current);if(isCurrent(current))state("listening");}catch(Exception e){if(isCurrent(current))failOrReconnect(message(e,"Unable to start voice audio"));}}
         @Override public void onMessage(WebSocket w,String text){
             if(!isCurrent(current))return;
             try{
