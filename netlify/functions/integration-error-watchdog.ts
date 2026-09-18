@@ -122,7 +122,14 @@ export default async function integrationErrorWatchdog() {
     error: first(row.error, `Product ${row.product_id || ''} ${row.action || 'sync'} failed`), url: '/inventory', severity: 'critical',
   });
 
-  for (const row of syncLogs.data || []) if (row.success === false || str(row.error) || str(row.error_code)) {
+  for (const row of syncLogs.data || []) {
+    // sync_logs.error is also used by some successful jobs for informational details
+    // such as request_id=12345. A successful row must never be treated as an incident.
+    const hasFailure = row.success === false ||
+      (row.success !== true && (failed(row.error) || failed(row.error_code)));
+
+    if (!hasFailure) continue;
+
     const kind = kindFor(row.table);
     incidents.push({
       kind, source: 'sync_logs', id: str(row.id), at: when(row.created_at), storeId: row.to_store || row.from_store,
