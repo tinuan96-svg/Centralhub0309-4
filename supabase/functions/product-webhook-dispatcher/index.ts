@@ -197,7 +197,11 @@ function attachVariantLinks(products: Record<string, any>[], links: Map<string, 
 }
 
 async function loadCentralVariants(db: any, parentIds?: string[]) {
-  let query = db.from("product_variants").select(VARIANT_SELECT).order("updated_at", { ascending: false });
+  let query = db
+    .from("product_variants")
+    .select(VARIANT_SELECT)
+    .eq("is_active", true)
+    .order("updated_at", { ascending: false });
   if (parentIds?.length) query = query.in("product_id", parentIds);
   const { data, error } = await query.limit(5000);
   if (error) throw new Error(`Central variants read failed: ${errorText(error)}`);
@@ -337,8 +341,15 @@ Deno.serve(async (req: Request) => {
 
     if (eventType === "FULL_SYNC" || eventType === "RECONCILE") {
       const loadedProducts = await loadCentralProducts(db);
-      const variants = await loadCentralVariants(db);
       const variantLinks = await loadVariantLinks(db);
+      const linkedIds = new Set([...variantLinks.keys()]);
+      const legacyParentIds = loadedProducts.products
+        .filter((product: any) =>
+          String(product.product_type || "simple").toLowerCase() === "variable" &&
+          !linkedIds.has(String(product.id))
+        )
+        .map((product: any) => String(product.id));
+      const variants = legacyParentIds.length ? await loadCentralVariants(db, legacyParentIds) : [];
       const products = attachVariantLinks(
         loadedProducts.products.map((product: any) => mapProduct(product, loadedProducts.inventoryStock)),
         variantLinks,
@@ -349,9 +360,8 @@ Deno.serve(async (req: Request) => {
         const productSync = eventType === "FULL_SYNC"
           ? await upsertProducts(target, products)
           : await reconcileProducts(target, products, centralProductIds);
-        const variantSync = eventType === "FULL_SYNC"
-          ? await upsertVariants(target, variants)
-          : await reconcileVariants(target, null, variants);
+        // Only unmigrated legacy variable parents keep raw child rows. Linked SKUs never do.
+        const variantSync = await reconcileVariants(target, null, variants);
         return { store: target.slug, success: productSync.success && variantSync.success, product_sync: productSync, variant_sync: variantSync };
       }));
 
@@ -373,10 +383,15 @@ Deno.serve(async (req: Request) => {
 
     const loadedProducts = await loadCentralProducts(db, [productId]);
     if (!loadedProducts.products.length) return json({ ok: false, error: "Product not found" }, 404);
-    const variants = await loadCentralVariants(db, [productId]);
     const variantLinks = await loadVariantLinks(db, [productId]);
+    const sourceProduct = loadedProducts.products[0];
+    const isLinked = variantLinks.has(productId);
+    const isLegacyVariable =
+      String(sourceProduct.product_type || "simple").toLowerCase() === "variable" &&
+      !isLinked;
+    const variants = isLegacyVariable ? await loadCentralVariants(db, [productId]) : [];
     const product = attachVariantLinks(
-      [mapProduct(loadedProducts.products[0], loadedProducts.inventoryStock)],
+      [mapProduct(sourceProduct, loadedProducts.inventoryStock)],
       variantLinks,
     )[0];
 
@@ -388,7 +403,7 @@ Deno.serve(async (req: Request) => {
 
     await writeAudit(db, eventType, productId, productName || loadedProducts.products[0]?.name, results);
     const ok = results.every((result) => result.success === true);
-    return json({ ok, linked_variant_count: variants.length, product_stock: product.stock, stores: results }, ok ? 200 : 207);
+    return json({ ok, legacy_variant_count: variants.length, product_stock: product.stock, stores: results }, ok ? 200 : 207);
   } catch (error) {
     const detail = errorText(error);
     console.error("[product-webhook-dispatcher]", detail);
