@@ -130,6 +130,9 @@ function mapProduct(product: any, inventoryStock: Map<string, number>) {
     is_archived: product.is_archived ?? false,
     is_deleted: product.is_deleted ?? false,
     backorder: product.allow_backorder ?? product.backorder ?? false,
+    // Filled from product_variant_links before writing to storefront raw tables.
+    parent_product_id: null,
+    variant_group_key: null,
     synced_at: new Date().toISOString(),
     source_updated_at: product.updated_at || new Date().toISOString(),
   } as Record<string, any>;
@@ -170,6 +173,22 @@ async function loadCentralProducts(db: any, ids?: string[]) {
     if (productIdSet.has(row.product_id)) inventoryStock.set(row.product_id, Number(row.stock_quantity || 0));
   }
   return { products: products || [], inventoryStock };
+}
+
+async function loadVariantLinks(db: any, productIds?: string[]) {
+  let query = db.from("product_variant_links").select("product_id,group_key");
+  if (productIds?.length) query = query.in("product_id", productIds);
+  const { data, error } = await query.limit(5000);
+  if (error) throw new Error(`Variant links read failed: ${errorText(error)}`);
+  return new Map((data || []).map((row: any) => [String(row.product_id), String(row.group_key)]));
+}
+
+function attachVariantLinks(products: Record<string, any>[], links: Map<string, string>) {
+  return products.map((row) => ({
+    ...row,
+    parent_product_id: null,
+    variant_group_key: links.get(String(row.centralhub_id)) ?? null,
+  }));
 }
 
 async function loadCentralVariants(db: any, parentIds?: string[]) {
@@ -314,7 +333,11 @@ Deno.serve(async (req: Request) => {
     if (eventType === "FULL_SYNC" || eventType === "RECONCILE") {
       const loadedProducts = await loadCentralProducts(db);
       const variants = await loadCentralVariants(db);
-      const products = loadedProducts.products.map((product: any) => mapProduct(product, loadedProducts.inventoryStock));
+      const variantLinks = await loadVariantLinks(db);
+      const products = attachVariantLinks(
+        loadedProducts.products.map((product: any) => mapProduct(product, loadedProducts.inventoryStock)),
+        variantLinks,
+      );
       const centralProductIds = new Set(products.map((row: any) => String(row.centralhub_id)));
 
       const results = await Promise.all(targets.map(async (target) => {
@@ -346,7 +369,11 @@ Deno.serve(async (req: Request) => {
     const loadedProducts = await loadCentralProducts(db, [productId]);
     if (!loadedProducts.products.length) return json({ ok: false, error: "Product not found" }, 404);
     const variants = await loadCentralVariants(db, [productId]);
-    const product = mapProduct(loadedProducts.products[0], loadedProducts.inventoryStock);
+    const variantLinks = await loadVariantLinks(db, [productId]);
+    const product = attachVariantLinks(
+      [mapProduct(loadedProducts.products[0], loadedProducts.inventoryStock)],
+      variantLinks,
+    )[0];
 
     const results = await Promise.all(targets.map(async (target) => {
       const productSync = await upsertProducts(target, [product]);
