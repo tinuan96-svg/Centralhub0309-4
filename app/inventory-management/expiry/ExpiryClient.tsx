@@ -30,7 +30,7 @@ type ExpiryWriteoff = {
   recorded_at: string;
 };
 
-type Filter = 'all' | 'expired' | '7days' | '30days';
+type Filter = 'all' | 'expired' | '7days' | '20days';
 
 const money = (value: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(value || 0);
 
@@ -93,7 +93,7 @@ export default function ExpiryClient() {
     const days = getDaysDiff(p.expiry_date);
     if (filter === 'expired') return days < 0;
     if (filter === '7days') return days >= 0 && days <= 7;
-    if (filter === '30days') return days >= 0 && days <= 30;
+    if (filter === '20days') return days >= 0 && days <= 20;
     return true;
   }), [data, filter]);
 
@@ -101,7 +101,7 @@ export default function ExpiryClient() {
     let expiredProducts = 0;
     let expiredUnits = 0;
     let expiredValue = 0;
-    let risk30Value = 0;
+    let risk20Value = 0;
 
     for (const p of data) {
       const days = getDaysDiff(p.expiry_date);
@@ -111,13 +111,13 @@ export default function ExpiryClient() {
         expiredProducts += 1;
         expiredUnits += stock;
         expiredValue += value;
-      } else if (days >= 0 && days <= 30 && stock > 0) {
-        risk30Value += value;
+      } else if (days >= 0 && days <= 20 && stock > 0) {
+        risk20Value += value;
       }
     }
 
     const historicalWriteoffValue = writeoffs.reduce((sum, row) => sum + Math.max(0, Number(row.total_cost || 0)), 0);
-    return { expiredProducts, expiredUnits, expiredValue, risk30Value, historicalWriteoffValue };
+    return { expiredProducts, expiredUnits, expiredValue, risk20Value, historicalWriteoffValue };
   }, [data, writeoffs]);
 
   const trend = useMemo(() => {
@@ -153,10 +153,10 @@ export default function ExpiryClient() {
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-slate-100">Grocery Expiry Management</h1>
-          <p className="text-sm text-slate-500 mt-1">Track expiry exposure from central inventory and retain permanent loss history when expired stock is cleared.</p>
+          <p className="text-sm text-slate-500 mt-1">Track expiry exposure from central inventory. Products are automatically blocked from sale at 20 days or less until expiry, while remaining visible here for reporting.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {(['all', 'expired', '7days', '30days'] as Filter[]).map(f => (
+          {(['all', 'expired', '7days', '20days'] as Filter[]).map(f => (
             <button key={f} onClick={() => setFilter(f)} className={`px-4 py-2 rounded-xl text-xs font-bold uppercase transition-all border ${filter === f ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : 'bg-slate-800 text-slate-500 border-transparent'}`}>
               {f === 'all' ? 'Show All' : f === 'expired' ? 'Expired' : f.replace('days', ' Days')}
             </button>
@@ -181,8 +181,8 @@ export default function ExpiryClient() {
           <p className="text-xs text-slate-500 mt-1">Units exposed to expiry loss</p>
         </div>
         <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
-          <p className="text-[10px] uppercase tracking-[.18em] text-amber-300 font-black">At risk · next 30 days</p>
-          <p className="text-2xl font-black text-white mt-2">{money(stats.risk30Value)}</p>
+          <p className="text-[10px] uppercase tracking-[.18em] text-amber-300 font-black">At risk · next 20 days</p>
+          <p className="text-2xl font-black text-white mt-2">{money(stats.risk20Value)}</p>
           <p className="text-xs text-slate-500 mt-1">Current stock cost potentially expiring</p>
         </div>
         <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-5">
