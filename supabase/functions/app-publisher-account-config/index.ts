@@ -13,9 +13,17 @@ const b64 = (bytes: Uint8Array) => { let s=''; for (const b of bytes) s += Strin
 const unb64 = (value: string) => { const padded=value.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-value.length%4)%4); return Uint8Array.from(atob(padded),c=>c.charCodeAt(0)) }
 const b64json = (v: unknown) => b64(enc.encode(JSON.stringify(v)))
 const pemBytes = (pem: string) => unb64(pem.replace(/-----BEGIN [^-]+-----/g,'').replace(/-----END [^-]+-----/g,'').replace(/\s+/g,''))
-async function cryptoKey() {
-  const secret=Deno.env.get('MARKETING_TOKEN_ENCRYPTION_KEY')?.trim()
+async function publisherEncryptionSecret() {
+  const envSecret = Deno.env.get('MARKETING_TOKEN_ENCRYPTION_KEY')?.trim()
+  if (envSecret) return envSecret
+  const { data, error } = await admin().rpc('publisher_credential_encryption_key')
+  if (error) throw error
+  const secret = clean(data)
   if (!secret) throw new Error('Publisher credential encryption key is not configured')
+  return secret
+}
+async function cryptoKey() {
+  const secret=await publisherEncryptionSecret()
   const raw=unb64(secret); if (raw.length!==32) throw new Error('Publisher credential encryption key is invalid')
   return crypto.subtle.importKey('raw',raw,'AES-GCM',false,['encrypt','decrypt'])
 }
