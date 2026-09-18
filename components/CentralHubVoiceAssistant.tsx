@@ -23,21 +23,12 @@ type AssistantReply = {
   upstream_code?: string | null;
 };
 
-type ShruthiSpeechReply = {
-  success?: boolean;
-  audioBase64?: string;
-  mimeType?: string;
-  voice?: string;
-  error?: string;
-};
 type NativeBridge = {
   getAppId?: () => string;
   getPlatform?: () => string;
   isTaraVoiceAvailable?: () => boolean;
   setTaraEnabled?: (enabled: boolean) => void;
   setTaraSpeaking?: (speaking: boolean) => void;
-  isTaraTtsReady?: () => boolean;
-  speakTara?: (text: string, languageTag: string) => boolean;
   stopTaraTts?: () => void;
   openNoraComputerMode?: (sessionId: string, targetUrl: string, accessToken: string, supabaseUrl: string) => boolean;
   isShruthiRealtimeAvailable?: () => boolean;
@@ -149,15 +140,6 @@ async function invokeVoice(body: Record<string, unknown>): Promise<AssistantRepl
   return (data || {}) as AssistantReply;
 }
 
-async function invokeShruthiSpeech(text: string): Promise<ShruthiSpeechReply> {
-  const headers = await getVoiceAuthHeaders();
-  const { data, error } = await supabase.functions.invoke('centralhub-shruthi-speech', {
-    body: { text },
-    headers,
-  });
-  if (error) throw new Error(error.message || 'Shruthi speech request failed.');
-  return (data || {}) as ShruthiSpeechReply;
-}
 function inferMode(_pathname: string, _text: string): AssistantMode {
   // Compatibility field only. Shruthi has one behaviour/persona, matching Nivo.
   return 'operations';
@@ -202,7 +184,6 @@ export default function CentralHubVoiceAssistant() {
   const [transcript, setTranscript] = useState('');
   const [response, setResponse] = useState<AssistantReply | null>(null);
   const [error, setError] = useState('');
-  const [autoSpeak, setAutoSpeak] = useState(true);
   const [noraSession, setNoraSession] = useState(false);
   const [nativeWakeAvailable, setNativeWakeAvailable] = useState(false);
   const [realtimeState, setRealtimeState] = useState<'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 'reconnecting' | 'error'>('idle');
@@ -212,16 +193,12 @@ export default function CentralHubVoiceAssistant() {
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const stopTimerRef = useRef<number | null>(null);
-  const speechVisualTimerRef = useRef<number | null>(null);
   const processingRef = useRef(false);
   const recordingRef = useRef(false);
   const noraSessionRef = useRef(false);
   const responseRef = useRef<AssistantReply | null>(null);
   const themeRef = useRef<NoraThemeId>('signature');
-  const cloudAudioRef = useRef<HTMLAudioElement | null>(null);
-  const cloudAudioUrlRef = useRef<string | null>(null);
   const turnGenerationRef = useRef(0);
-  const speechGenerationRef = useRef(0);
   const realtimeActiveRef = useRef(false);
 
   const theme = useMemo(() => THEMES.find((item) => item.id === themeId) || THEMES[0], [themeId]);
@@ -258,104 +235,14 @@ export default function CentralHubVoiceAssistant() {
   }, []);
 
   const stopSpeech = useCallback(() => {
-    speechGenerationRef.current += 1;
-    if (speechVisualTimerRef.current) window.clearTimeout(speechVisualTimerRef.current);
-    speechVisualTimerRef.current = null;
-    const cloudAudio = cloudAudioRef.current;
-    if (cloudAudio) {
-      try { cloudAudio.pause(); } catch { }
-      cloudAudio.src = '';
-      cloudAudioRef.current = null;
-    }
-    if (cloudAudioUrlRef.current) {
-      URL.revokeObjectURL(cloudAudioUrlRef.current);
-      cloudAudioUrlRef.current = null;
-    }
+    // Realtime is Shruthi's only speech output. This only cancels any legacy
+    // browser/native TTS that might still be active from an older app session.
     setSpeaking(false);
     window.speechSynthesis?.cancel();
     const bridge = getNativeBridge();
     bridge?.stopTaraTts?.();
     bridge?.setTaraSpeaking?.(false);
   }, []);
-
-  const interruptPendingTurn = useCallback(() => {
-    if (realtimeActiveRef.current) getNativeBridge()?.interruptShruthiRealtime?.();
-    turnGenerationRef.current += 1;
-    processingRef.current = false;
-    setProcessing(false);
-    stopSpeech();
-    setError('');
-  }, [stopSpeech]);
-
-  useEffect(() => () => {
-    if (realtimeActiveRef.current) getNativeBridge()?.stopShruthiRealtime?.();
-    turnGenerationRef.current += 1;
-    stopTracks();
-    stopSpeech();
-  }, [stopSpeech, stopTracks]);
-
-  const speak = useCallback((text: string) => {
-    if (!text || typeof window === 'undefined' || !autoSpeak) {
-      stopSpeech();
-      return;
-    }
-
-    const bridge = getNativeBridge();
-    stopSpeech();
-    const speechGeneration = speechGenerationRef.current;
-    setSpeaking(true);
-    bridge?.setTaraSpeaking?.(true);
-
-    const finish = () => {
-      bridge?.setTaraSpeaking?.(false);
-      if (speechVisualTimerRef.current) window.clearTimeout(speechVisualTimerRef.current);
-      speechVisualTimerRef.current = null;
-      setSpeaking(false);
-    };
-
-    if (speechVisualTimerRef.current) window.clearTimeout(speechVisualTimerRef.current);
-    const estimatedMs = Math.min(30_000, Math.max(2200, text.length * 62));
-    speechVisualTimerRef.current = window.setTimeout(finish, estimatedMs);
-
-    void (async () => {
-      try {
-        const speech = await invokeShruthiSpeech(text);
-        if (speechGeneration !== speechGenerationRef.current) return;
-        if (!speech.success || !speech.audioBase64) throw new Error(speech.error || 'No Shruthi speech audio returned.');
-
-        const binary = atob(speech.audioBase64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-        const blob = new Blob([bytes], { type: speech.mimeType || 'audio/mpeg' });
-        const url = URL.createObjectURL(blob);
-        cloudAudioUrlRef.current = url;
-        const audio = new Audio(url);
-        cloudAudioRef.current = audio;
-        audio.preload = 'auto';
-        audio.onended = () => {
-          if (cloudAudioRef.current === audio) cloudAudioRef.current = null;
-          if (cloudAudioUrlRef.current === url) {
-            URL.revokeObjectURL(url);
-            cloudAudioUrlRef.current = null;
-          }
-          finish();
-        };
-        audio.onerror = () => {
-          if (cloudAudioRef.current === audio) cloudAudioRef.current = null;
-          if (cloudAudioUrlRef.current === url) {
-            URL.revokeObjectURL(url);
-            cloudAudioUrlRef.current = null;
-          }
-          finish();
-        };
-        await audio.play();
-      } catch {
-        // Voice identity is locked. Never fall back to Android/browser/default TTS.
-        // A speech failure stays silent rather than changing Shruthi's voice/persona.
-        finish();
-      }
-    })();
-  }, [autoSpeak, stopSpeech]);
 
   const tryResumePendingBrowserQuestion = useCallback(async (answerText: string) => {
     const { data: authData } = await supabase.auth.getSession();
@@ -425,7 +312,7 @@ export default function CentralHubVoiceAssistant() {
     setResponse(localResult);
     responseRef.current = localResult;
     return true;
-  }, [speak]);
+  }, []);
 
   const startNativeRealtime = useCallback(async () => {
     const native = getNativeBridge();
@@ -970,18 +857,8 @@ export default function CentralHubVoiceAssistant() {
         .nora-processing .nora-ring-b { animation-duration:4s; }
         .nora-minimal .nora-orb-core { background:#03070c; box-shadow:0 0 24px var(--nora-accent), inset 0 0 30px rgba(80,160,255,.08); }
         .nora-minimal .nora-orb-flow, .nora-minimal .nora-orb-stars { opacity:.04; }
-        .nora-waveform.nora-orb-shell, .nora-aurora.nora-orb-shell { transform:scaleX(1.08); }
-        .nora-waveform .nora-orb-core, .nora-aurora .nora-orb-core { border-radius:46% 54% 48% 52% / 55% 44% 56% 45%; animation:nora-morph 7s ease-in-out infinite; }
-        .nora-galaxy .nora-orb-stars { opacity:.95; animation:nora-spin 28s linear infinite; }
-        .nora-ripple .nora-ring-a { inset:-7%; box-shadow:0 0 0 18px rgba(60,140,255,.035), 0 0 0 40px rgba(60,140,255,.02); }
-        .nora-glass .nora-orb-core { border-radius:28%; transform:rotate(45deg); }
-        .nora-glass .nora-orb-flow, .nora-glass .nora-orb-stars { transform:rotate(-45deg); }
-        .nora-executive .nora-orb-core { box-shadow:0 0 34px color-mix(in srgb, var(--nora-accent) 60%, transparent), inset 0 0 62px rgba(0,0,0,.7); }
-        .nora-earth .nora-orb-core { background:radial-gradient(circle at 44% 35%, rgba(90,170,255,.5), transparent 25%), radial-gradient(circle at 55% 65%, #0b3a72, #020611 63%); }
-        .nora-holographic .nora-orb-core { background:repeating-radial-gradient(circle at center, rgba(64,160,255,.15) 0 2px, transparent 3px 9px), #020816; }
         .nora-wavebar { width:2px; height:8px; border-radius:9999px; background:var(--nora-accent); opacity:.45; }
         .nora-wavebar-live { animation:nora-wave 900ms ease-in-out infinite alternate; opacity:.95; box-shadow:0 0 7px var(--nora-accent); }
-        .nora-glass-card { border:1px solid rgba(255,255,255,.09); background:rgba(9,17,30,.68); backdrop-filter:blur(18px); border-radius:18px; padding:12px 14px; font-size:12px; color:#e7edf5; box-shadow:0 12px 38px rgba(0,0,0,.24); }
         .nora-card-label { display:block; margin-bottom:4px; font-size:8px; font-weight:800; text-transform:uppercase; letter-spacing:.19em; color:#718096; }
         .nora-processing-card { color:var(--nora-accent); }
         .nora-input { border:1px solid color-mix(in srgb, var(--nora-accent) 52%, rgba(255,255,255,.14)); border-radius:9999px; background:rgba(7,13,24,.72); backdrop-filter:blur(18px); box-shadow:0 0 24px rgba(0,0,0,.25), inset 0 0 22px rgba(255,255,255,.018); }
@@ -996,7 +873,6 @@ export default function CentralHubVoiceAssistant() {
         @keyframes nora-morph { 0%,100% { border-radius:46% 54% 48% 52% / 55% 44% 56% 45%; } 50% { border-radius:56% 44% 58% 42% / 43% 58% 42% 57%; } }
         @media (max-height: 700px) {
           .nora-orb-shell { width:min(31vh, 210px); }
-          .nora-glass-card { padding:9px 11px; }
         }
         @media (min-width: 700px) {
           .nora-orb-shell { width:min(35vw, 360px); }
