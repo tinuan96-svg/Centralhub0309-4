@@ -159,7 +159,7 @@ async function ensureSupportTicket(db:any, p:{
 
 const PRODUCT_SEARCH_STOP_WORDS = new Set(['a','an','and','any','are','available','can','do','for','have','i','in','is','me','of','please','show','some','the','u','want','we','with','you'])
 
-function normalizeProductSearchText(value) {
+function normalizeProductSearchText(value: unknown) {
   return String(value || '')
     .toLowerCase()
     .replace(/[’‘]/g, "'")
@@ -175,13 +175,13 @@ function normalizeProductSearchText(value) {
     .join(' ')
 }
 
-function productSearchTokens(value) {
+function productSearchTokens(value: unknown) {
   return normalizeProductSearchText(value)
     .split(/\s+/)
     .filter((token) => token.length > 1 && !PRODUCT_SEARCH_STOP_WORDS.has(token))
 }
 
-function productMatchScore(product, rawQuery) {
+function productMatchScore(product: any, rawQuery: unknown) {
   const tokens = productSearchTokens(rawQuery)
   if (!tokens.length) return 0
   const name = normalizeProductSearchText(product?.name)
@@ -198,7 +198,7 @@ function productMatchScore(product, rawQuery) {
   return score
 }
 
-function getStoreProductCredentials(slugValue) {
+function getStoreProductCredentials(slugValue: unknown) {
   const slug = String(slugValue || '').trim().toLowerCase()
   if (slug === 'malluspices') {
     return {
@@ -221,7 +221,7 @@ function getStoreProductCredentials(slugValue) {
   return { url: '', key: '' }
 }
 
-function storefrontCurrentPrice(product) {
+function storefrontCurrentPrice(product: any) {
   for (const value of [product?.discounted_price, product?.selling_price, product?.sale_price, product?.price]) {
     const n = Number(value)
     if (Number.isFinite(n) && n >= 0) return n
@@ -229,7 +229,7 @@ function storefrontCurrentPrice(product) {
   return null
 }
 
-function normalizeStorefrontProduct(product) {
+function normalizeStorefrontProduct(product: any) {
   const stock = Number(product?.stock_quantity ?? product?.stock ?? 0)
   const currentPrice = storefrontCurrentPrice(product)
   const regularPrice = Number(product?.price)
@@ -250,7 +250,7 @@ function normalizeStorefrontProduct(product) {
   }
 }
 
-async function searchStorefrontProducts(db, params) {
+async function searchStorefrontProducts(db: any, params: { storeId: string; storeSlug?: string | null; query: string }) {
   const query = String(params.query || '').trim()
   if (!query) return { source: 'none', authoritative: false, query, products: [], error: 'Product search query is empty.' }
 
@@ -270,11 +270,11 @@ async function searchStorefrontProducts(db, params) {
       if (error) throw error
 
       const products = (data || [])
-        .map((product) => ({ product, score: productMatchScore(product, query) }))
-        .filter((entry) => entry.score > 0)
-        .sort((a, b) => b.score - a.score || String(a.product?.name || '').localeCompare(String(b.product?.name || '')))
-        .map((entry) => normalizeStorefrontProduct(entry.product))
-        .filter((product) => product.available)
+        .map((product: any) => ({ product, score: productMatchScore(product, query) }))
+        .filter((entry: any) => entry.score > 0)
+        .sort((a: any, b: any) => b.score - a.score || String(a.product?.name || '').localeCompare(String(b.product?.name || '')))
+        .map((entry: any) => normalizeStorefrontProduct(entry.product))
+        .filter((product: any) => product.available)
         .slice(0, 10)
 
       return {
@@ -299,7 +299,7 @@ async function searchStorefrontProducts(db, params) {
     return { source: 'centralhub_fallback', authoritative: false, query, products: [], error: visibilityError.message }
   }
 
-  const productIds = (visibility || []).map((row) => row.product_id).filter(Boolean)
+  const productIds = (visibility || []).map((row: any) => row.product_id).filter(Boolean)
   if (!productIds.length) {
     return {
       source: 'centralhub_fallback',
@@ -320,11 +320,11 @@ async function searchStorefrontProducts(db, params) {
   if (error) return { source: 'centralhub_fallback', authoritative: false, query, products: [], error: error.message }
 
   const ranked = (products || [])
-    .map((product) => ({ product, score: productMatchScore(product, query) }))
-    .filter((entry) => entry.score > 0)
-    .sort((a, b) => b.score - a.score)
+    .map((product: any) => ({ product, score: productMatchScore(product, query) }))
+    .filter((entry: any) => entry.score > 0)
+    .sort((a: any, b: any) => b.score - a.score)
     .slice(0, 10)
-    .map((entry) => ({
+    .map((entry: any) => ({
       id: entry.product.id,
       name: entry.product.name,
       brand: entry.product.brand,
@@ -461,9 +461,9 @@ serve(async(req)=>{
           if (args.current_product_id) {
             const {data:affinity} = await db.from('product_affinity').select('product_b_id,co_purchase_count').eq('product_a_id',args.current_product_id).order('co_purchase_count',{ascending:false}).limit(3)
             if (affinity?.length) {
-              const ids = affinity.map((a)=>a.product_b_id)
+              const ids = affinity.map((a:any)=>a.product_b_id)
               const {data:products} = await db.from('products').select('id,name,price,brand,image_url').in('id',ids).eq('is_active',true)
-              recommendations = products?.map((p)=>({ ...p, recommendation_type:'cross_sell', reason:'Frequently bought together' })) || []
+              recommendations = products?.map((p:any)=>({ ...p, recommendation_type:'cross_sell', reason:'Frequently bought together' })) || []
             }
           }
           for (const rec of recommendations) await db.from('sales_recommendations').upsert({ conversation_id:conversationId, product_id:rec.id, recommendation_type:rec.recommendation_type, reason:rec.reason, status:'suggested' }, { onConflict:'conversation_id, product_id' })
@@ -476,7 +476,7 @@ serve(async(req)=>{
             const tr = await ensureSupportTicket(db, { storeId, conversationId, contactId, category:args.category || 'other', reason:args.reason || 'Customer request requires human assistance.', triggerMessageId })
             confirmedTicketId = tr.ticket.id
             result = { ticket_id:tr.ticket.id, status:tr.ticket.status, created:tr.created }
-          } catch (e) {
+          } catch (e:any) {
             result = { error:e?.message || 'Unable to create support ticket' }
           }
         } else if (name === 'track_customer_interest') {
