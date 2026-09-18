@@ -211,6 +211,30 @@ async function getSnapshot(db: any, userId: string, text: string) {
   return snapshot;
 }
 
+function externalBrowserTask(text: string) {
+  const value = String(text || '').toLowerCase();
+  const competitor = competitorBrowserTask(text);
+  if (competitor) return competitor;
+  const action = /\b(?:open|visit|browse|search|look\s*up|lookup|research|check|inspect|navigate|read|click|type|find|scan|create|start|set\s*up|setup|connect|configure|integrate|link|register|sign\s*up|signup|enable|add|manage|build|verify)\b|(?:സെറ്റപ്പ്|ക്രിയേറ്റ്|കണക്റ്റ്|തുടങ്ങ|ചെയ്യ|ചെക്ക്)|(?:செட்டப்|கிரியேட்|கனெக்ட்|தொடங்கு|செய்|செக்)/iu.test(value);
+  const search = /\b(?:search (?:the )?web|web search|google search|look up online|lookup online|find online|research online|search online)\b/iu.test(value);
+  const accountWork = /\b(?:account|page|profile|business|developer|app|integration|api|oauth|key|token|pixel|catalog|commerce|shop)\b/iu.test(value);
+  if (action && /\b(?:meta developer|meta for developers|facebook developer|developer\.facebook|developer app)\b/iu.test(value)) return {key:'meta_developer',system:'Meta for Developers',url:'https://developers.facebook.com/'};
+  if (action && /\b(?:meta business|business manager|business suite|facebook business|instagram business|meta ads|facebook ads|ads manager)\b/iu.test(value)) return {key:'meta_business',system:'Meta Business',url:'https://business.facebook.com/'};
+  if (action && /\binstagram\b/iu.test(value) && accountWork) return {key:'instagram',system:'Instagram',url:'https://www.instagram.com/'};
+  if (action && /\bfacebook\b/iu.test(value) && accountWork) return {key:'facebook',system:'Facebook',url:'https://www.facebook.com/'};
+  if (action && /\b(?:merchant center|google merchant|merchant account)\b/iu.test(value)) return {key:'google_merchant',system:'Google Merchant Center',url:'https://merchants.google.com/'};
+  if (action && /\b(?:google ads|adwords|ads account)\b/iu.test(value)) return {key:'google_ads',system:'Google Ads',url:'https://ads.google.com/'};
+  if (action && /\b(?:google analytics|ga4)\b/iu.test(value)) return {key:'google_analytics',system:'Google Analytics',url:'https://analytics.google.com/'};
+  if (action && /\b(?:search console|google search console)\b/iu.test(value)) return {key:'google_search_console',system:'Google Search Console',url:'https://search.google.com/search-console/'};
+  if (action && /\bgithub\b/iu.test(value)) return {key:'github',system:'GitHub',url:'https://github.com/'};
+  if (action && /\bnetlify\b/iu.test(value)) return {key:'netlify',system:'Netlify',url:'https://app.netlify.com/'};
+  if (action && /\bsupabase\b/iu.test(value)) return {key:'supabase',system:'Supabase',url:'https://supabase.com/dashboard/'};
+  const domain=value.match(/(?:https?:\/\/)?(?:www\.)?([a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)*\.[a-z]{2,})(?:\/[^\s]*)?/i);
+  if(action && domain?.[1]){const host=domain[1].replace(/^www\./i,'');return {key:'external_web',system:host,url:`https://${host}/`};}
+  if(search) return {key:'web_search',system:'Web Search',url:'https://www.google.com/'};
+  return null;
+}
+
 function instantReply(text: string) {
   const v = text.toLowerCase().trim().replace(/[.!?]+$/g, "").trim();
   if (/^(hi|hello|hey|hiya|good morning|good afternoon|good evening|ഹായ്|ഹലോ|നമസ്കാരം|வணக்கம்|ஹாய்|ஹலோ)$/iu.test(v)) {
@@ -330,6 +354,16 @@ Deno.serve(async (req: Request) => {
   let body:any; try{body=await req.json();}catch{return send(400,{success:false,error:"invalid_json"});}
   const action=String(body?.action||"");
 
+  if(action==="route_realtime"){
+    const text=normalizeCentralHubSpeech(String(body?.text||"").trim()).slice(0,6000);
+    if(!text) return send(400,{success:false,error:"missing_command"});
+    const task=externalBrowserTask(text);
+    if(!task) return send(200,{success:true,routed:false,status:"realtime_only"});
+    const final={reply:`Opening ${task.system} in Shruthi Live Web.`,intent:"external_web_action",mode:"developer",risk_level:"read_only",requires_confirmation:false,suggested_action:null,navigation_path:null,speak:false,browser_required:true,browser_target_key:task.key,browser_target_system:task.system,browser_target_url:task.url,browser_goal:text};
+    await storeHistory(db,user.id,text,final,{page_context:String(body?.page_context||"").slice(0,300),fast_path:true,model:"realtime-router",latency_ms:{snapshot:0,model:0,total:Date.now()-started}});
+    return send(200,{success:true,routed:true,status:"ready_for_computer",browser_target_key:task.key,browser_target_url:task.url});
+  }
+
   if(action==="transcribe"){
     if(!openaiKey) return send(503,{success:false,error:"openai_not_configured"});
     const audioBase64=String(body?.audioBase64||""), mimeType=String(body?.mimeType||"audio/webm").slice(0,80);
@@ -352,11 +386,11 @@ Deno.serve(async (req: Request) => {
   const text=normalizeCentralHubSpeech(String(body?.text||"").trim()).slice(0,6000), requestedMode=["operations","board","developer"].includes(String(body?.mode))?String(body.mode):"operations", pageContext=String(body?.page_context||"").trim().slice(0,300);
   if(!text) return send(400,{success:false,error:"missing_command"});
 
-  const competitorTask=competitorBrowserTask(text);
+  const competitorTask=externalBrowserTask(text);
   if(competitorTask){
     const final={
       reply:`I’ll check ${competitorTask.system} live now.`,
-      intent:"external_web_research",
+      intent:"external_web_action",
       mode:requestedMode,
       risk_level:"read_only",
       requires_confirmation:false,

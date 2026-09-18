@@ -40,6 +40,10 @@ type NativeBridge = {
   speakTara?: (text: string, languageTag: string) => boolean;
   stopTaraTts?: () => void;
   openNoraComputerMode?: (sessionId: string, targetUrl: string, accessToken: string, supabaseUrl: string) => boolean;
+  isShruthiRealtimeAvailable?: () => boolean;
+  startShruthiRealtime?: (accessToken: string, supabaseUrl: string, publishableKey: string) => boolean;
+  stopShruthiRealtime?: () => void;
+  interruptShruthiRealtime?: () => void;
 };
 
 type NativeTranscriptEvent = CustomEvent<{ text?: string }>;
@@ -219,6 +223,7 @@ export default function CentralHubVoiceAssistant() {
   const [autoSpeak, setAutoSpeak] = useState(true);
   const [noraSession, setNoraSession] = useState(false);
   const [nativeWakeAvailable, setNativeWakeAvailable] = useState(false);
+  const [realtimeState, setRealtimeState] = useState<'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 'reconnecting' | 'error'>('idle');
   const [themeId, setThemeId] = useState<NoraThemeId>('signature');
 
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -235,6 +240,7 @@ export default function CentralHubVoiceAssistant() {
   const cloudAudioUrlRef = useRef<string | null>(null);
   const turnGenerationRef = useRef(0);
   const speechGenerationRef = useRef(0);
+  const realtimeActiveRef = useRef(false);
 
   const theme = useMemo(() => THEMES.find((item) => item.id === themeId) || THEMES[0], [themeId]);
   const prompts = useMemo(() => quickPrompts(pathname), [pathname]);
@@ -294,6 +300,7 @@ export default function CentralHubVoiceAssistant() {
   }, []);
 
   const interruptPendingTurn = useCallback(() => {
+    if (realtimeActiveRef.current) getNativeBridge()?.interruptShruthiRealtime?.();
     turnGenerationRef.current += 1;
     processingRef.current = false;
     setProcessing(false);
@@ -302,6 +309,7 @@ export default function CentralHubVoiceAssistant() {
   }, [stopSpeech]);
 
   useEffect(() => () => {
+    if (realtimeActiveRef.current) getNativeBridge()?.stopShruthiRealtime?.();
     turnGenerationRef.current += 1;
     stopTracks();
     stopSpeech();
@@ -442,6 +450,37 @@ export default function CentralHubVoiceAssistant() {
     return true;
   }, [speak]);
 
+  const startNativeRealtime = useCallback(async () => {
+    const native = getNativeBridge();
+    if (native?.getPlatform?.() !== 'android' || native?.isShruthiRealtimeAvailable?.() !== true || !native.startShruthiRealtime) return false;
+    const { data } = await supabase.auth.getSession();
+    const authSession = data.session;
+    if (!authSession?.access_token) return false;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+    const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+    if (!supabaseUrl || !publishableKey) return false;
+    const started = native.startShruthiRealtime(authSession.access_token, supabaseUrl, publishableKey) === true;
+    if (started) {
+      realtimeActiveRef.current = true;
+      setRealtimeState('connecting');
+      setSession(true);
+      setOpen(true);
+      setError('');
+      stopSpeech();
+    }
+    return started;
+  }, [setSession, stopSpeech]);
+
+  const stopNativeRealtime = useCallback(() => {
+    getNativeBridge()?.stopShruthiRealtime?.();
+    realtimeActiveRef.current = false;
+    setRealtimeState('idle');
+    setRecording(false);
+    recordingRef.current = false;
+    setSpeaking(false);
+    setProcessing(false);
+  }, []);
+
   const runCommand = useCallback(async (text: string) => {
     const clean = text.trim();
     if (!clean) return;
@@ -485,6 +524,7 @@ export default function CentralHubVoiceAssistant() {
   }, [pathname, speak, stopSpeech, tryResumePendingBrowserQuestion]);
 
   const handleNativeTranscript = useCallback((rawText: string) => {
+    if (realtimeActiveRef.current) return;
     if (recordingRef.current) return;
     if (processingRef.current) interruptPendingTurn();
     const heard = String(rawText || '').trim();
@@ -523,6 +563,52 @@ export default function CentralHubVoiceAssistant() {
     const hasContext = Boolean(responseRef.current?.reply);
     if (woke || looksAddressedToNora(command, hasContext)) void runCommand(command);
   }, [chooseTheme, interruptPendingTurn, runCommand, setSession, speak]);
+
+  useEffect(() => {
+    const onState = (event: Event) => {
+      const state = String((event as CustomEvent<{ state?: string }>).detail?.state || 'idle') as 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 'reconnecting' | 'error';
+      setRealtimeState(state);
+      realtimeActiveRef.current = !['idle','error'].includes(state);
+      setRecording(state === 'listening');
+      recordingRef.current = state === 'listening';
+      setSpeaking(state === 'speaking');
+      setProcessing(state === 'thinking' || state === 'connecting' || state === 'reconnecting');
+    };
+    const onUser = (event: Event) => {
+      const text = String((event as CustomEvent<{ text?: string }>).detail?.text || '').trim();
+      if (!text) return;
+      setTranscript(text);
+      setSession(true);
+      void invokeVoice({ action:'route_realtime', text, page_context:pathname, assistant_name:'SHRUTHI' }).catch(() => {});
+    };
+    const onAssistant = (event: Event) => {
+      const text = String((event as CustomEvent<{ text?: string }>).detail?.text || '').trim();
+      if (!text) return;
+      const local: AssistantReply = { success:true, reply:text, intent:'realtime_voice', mode:inferMode(pathname,text), risk_level:'read_only', requires_confirmation:false, speak:false, status:'completed' };
+      setResponse(local);
+      responseRef.current = local;
+    };
+    const onError = (event: Event) => {
+      const message = String((event as CustomEvent<{ message?: string }>).detail?.message || 'Shruthi Realtime voice disconnected.');
+      setError(message);
+      realtimeActiveRef.current = false;
+      setRealtimeState('error');
+      setRecording(false);
+      recordingRef.current = false;
+      setSpeaking(false);
+      setProcessing(false);
+    };
+    window.addEventListener('centralhub:shruthi-realtime-state', onState as EventListener);
+    window.addEventListener('centralhub:shruthi-realtime-user-transcript', onUser as EventListener);
+    window.addEventListener('centralhub:shruthi-realtime-assistant-transcript', onAssistant as EventListener);
+    window.addEventListener('centralhub:shruthi-realtime-error', onError as EventListener);
+    return () => {
+      window.removeEventListener('centralhub:shruthi-realtime-state', onState as EventListener);
+      window.removeEventListener('centralhub:shruthi-realtime-user-transcript', onUser as EventListener);
+      window.removeEventListener('centralhub:shruthi-realtime-assistant-transcript', onAssistant as EventListener);
+      window.removeEventListener('centralhub:shruthi-realtime-error', onError as EventListener);
+    };
+  }, [pathname, setSession]);
 
   useEffect(() => {
     const bridge = getNativeBridge();
@@ -574,7 +660,9 @@ export default function CentralHubVoiceAssistant() {
   }, [runCommand, setSession, stopSpeech]);
 
   const startRecording = useCallback(async () => {
+    if (realtimeActiveRef.current) return;
     if (processingRef.current || recordingRef.current) return;
+    try { if (await startNativeRealtime()) return; } catch { /* use existing fallback */ }
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       setError('Microphone recording is not supported on this device. You can still type a command.');
       chooseTheme();
@@ -617,15 +705,17 @@ export default function CentralHubVoiceAssistant() {
       getNativeBridge()?.setTaraSpeaking?.(false);
       setError(e?.name === 'NotAllowedError' ? 'Microphone permission was not granted.' : (e?.message || 'Could not start the microphone.'));
     }
-  }, [chooseTheme, setSession, stopTracks, transcribeAndRun]);
+  }, [chooseTheme, setSession, startNativeRealtime, stopTracks, transcribeAndRun]);
 
   const stopRecording = useCallback(() => {
+    if (realtimeActiveRef.current) { stopNativeRealtime(); return; }
     const recorder = recorderRef.current;
     if (recorder?.state === 'recording') recorder.stop();
-  }, []);
+  }, [stopNativeRealtime]);
 
   const endConversation = useCallback(() => {
-    if (recordingRef.current) stopRecording();
+    if (realtimeActiveRef.current) stopNativeRealtime();
+    else if (recordingRef.current) stopRecording();
     stopTracks();
     stopSpeech();
     setSession(false);
@@ -634,7 +724,7 @@ export default function CentralHubVoiceAssistant() {
     setTranscript('');
     setResponse(null);
     setError('');
-  }, [setSession, stopRecording, stopSpeech, stopTracks]);
+  }, [setSession, stopNativeRealtime, stopRecording, stopSpeech, stopTracks]);
 
   const openNora = useCallback(() => {
     chooseTheme();
@@ -642,7 +732,7 @@ export default function CentralHubVoiceAssistant() {
     setOpen(true);
   }, [chooseTheme]);
 
-  const voiceState: VoiceState = processing ? 'processing' : speaking ? 'speaking' : recording ? 'listening' : (noraSession ? 'listening' : 'waiting');
+  const voiceState: VoiceState = realtimeState === 'speaking' ? 'speaking' : (realtimeState === 'connecting' || realtimeState === 'thinking' || realtimeState === 'reconnecting') ? 'processing' : realtimeState === 'listening' ? 'listening' : processing ? 'processing' : speaking ? 'speaking' : recording ? 'listening' : (noraSession ? 'listening' : 'waiting');
   const statusLabel =
     voiceState === 'processing' ? 'Processing…' :
     voiceState === 'speaking' ? 'Speaking…' :

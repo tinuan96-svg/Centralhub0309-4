@@ -25,6 +25,7 @@ const COMMAND_AUTO_LAUNCH_MAX_AGE_MS = 5 * 60 * 1000;
 
 const TARGETS: Target[] = [
   { key: 'meta_business', system: 'Meta Business', url: 'https://business.facebook.com/' },
+  { key: 'meta_developer', system: 'Meta for Developers', url: 'https://developers.facebook.com/' },
   { key: 'facebook', system: 'Facebook', url: 'https://www.facebook.com/' },
   { key: 'instagram', system: 'Instagram', url: 'https://www.instagram.com/' },
   { key: 'spotify', system: 'Spotify', url: 'https://www.spotify.com/' },
@@ -59,7 +60,8 @@ function targetFor(text: string): Target | null {
   if (/\b(search console|google search console)\b/.test(value)) return targetByKey('google_search_console');
   if (/\b(google business profile|google business|business profile)\b/.test(value)) return targetByKey('google_business');
   if (/\b(google account|gmail account)\b/.test(value)) return targetByKey('google_account');
-  if (/\b(instagram account|instagram profile|instagram signup|instagram sign up|create instagram|open instagram)\b/.test(value)) return targetByKey('instagram');
+  if (/\b(meta developer|meta for developers|facebook developer|developer app)\b/.test(value)) return targetByKey('meta_developer');
+  if (/\b(instagram account|instagram profile|instagram signup|instagram sign up|create instagram|open instagram|setup instagram|set up instagram|connect instagram)\b/.test(value)) return targetByKey('instagram');
   if (/\b(meta business|business manager|business suite|meta ads|facebook ads|ads manager|instagram business|connect instagram)\b/.test(value)) return targetByKey('meta_business');
   if (/\b(facebook account|facebook page|facebook)\b/.test(value)) return targetByKey('facebook');
   if (/\bspotify\b/.test(value)) return targetByKey('spotify');
@@ -168,7 +170,7 @@ export default function NoraComputerLauncher() {
 
     const interval = window.setInterval(() => {
       if (document.visibilityState === 'visible') void refresh();
-    }, 2000);
+    }, 1000);
     const onVisible = () => { if (document.visibilityState === 'visible') void refresh(); };
     document.addEventListener('visibilitychange', onVisible);
 
@@ -262,7 +264,7 @@ export default function NoraComputerLauncher() {
     if (!command || !target || !autoStart || busy || dismissed === command.id) return;
     if (autoStartedRef.current === command.id) return;
     autoStartedRef.current = command.id;
-    const timer = window.setTimeout(() => void start(), 220);
+    const timer = window.setTimeout(() => void start(), 80);
     return () => window.clearTimeout(timer);
   }, [autoStart, busy, command, dismissed, start, target]);
 

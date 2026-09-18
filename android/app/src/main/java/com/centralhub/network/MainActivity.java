@@ -64,6 +64,8 @@ public class MainActivity extends BridgeActivity {
     private Intent taraRecognizerIntent;
     private CentralHubNativeBridge nativeBridge;
     private ShruthiAudioPipe taraAudioPipe;
+    private ShruthiRealtimeVoiceClient shruthiRealtimeClient;
+    private volatile boolean shruthiRealtimeActive = false;
     private boolean taraEnabled = false;
     private boolean taraSpeaking = false;
     private boolean taraResumed = false;
@@ -764,6 +766,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void startTaraRecognizerIfReady() {
+        if (shruthiRealtimeActive) return;
         if (!taraEnabled || !taraResumed || taraListening) return;
         if (taraSpeaking && !noraConversationActive) return;
         if (taraRecognizer == null) setupTaraRecognizer();
@@ -821,6 +824,7 @@ public class MainActivity extends BridgeActivity {
 
     private void scheduleTaraRestart(long delayMs) {
         taraHandler.removeCallbacks(taraRestartRunnable);
+        if (shruthiRealtimeActive) return;
         if (!taraEnabled || !taraResumed || taraListening) return;
         if (taraSpeaking && !noraConversationActive) return;
         long minimumDelay = noraConversationActive ? 120L : 650L;
@@ -917,6 +921,51 @@ public class MainActivity extends BridgeActivity {
         webView.post(() -> webView.evaluateJavascript(script, null));
     }
 
+    public boolean isShruthiRealtimeAvailable() {
+        return checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    public boolean startShruthiRealtime(String accessToken, String supabaseUrl, String publishableKey) {
+        if (accessToken == null || accessToken.trim().isEmpty() || supabaseUrl == null || supabaseUrl.trim().isEmpty() || !isShruthiRealtimeAvailable()) return false;
+        try {
+            Uri backend = Uri.parse(supabaseUrl.trim());
+            if (!"https".equalsIgnoreCase(backend.getScheme()) || backend.getHost() == null || !backend.getHost().toLowerCase(Locale.ROOT).endsWith(".supabase.co")) return false;
+        } catch (Exception ignored) { return false; }
+        stopShruthiRealtime();
+        shruthiRealtimeActive = true;
+        runOnUiThread(this::stopTaraRecognizer);
+        ShruthiRealtimeVoiceClient client = new ShruthiRealtimeVoiceClient(this, accessToken.trim(), supabaseUrl.trim(), publishableKey == null ? "" : publishableKey.trim(), new ShruthiRealtimeVoiceClient.Listener() {
+            @Override public void onState(String state) { dispatchShruthiRealtimeEvent("state", "state", state); }
+            @Override public void onUserTranscript(String text) { dispatchShruthiRealtimeEvent("user-transcript", "text", text); }
+            @Override public void onAssistantTranscript(String text) { dispatchShruthiRealtimeEvent("assistant-transcript", "text", text); }
+            @Override public void onError(String message) { dispatchShruthiRealtimeEvent("error", "message", message); }
+        });
+        shruthiRealtimeClient = client;
+        client.connect();
+        return true;
+    }
+
+    public void interruptShruthiRealtime() {
+        ShruthiRealtimeVoiceClient client = shruthiRealtimeClient;
+        if (client != null) client.interrupt();
+    }
+
+    public void stopShruthiRealtime() {
+        ShruthiRealtimeVoiceClient client = shruthiRealtimeClient;
+        shruthiRealtimeClient = null;
+        shruthiRealtimeActive = false;
+        if (client != null) client.release();
+        if (taraEnabled && taraResumed) runOnUiThread(() -> scheduleTaraRestart(180L));
+    }
+
+    private void dispatchShruthiRealtimeEvent(String eventName, String key, String value) {
+        WebView webView = bridge == null ? null : bridge.getWebView();
+        if (webView == null) return;
+        String quoted = JSONObject.quote(value == null ? "" : value);
+        String script = "window.dispatchEvent(new CustomEvent('centralhub:shruthi-realtime-" + eventName + "',{detail:{" + key + ":" + quoted + "}}));";
+        webView.post(() -> webView.evaluateJavascript(script, null));
+    }
+
     @Override
     public void onResume() {
         super.onResume();
@@ -932,6 +981,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onPause() {
+        stopShruthiRealtime();
         taraResumed = false;
         clearPendingPartialWake();
         destroyTaraRecognizer();
@@ -940,6 +990,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onDestroy() {
+        stopShruthiRealtime();
         taraHandler.removeCallbacksAndMessages(null);
         destroyTaraRecognizer();
         if (nativeBridge != null) {

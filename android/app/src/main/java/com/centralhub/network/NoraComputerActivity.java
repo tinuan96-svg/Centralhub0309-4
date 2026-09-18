@@ -60,8 +60,8 @@ public final class NoraComputerActivity extends android.app.Activity {
     private static final String BROWSER_PREFS = "centralhub_live_web_browser";
     private static final int MAX_TABS = 8;
     private static final int WEB_PERMISSION_REQUEST_CODE = 4517;
-    private static final long PAGE_STABLE_MS = 700L;
-    private static final int PAGE_READY_MAX_ATTEMPTS = 28;
+    private static final long PAGE_STABLE_MS = 350L;
+    private static final int PAGE_READY_MAX_ATTEMPTS = 36;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
@@ -597,7 +597,7 @@ public final class NoraComputerActivity extends android.app.Activity {
         HttpURLConnection connection = (HttpURLConnection) new URL(agentEndpoint).openConnection();
         connection.setRequestMethod("POST");
         connection.setConnectTimeout(20_000);
-        connection.setReadTimeout(55_000);
+        connection.setReadTimeout(40_000);
         connection.setDoOutput(true);
         connection.setRequestProperty("Authorization", "Bearer " + accessToken);
         connection.setRequestProperty("Content-Type", "application/json");
@@ -644,11 +644,11 @@ public final class NoraComputerActivity extends android.app.Activity {
 
     private void executeActions(JSONArray actions, int index) {
         if (finishedOrDestroyed || manualControl) return;
-        if (actions == null || index >= actions.length()) { mainHandler.postDelayed(this::captureAndContinue, 450L); return; }
+        if (actions == null || index >= actions.length()) { mainHandler.postDelayed(this::captureAndContinue, 140L); return; }
         JSONObject action = actions.optJSONObject(index);
         if (action == null) { executeActions(actions, index + 1); return; }
         String type = action.optString("type", "");
-        long delay = "wait".equals(type) ? 2000L : 280L;
+        long delay = "wait".equals(type) ? 1100L : 120L;
         try {
             switch (type) {
                 case "click": tap((float) action.optDouble("x", 0), (float) action.optDouble("y", 0), false); break;
@@ -744,8 +744,9 @@ public final class NoraComputerActivity extends android.app.Activity {
             Bitmap bitmap = Bitmap.createBitmap(webView.getWidth(), webView.getHeight(), Bitmap.Config.ARGB_8888);
             Canvas canvas = new Canvas(bitmap); webView.draw(canvas);
             ByteArrayOutputStream output = new ByteArrayOutputStream();
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, output); bitmap.recycle();
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 84, output); bitmap.recycle();
             JSONObject extra = new JSONObject();
+            extra.put("screenshot_mime", "image/jpeg");
             extra.put("previous_response_id", lastResponseId);
             extra.put("call_id", lastCallId);
             extra.put("step_id", lastStepId);

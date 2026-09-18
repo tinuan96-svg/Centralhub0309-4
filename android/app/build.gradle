@@ -67,6 +67,8 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation 'androidx.biometric:biometric:1.1.0'
+    // Persistent low-latency Realtime WebSocket transport, matching Nivo.
+    implementation 'com.squareup.okhttp3:okhttp:5.1.0'
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
