@@ -339,6 +339,7 @@ async function storeHistory(db:any,userId:string,text:string,result:any,meta:any
   if (historyRes.error) console.error("voice history insert failed",historyRes.error.message);
   if (usageRes.error) console.error("voice usage insert failed",usageRes.error.message);
   return historyRes.data || null;
+}
 
 Deno.serve(async (req: Request) => {
   const started=Date.now();
