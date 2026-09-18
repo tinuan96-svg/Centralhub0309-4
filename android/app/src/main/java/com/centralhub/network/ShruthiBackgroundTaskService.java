@@ -12,6 +12,7 @@ import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.speech.tts.TextToSpeech;
+import androidx.core.app.NotificationCompat;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -292,10 +293,11 @@ public final class ShruthiBackgroundTaskService extends Service implements TextT
     }
 
     private Notification workNotification(String text) {
-        return new Notification.Builder(this, WORK_CHANNEL)
+        return new NotificationCompat.Builder(this, WORK_CHANNEL)
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentTitle("Shruthi Live Web is working")
                 .setContentText(shortText(text, 120))
+                .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setContentIntent(resumePendingIntent())
@@ -303,11 +305,12 @@ public final class ShruthiBackgroundTaskService extends Service implements TextT
     }
 
     private Notification helpNotification(String title, String message) {
-        return new Notification.Builder(this, HELP_CHANNEL)
+        return new NotificationCompat.Builder(this, HELP_CHANNEL)
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentTitle(title)
                 .setContentText(shortText(message, 150))
-                .setStyle(new Notification.BigTextStyle().bigText(message))
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(message))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setAutoCancel(true)
                 .setContentIntent(resumePendingIntent())
                 .build();
@@ -317,10 +320,11 @@ public final class ShruthiBackgroundTaskService extends Service implements TextT
         try {
             NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
             manager.cancel(HELP_NOTIFICATION_ID);
-            manager.notify(WORK_NOTIFICATION_ID, new Notification.Builder(this, WORK_CHANNEL)
+            manager.notify(WORK_NOTIFICATION_ID, new NotificationCompat.Builder(this, WORK_CHANNEL)
                     .setSmallIcon(R.mipmap.ic_launcher)
                     .setContentTitle("Shruthi Live Web")
                     .setContentText(text)
+                    .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                     .setAutoCancel(true)
                     .setOngoing(false)
                     .setContentIntent(resumePendingIntent())
