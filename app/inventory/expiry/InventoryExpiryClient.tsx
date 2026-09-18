@@ -7,7 +7,7 @@ import ProductImage from '@/components/ProductImage';
 export default function ExpiryPage({ params, searchParams }: { params: any; searchParams: any }) {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'expired' | '7days' | '30days'>('all');
+  const [filter, setFilter] = useState<'all' | 'expired' | '7days' | '20days'>('all');
 
   useEffect(() => { loadData(); }, []);
 
@@ -33,7 +33,7 @@ export default function ExpiryPage({ params, searchParams }: { params: any; sear
     const days = getDaysDiff(p.expiry_date);
     if (filter === 'expired') return days < 0;
     if (filter === '7days') return days >= 0 && days <= 7;
-    if (filter === '30days') return days >= 0 && days <= 30;
+    if (filter === '20days') return days >= 0 && days <= 20;
     return true;
   });
 
@@ -45,11 +45,11 @@ export default function ExpiryPage({ params, searchParams }: { params: any; sear
         <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-3">
           <span className="text-3xl">📅</span> Expiry Management
         </h1>
-        <p className="text-slate-400 text-sm mt-1">Track products nearing expiration to minimize wastage</p>
+        <p className="text-slate-400 text-sm mt-1">Products are blocked from sale at 20 days or less until expiry and remain listed here for expiry tracking</p>
       </div>
 
       <div className="flex gap-2">
-        {['all', 'expired', '7days', '30days'].map(f => (
+        {['all', 'expired', '7days', '20days'].map(f => (
           <button key={f} onClick={() => setFilter(f as any)} className={`px-4 py-2 rounded-xl text-xs font-bold uppercase transition-all border ${filter === f ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : 'bg-slate-800 text-slate-500 border-transparent'}`}>{f === 'all' ? 'Show All' : f.replace('days', ' Days')}</button>
         ))}
       </div>
