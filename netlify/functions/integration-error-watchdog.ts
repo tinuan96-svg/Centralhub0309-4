@@ -155,9 +155,39 @@ export default async function integrationErrorWatchdog() {
     error: first(row.error_message, `${row.provider_id || 'Marketing'} ${row.job_type || 'sync'} failed`), url: '/marketing', severity: 'warning',
   });
 
-  for (const row of webhookLogs.data || []) if (row.success === false || failed(row.status)) incidents.push({
+  // Only the newest webhook state for a product can create an alert.
+  // A later successful delivery resolves an earlier transient failure and must not keep
+  // generating fresh notifications in later time buckets.
+  const latestWebhookByProduct = new Map<string, any>();
+  for (const row of webhookLogs.data || []) {
+    const identity = str(row.product_id) || str(row.id);
+    if (!latestWebhookByProduct.has(identity)) latestWebhookByProduct.set(identity, row);
+  }
+
+  const webhookFailureText = (row: any) => {
+    try {
+      const parsed = JSON.parse(str(row.response_body));
+      const stores = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.stores) ? parsed.stores : [];
+      const failedStores = stores.filter((item: any) => item?.success === false);
+      if (failedStores.length) {
+        return failedStores.map((item: any) => {
+          const store = str(item?.store) || 'store';
+          const detail = first(item?.product_sync?.error, item?.variant_sync?.error, item?.error, 'sync failed');
+          return `${store}: ${detail}`;
+        }).join('; ');
+      }
+    } catch {
+      // Fall through to concise non-JSON fallback.
+    }
+    return first(
+      row.response,
+      `${row.event_type || 'Product webhook'} failed with HTTP ${row.status_code || 'unknown'}`,
+    );
+  };
+
+  for (const row of latestWebhookByProduct.values()) if (row.success === false || failed(row.status)) incidents.push({
     kind: 'products', source: 'webhook_logs', id: str(row.id), at: when(row.created_at),
-    error: first(row.response_body, row.response, `${row.event_type || 'Product webhook'} failed with HTTP ${row.status_code || 'unknown'}`), url: '/inventory', severity: 'critical',
+    error: webhookFailureText(row), url: '/inventory', severity: 'critical',
   });
 
   const groups = new Map<string, Incident[]>();
