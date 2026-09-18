@@ -8,6 +8,13 @@ export interface AuditProduct {
   sku: string | null;
   brand: string | null;
   category: string | null;
+  unit: string | null;
+  weight: number | null;
+  weight_kg: number | null;
+  weight_grams: number | null;
+  pack_size: number | null;
+  pack_unit: string | null;
+  variant_group_key: string | null;
   warehouse_location: string | null;
   is_active: boolean;
   is_published: boolean;
@@ -36,6 +43,13 @@ const mapProduct = (product: any): AuditProduct => {
     sku: product.sku,
     brand: product.brand,
     category: product.category,
+    unit: product.unit ?? null,
+    weight: product.weight == null ? null : Number(product.weight),
+    weight_kg: product.weight_kg == null ? null : Number(product.weight_kg),
+    weight_grams: product.weight_grams == null ? null : Number(product.weight_grams),
+    pack_size: product.pack_size == null ? null : Number(product.pack_size),
+    pack_unit: product.pack_unit ?? null,
+    variant_group_key: product.variant_group_key ?? null,
     warehouse_location: product.warehouse_location,
     is_active: product.is_active,
     is_published: product.is_published,
@@ -253,6 +267,13 @@ export class AuditService {
       sku: data.sku,
       brand: data.brand,
       category: data.category,
+      unit: data.unit ?? null,
+      weight: data.weight == null ? null : Number(data.weight),
+      weight_kg: data.weight_kg == null ? null : Number(data.weight_kg),
+      weight_grams: data.weight_grams == null ? null : Number(data.weight_grams),
+      pack_size: data.pack_size == null ? null : Number(data.pack_size),
+      pack_unit: data.pack_unit ?? null,
+      variant_group_key: data.variant_group_key ?? null,
       warehouse_location: data.warehouse_location,
       is_active: data.is_active,
       is_published: data.is_published,
