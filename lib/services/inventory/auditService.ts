@@ -29,6 +29,14 @@ export interface BinLocation {
   stock_quantity: number;
 }
 
+export interface ExpiryBatch {
+  id?: string;
+  batch_id: string | null;
+  expiry_date: string;
+  quantity: number;
+  remaining_quantity?: number;
+}
+
 const mapProduct = (product: any): AuditProduct => {
   const inventory = Array.isArray(product.central_inventory) ? product.central_inventory[0] : product.central_inventory;
   return {
@@ -74,16 +82,40 @@ export class AuditService {
     return data || [];
   }
 
+  static async getExpiryBatches(productId: string): Promise<ExpiryBatch[]> {
+    const { data, error } = await supabase
+      .from('product_expiry')
+      .select('id,batch_id,expiry_date,quantity,remaining_quantity')
+      .eq('product_id', productId)
+      .gt('remaining_quantity', 0)
+      .order('expiry_date', { ascending: true })
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('[AuditService] Error loading expiry batches:', error);
+      return [];
+    }
+
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      batch_id: row.batch_id || null,
+      expiry_date: row.expiry_date,
+      quantity: Number(row.remaining_quantity ?? row.quantity ?? 0),
+      remaining_quantity: Number(row.remaining_quantity ?? row.quantity ?? 0),
+    }));
+  }
+
   static async performAudit(params: {
     productId: string;
     totalStock: number;
     bins: { location_code: string; stock_quantity: number }[];
     expiryDate?: string | null;
+    expiryBatches?: ExpiryBatch[];
     notes?: string;
     userId?: string;
     gtin?: string;
   }): Promise<boolean> {
-    const { productId, totalStock, bins, expiryDate, notes, userId, gtin } = params;
+    const { productId, totalStock, bins, expiryDate, expiryBatches, notes, userId, gtin } = params;
     const auditedAt = new Date().toISOString();
     const auditNote = notes?.trim() || `Physical stock audit across ${bins.length} location${bins.length === 1 ? '' : 's'}`;
 
@@ -106,13 +138,13 @@ export class AuditService {
 
       const productUpdate: any = {
         warehouse_location: primaryLocation,
-        expiry_date: expiryDate || null,
         last_audited_at: auditedAt,
         last_audited_by: userId || null,
         audit_notes: auditNote,
         updated_at: auditedAt
       };
       if (gtin) productUpdate.gtin = gtin;
+      if (expiryBatches === undefined) productUpdate.expiry_date = expiryDate || null;
 
       const { error: productError } = await supabase
         .from('products')
@@ -193,6 +225,31 @@ export class AuditService {
         created_at: auditedAt
       }]);
       if (logError) console.warn('[AuditService] secondary inventory_logs write failed:', logError.message);
+
+      if (expiryBatches !== undefined) {
+        const cleanBatches = expiryBatches
+          .map(batch => ({
+            batch_id: batch.batch_id?.trim() || null,
+            expiry_date: batch.expiry_date,
+            quantity: Math.max(0, Number(batch.quantity) || 0),
+          }))
+          .filter(batch => batch.quantity > 0);
+
+        const expiryTotal = cleanBatches.reduce((sum, batch) => sum + batch.quantity, 0);
+        if (cleanBatches.length > 0 && expiryTotal !== totalStock) {
+          throw new Error(`Expiry batch quantities (${expiryTotal}) must equal audited stock total (${totalStock}).`);
+        }
+        if (cleanBatches.some(batch => !batch.expiry_date)) {
+          throw new Error('Every non-zero expiry batch needs an expiry date.');
+        }
+
+        const { error: expiryBatchError } = await supabase.rpc('replace_product_expiry_batches_for_audit', {
+          p_product_id: productId,
+          p_batches: cleanBatches,
+          p_total_stock: totalStock,
+        });
+        if (expiryBatchError) throw expiryBatchError;
+      }
 
       try {
         await StockSyncService.syncStockToAllWebsites(productId, totalStock);
