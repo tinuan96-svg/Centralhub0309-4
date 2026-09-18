@@ -231,6 +231,7 @@ function externalBrowserTask(text: string) {
   if (action && /\bsupabase\b/iu.test(value)) return {key:'supabase',system:'Supabase',url:'https://supabase.com/dashboard/'};
   const domain=value.match(/(?:https?:\/\/)?(?:www\.)?([a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)*\.[a-z]{2,})(?:\/[^\s]*)?/i);
   if(action && domain?.[1]){const host=domain[1].replace(/^www\./i,'');return {key:'external_web',system:host,url:`https://${host}/`};}
+  if (action && /\b(?:web\s*session|websession|live\s*web|browser)\b/iu.test(value)) return {key:'web_search',system:'Shruthi Live Web',url:'https://www.google.com/'};
   if(search) return {key:'web_search',system:'Web Search',url:'https://www.google.com/'};
   return null;
 }
@@ -325,7 +326,7 @@ async function storeHistory(db:any,userId:string,text:string,result:any,meta:any
     db.from("voice_assistant_commands").insert({
       user_id:userId, mode:result.mode || "operations", input_text:text, response_text:result.reply, intent:result.intent || "general", risk_level:result.risk_level || "read_only", requires_confirmation:false, action_name:null,
       action_payload:{ assistant_name:"Shruthi", access_mode:"page_independent_read_only", ...browserPayload, ...meta }, status:"completed"
-    }),
+    }).select("id,status,action_payload").single(),
     db.from("ai_usage_logs").insert({
       feature:"centralhub_voice_assistant",
       model,
@@ -337,7 +338,7 @@ async function storeHistory(db:any,userId:string,text:string,result:any,meta:any
   ]);
   if (historyRes.error) console.error("voice history insert failed",historyRes.error.message);
   if (usageRes.error) console.error("voice usage insert failed",usageRes.error.message);
-}
+  return historyRes.data || null;
 
 Deno.serve(async (req: Request) => {
   const started=Date.now();
@@ -354,14 +355,48 @@ Deno.serve(async (req: Request) => {
   let body:any; try{body=await req.json();}catch{return send(400,{success:false,error:"invalid_json"});}
   const action=String(body?.action||"");
 
+  if(action==="record_realtime_turn"){
+    const userText=normalizeCentralHubSpeech(String(body?.user_text||"").trim()).slice(0,6000);
+    const assistantText=String(body?.assistant_text||"").trim().slice(0,7000);
+    if(!userText||!assistantText) return send(400,{success:false,error:"missing_realtime_turn"});
+    const {error:historyError}=await db.from("voice_assistant_commands").insert({
+      user_id:user.id,
+      mode:"operations",
+      input_text:userText,
+      response_text:assistantText,
+      intent:"realtime_voice",
+      risk_level:"read_only",
+      requires_confirmation:false,
+      action_name:null,
+      action_payload:{assistant_name:"Shruthi",source:"realtime_voice",browser_required:false,page_context:String(body?.page_context||"").slice(0,300)},
+      status:"completed"
+    });
+    if(historyError){
+      console.error("realtime turn history insert failed",historyError.message);
+      return send(500,{success:false,error:"realtime_history_failed"});
+    }
+    return send(200,{success:true,status:"recorded"});
+  }
+
   if(action==="route_realtime"){
     const text=normalizeCentralHubSpeech(String(body?.text||"").trim()).slice(0,6000);
     if(!text) return send(400,{success:false,error:"missing_command"});
     const task=externalBrowserTask(text);
     if(!task) return send(200,{success:true,routed:false,status:"realtime_only"});
     const final={reply:`Opening ${task.system} in Shruthi Live Web.`,intent:"external_web_action",mode:"operations",risk_level:"read_only",requires_confirmation:false,suggested_action:null,navigation_path:null,speak:false,browser_required:true,browser_target_key:task.key,browser_target_system:task.system,browser_target_url:task.url,browser_goal:text};
-    await storeHistory(db,user.id,text,final,{page_context:String(body?.page_context||"").slice(0,300),fast_path:true,model:"realtime-router",latency_ms:{snapshot:0,model:0,total:Date.now()-started}});
-    return send(200,{success:true,routed:true,status:"ready_for_computer",browser_target_key:task.key,browser_target_url:task.url});
+    const stored=await storeHistory(db,user.id,text,final,{page_context:String(body?.page_context||"").slice(0,300),fast_path:true,model:"realtime-router",latency_ms:{snapshot:0,model:0,total:Date.now()-started}});
+    const routedPayload=(stored?.action_payload && typeof stored.action_payload==="object") ? stored.action_payload : {};
+    return send(200,{
+      success:true,
+      routed:true,
+      status:String(stored?.status||"ready_for_computer"),
+      command_id:stored?.id||null,
+      browser_required:true,
+      browser_target_key:routedPayload.computer_target_key||task.key,
+      browser_target_system:routedPayload.computer_target_system||task.system,
+      browser_target_url:routedPayload.computer_target_url||task.url,
+      browser_goal:routedPayload.computer_goal||text
+    });
   }
 
   if(action==="transcribe"){

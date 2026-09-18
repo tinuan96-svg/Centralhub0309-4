@@ -21,6 +21,13 @@ type AssistantReply = {
   status?: string;
   error?: string;
   upstream_code?: string | null;
+  routed?: boolean;
+  command_id?: string | null;
+  browser_required?: boolean;
+  browser_target_key?: string | null;
+  browser_target_system?: string | null;
+  browser_target_url?: string | null;
+  browser_goal?: string | null;
 };
 
 type NativeBridge = {
@@ -200,6 +207,7 @@ export default function CentralHubVoiceAssistant() {
   const themeRef = useRef<NoraThemeId>('signature');
   const turnGenerationRef = useRef(0);
   const realtimeActiveRef = useRef(false);
+  const pendingRealtimeUserRef = useRef('');
 
   const theme = useMemo(() => THEMES.find((item) => item.id === themeId) || THEMES[0], [themeId]);
   const prompts = useMemo(() => quickPrompts(pathname), [pathname]);
@@ -361,8 +369,87 @@ export default function CentralHubVoiceAssistant() {
     setProcessing(false);
   }, []);
 
-  const routeRealtimeExternalTask = useCallback((text: string) => {
-    void invokeVoice({ action:'route_realtime', text, page_context:pathname, assistant_name:'SHRUTHI' }).catch(() => {});
+  const routeRealtimeExternalTask = useCallback(async (text: string) => {
+    try {
+      const routed = await invokeVoice({ action:'route_realtime', text, page_context:pathname, assistant_name:'SHRUTHI' });
+      if (!routed?.routed || !routed.browser_required) return false;
+
+      // Stop the generic Realtime answer as soon as this becomes a real browser task.
+      getNativeBridge()?.interruptShruthiRealtime?.();
+
+      const targetUrl = safePublicHttps(routed.browser_target_url);
+      const targetSystem = String(routed.browser_target_system || 'Shruthi Live Web').trim() || 'Shruthi Live Web';
+      const targetKey = String(routed.browser_target_key || 'external_web').trim() || 'external_web';
+      if (!targetUrl) throw new Error('Shruthi resolved the browser task without a safe target URL.');
+
+      const { data: sessionData } = await supabase.auth.getSession();
+      const authSession = sessionData.session;
+      if (!authSession?.user || !authSession.access_token) throw new Error('Your CentralHub session has expired.');
+
+      const native = getNativeBridge();
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+      if (native?.getPlatform?.() !== 'android' || !native.openNoraComputerMode || !supabaseUrl) {
+        throw new Error('Shruthi Live Web requires the current CentralHub Android app.');
+      }
+
+      const { data: actionSession, error: insertError } = await supabase
+        .from('nora_action_sessions')
+        .insert({
+          user_id: authSession.user.id,
+          title: `Shruthi · ${targetSystem}`,
+          goal: String(routed.browser_goal || text),
+          target_system: targetSystem,
+          target_url: targetUrl,
+          status: 'planned',
+          risk_level: 'medium',
+          current_step: `Opening ${targetSystem}`,
+          metadata: {
+            source: 'realtime_direct',
+            source_voice_command_id: routed.command_id || null,
+            target_key: targetKey,
+            auto_started: true,
+          },
+        })
+        .select('id')
+        .single();
+      if (insertError || !actionSession?.id) throw new Error(insertError?.message || 'Could not create Shruthi Live Web session.');
+
+      if (routed.command_id) {
+        await supabase.rpc('complete_voice_computer_command', {
+          p_command_id: routed.command_id,
+          p_session_id: actionSession.id,
+          p_target_key: targetKey,
+          p_target_url: targetUrl,
+        });
+      }
+
+      const launched = native.openNoraComputerMode(actionSession.id, targetUrl, authSession.access_token, supabaseUrl) === true;
+      if (!launched) {
+        await supabase.from('nora_action_sessions').update({
+          status: 'failed',
+          last_error: 'Android Live Web activity could not launch.',
+          completed_at: new Date().toISOString(),
+        }).eq('id', actionSession.id);
+        throw new Error('Android Live Web could not launch. Reopen/update CentralHub and try again.');
+      }
+
+      const local: AssistantReply = {
+        success:true,
+        reply:`Opening ${targetSystem} in Shruthi Live Web.`,
+        intent:'external_web_action',
+        mode:'operations',
+        risk_level:'read_only',
+        requires_confirmation:false,
+        speak:false,
+        status:'running',
+      };
+      setResponse(local);
+      responseRef.current = local;
+      return true;
+    } catch (error: any) {
+      setError(error?.message || 'Could not start Shruthi Live Web.');
+      return false;
+    }
   }, [pathname]);
 
   const runCommand = useCallback(async (text: string) => {
@@ -450,7 +537,8 @@ export default function CentralHubVoiceAssistant() {
       if (!text) return;
       setTranscript(text);
       setSession(true);
-      routeRealtimeExternalTask(text);
+      pendingRealtimeUserRef.current = text;
+      void routeRealtimeExternalTask(text);
     };
     const onAssistant = (event: Event) => {
       const text = String((event as CustomEvent<{ text?: string }>).detail?.text || '').trim();
@@ -458,6 +546,17 @@ export default function CentralHubVoiceAssistant() {
       const local: AssistantReply = { success:true, reply:text, intent:'realtime_voice', mode:inferMode(pathname,text), risk_level:'read_only', requires_confirmation:false, speak:false, status:'completed' };
       setResponse(local);
       responseRef.current = local;
+      const userText = pendingRealtimeUserRef.current.trim();
+      pendingRealtimeUserRef.current = '';
+      if (userText) {
+        void invokeVoice({
+          action:'record_realtime_turn',
+          user_text:userText,
+          assistant_text:text,
+          page_context:pathname,
+          assistant_name:'SHRUTHI',
+        }).catch(() => {});
+      }
     };
     const onError = (event: Event) => {
       const message = String((event as CustomEvent<{ message?: string }>).detail?.message || 'Shruthi Realtime voice disconnected.');
