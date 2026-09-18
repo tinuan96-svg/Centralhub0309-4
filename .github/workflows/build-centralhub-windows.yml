@@ -38,6 +38,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: CentralHub-Windows-x64-${{ github.sha }}
-          path: desktop/dist/*.exe
+          path: desktop/dist/**/*.exe
           if-no-files-found: error
           retention-days: 30

@@ -6,7 +6,9 @@
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",
-    "dist:win": "electron-builder --win nsis portable --x64"
+    "dist:win:installer": "electron-builder --win nsis --x64 --config.directories.output=dist/installer",
+    "dist:win:portable": "electron-builder --win portable --x64 --config.directories.output=dist/portable",
+    "dist:win": "npm run dist:win:installer && npm run dist:win:portable"
   },
   "devDependencies": {
     "electron": "^39.0.0",
@@ -23,10 +25,20 @@
     ],
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
-      "artifactName": "CentralHub-Windows-x64-${version}-${ext}"
+      "artifactName": "CentralHub-Windows-x64-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -35,5 +47,6 @@
       "createStartMenuShortcut": true,
       "shortcutName": "CentralHub"
     }
-  }
+  },
+  "author": "CentralHub"
 }
