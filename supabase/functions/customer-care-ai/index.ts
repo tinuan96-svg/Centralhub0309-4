@@ -340,6 +340,201 @@ async function searchStorefrontProducts(db: any, params: { storeId: string; stor
   }
 }
 
+
+async function getOrCreateWhatsappCart(db: any, p: { storeId: string; conversationId: string; contactId: string }) {
+  const now = new Date().toISOString()
+  const { data: existing, error: existingError } = await db.from('whatsapp_carts')
+    .select('id,status,currency')
+    .eq('store_id', p.storeId)
+    .eq('conversation_id', p.conversationId)
+    .maybeSingle()
+  if (existingError) throw existingError
+
+  if (existing) {
+    if (existing.status === 'converted' || existing.status === 'abandoned') {
+      await db.from('whatsapp_cart_items').delete().eq('cart_id', existing.id)
+    }
+    const { data: cart, error } = await db.from('whatsapp_carts')
+      .update({
+        contact_id: p.contactId,
+        status: 'active',
+        converted_order_id: null,
+        updated_at: now,
+        last_activity_at: now,
+      })
+      .eq('id', existing.id)
+      .select('id,status,currency')
+      .single()
+    if (error) throw error
+    return cart
+  }
+
+  const { data: cart, error } = await db.from('whatsapp_carts').insert({
+    store_id: p.storeId,
+    conversation_id: p.conversationId,
+    contact_id: p.contactId,
+    status: 'active',
+    currency: 'GBP',
+    updated_at: now,
+    last_activity_at: now,
+  }).select('id,status,currency').single()
+  if (error) throw error
+  return cart
+}
+
+async function readWhatsappCart(db: any, cartId: string) {
+  const { data, error } = await db.from('whatsapp_cart_items')
+    .select('id,storefront_product_id,centralhub_product_id,variant_id,product_name,brand,quantity,unit_price,regular_price,currency,stock_snapshot,product_url,image_url,created_at')
+    .eq('cart_id', cartId)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return data || []
+}
+
+function whatsappCartSummary(items: any[]) {
+  const subtotal = items.reduce((sum, item) => sum + Number(item.unit_price || 0) * Number(item.quantity || 0), 0)
+  return {
+    currency: 'GBP',
+    distinct_items: items.length,
+    item_count: items.reduce((sum, item) => sum + Number(item.quantity || 0), 0),
+    subtotal: Number(subtotal.toFixed(2)),
+    items: items.map((item) => ({
+      line_id: item.id,
+      storefront_product_id: item.storefront_product_id,
+      centralhub_product_id: item.centralhub_product_id,
+      variant_id: item.variant_id,
+      name: item.product_name,
+      brand: item.brand,
+      quantity: item.quantity,
+      unit_price: Number(item.unit_price),
+      line_total: Number((Number(item.unit_price || 0) * Number(item.quantity || 0)).toFixed(2)),
+      product_url: item.product_url,
+    })),
+    note: 'Delivery and any final offer adjustments are calculated and revalidated on the storefront at checkout.',
+  }
+}
+
+async function getStorefrontProductForCart(params: { storeSlug?: string | null; storeDomain?: string | null; productId: string; variantId?: string | null }) {
+  const creds = getStoreProductCredentials(params.storeSlug)
+  if (!creds.url || !creds.key) return { error: 'This store is not enabled for WhatsApp cart checkout yet.' }
+
+  const remote = createClient(creds.url, creds.key)
+  const { data: product, error } = await remote.from('products')
+    .select('id,centralhub_product_id,name,slug,brand,price,sale_price,selling_price,discounted_price,stock_quantity,stock,in_stock,is_active,is_deleted,is_published,approval_status,visibility_status,product_type,backorder_enabled,weight,unit,weight_grams,gtin,image_url,images')
+    .eq('id', params.productId)
+    .eq('is_active', true)
+    .eq('is_deleted', false)
+    .eq('is_published', true)
+    .eq('approval_status', 'approved')
+    .eq('visibility_status', 'visible')
+    .maybeSingle()
+
+  if (error) return { error: error.message }
+  if (!product) return { error: 'That product is no longer available on the storefront.' }
+
+  const domain = String(params.storeDomain || '').replace(/^https?:\/\//, '').replace(/\/$/, '')
+  const productUrl = domain && product.slug ? `https://${domain}/product/${product.slug}` : null
+
+  if (product.product_type === 'variable') {
+    const { data: variants, error: variantError } = await remote.from('product_variants')
+      .select('id,label,variant_name,price,sale_price,discounted_price,stock_quantity,stock,in_stock,is_active,backorder_enabled,weight,unit,weight_grams')
+      .eq('product_id', product.id)
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true })
+    if (variantError) return { error: variantError.message }
+
+    const availableVariants = (variants || []).filter((variant: any) => {
+      const stock = Number(variant.stock_quantity ?? variant.stock ?? 0)
+      return variant.backorder_enabled === true || (variant.in_stock !== false && stock > 0)
+    }).map((variant: any) => {
+      const currentPrice = storefrontCurrentPrice(variant)
+      return {
+        id: variant.id,
+        label: variant.label || variant.variant_name || 'Option',
+        current_price: currentPrice,
+        regular_price: Number(variant.price),
+        stock_quantity: Number(variant.stock_quantity ?? variant.stock ?? 0),
+        backorder_enabled: variant.backorder_enabled === true,
+        weight: variant.weight,
+        unit: variant.unit,
+      }
+    })
+
+    if (!params.variantId) {
+      return {
+        requires_variant: true,
+        product: { id: product.id, name: product.name, brand: product.brand, product_url: productUrl },
+        variants: availableVariants,
+      }
+    }
+
+    const selected = (variants || []).find((variant: any) => variant.id === params.variantId)
+    if (!selected) return { error: 'That product option is not available.' }
+
+    const stock = Number(selected.stock_quantity ?? selected.stock ?? 0)
+    const backorder = selected.backorder_enabled === true
+    if (!backorder && (selected.in_stock === false || stock <= 0)) return { error: 'That product option is out of stock.' }
+
+    const currentPrice = storefrontCurrentPrice(selected)
+    if (currentPrice === null) return { error: 'Current price could not be confirmed.' }
+
+    return {
+      id: product.id,
+      centralhub_product_id: product.centralhub_product_id || null,
+      variant_id: selected.id,
+      variant_name: selected.label || selected.variant_name || null,
+      name: product.name,
+      brand: product.brand || null,
+      current_price: currentPrice,
+      regular_price: Number(selected.price),
+      stock_quantity: stock,
+      max_quantity: backorder ? 99 : stock,
+      backorder_enabled: backorder,
+      product_url: productUrl,
+      image_url: product.image_url || (Array.isArray(product.images) ? product.images[0] : null) || null,
+    }
+  }
+
+  const stock = Number(product.stock_quantity ?? product.stock ?? 0)
+  const backorder = product.backorder_enabled === true
+  if (!backorder && (product.in_stock === false || stock <= 0)) return { error: 'That product is out of stock.' }
+
+  const currentPrice = storefrontCurrentPrice(product)
+  if (currentPrice === null) return { error: 'Current price could not be confirmed.' }
+
+  return {
+    id: product.id,
+    centralhub_product_id: product.centralhub_product_id || null,
+    variant_id: null,
+    variant_name: null,
+    name: product.name,
+    brand: product.brand || null,
+    current_price: currentPrice,
+    regular_price: Number(product.price),
+    stock_quantity: stock,
+    max_quantity: backorder ? 99 : stock,
+    backorder_enabled: backorder,
+    product_url: productUrl,
+    image_url: product.image_url || (Array.isArray(product.images) ? product.images[0] : null) || null,
+  }
+}
+
+function encodeWhatsappCartPayload(items: any[]) {
+  const payload = {
+    v: 1,
+    i: items.map((item) => ({
+      p: item.storefront_product_id,
+      q: Number(item.quantity),
+      ...(item.variant_id ? { v: item.variant_id } : {}),
+    })),
+  }
+  const raw = JSON.stringify(payload)
+  const bytes = new TextEncoder().encode(raw)
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
 const BASE_PROMPT = `You are the AI Sales & Customer Support Assistant for CentralHub stores.
 You are speaking directly with a real customer on WhatsApp. Be professional, friendly, calm, helpful and concise. Never sound robotic, defensive or overly formal.
 - Reply in the same language the customer uses, including Malayalam when appropriate.
@@ -350,7 +545,12 @@ You are speaking directly with a real customer on WhatsApp. Be professional, fri
 - For broad catalogue questions (for example pickles, rice, masalas), show several relevant in-stock options returned by search_products instead of choosing one arbitrary item.
 - For short confirmations such as “yes”, “that one” or “this”, resolve the referenced product from the conversation and re-check that exact product with search_products before answering.
 - Quote current_price from search_products as the current selling price. If on_sale=true and regular_price is higher, you may mention the regular price too.
-- Never offer to place an order, add an item to a cart, or claim checkout is complete because no ordering tool is available in this chat.
+- You can manage a store-scoped WhatsApp shopping cart with get_cart, add_to_cart, update_cart_item, remove_from_cart, clear_cart and create_checkout_link.
+- Only add an item when the customer clearly chooses it. A short reply such as “yes” counts as consent when your immediately previous message clearly asked whether to add that exact product to the cart.
+- After a cart change, briefly confirm what changed and give the current cart subtotal. Ask whether the customer wants to continue shopping or checkout.
+- If a product requires a variant/size, use the options returned by add_to_cart and ask the customer which one they want before adding it.
+- When the customer asks to checkout, pay, or complete the purchase, call create_checkout_link and send the returned checkout_url. The website revalidates live price, stock, offers, delivery and payment.
+- Never claim the order is placed, paid, or confirmed from the WhatsApp cart itself. The order is only created by the storefront checkout flow.
 - If the requested product/data cannot be found, or you do not have enough reliable information to answer, escalate to a human using create_support_ticket. Do not simply tell the customer to contact the store without creating the ticket.
 - If the customer asks for something outside your available capabilities, requires a human decision, or reports a problem that cannot be resolved with the available tools, you MUST use create_support_ticket.
 - Explicit requests to speak to a human/agent are handled deterministically before this prompt is called.
@@ -411,6 +611,12 @@ serve(async(req)=>{
       {name:'get_latest_order',description:'Get the most recent order for this customer by phone number.',parameters:{type:'object',properties:{phone:{type:'string'}},required:['phone']}},
       {name:'get_tracking_status',description:'Get delivery tracking for an order number.',parameters:{type:'object',properties:{order_number:{type:'string'}},required:['order_number']}},
       {name:'search_products',description:'Search the CURRENT STORE storefront source-of-truth for customer-visible, approved, published, in-stock products and current selling prices. Use this for every product availability or price statement. Broad queries can return multiple options.',parameters:{type:'object',properties:{query:{type:'string'}},required:['query']}},
+      {name:'get_cart',description:'Get the current WhatsApp shopping cart for this conversation.',parameters:{type:'object',properties:{}}},
+      {name:'add_to_cart',description:'Add a confirmed storefront product to the WhatsApp cart. Use storefront_product_id from search_products. For variable products, pass variant_id after the customer chooses an option.',parameters:{type:'object',properties:{storefront_product_id:{type:'string'},quantity:{type:'integer',minimum:1,maximum:99},variant_id:{type:'string'}},required:['storefront_product_id']}},
+      {name:'update_cart_item',description:'Set the quantity of an item already in the WhatsApp cart.',parameters:{type:'object',properties:{storefront_product_id:{type:'string'},quantity:{type:'integer',minimum:1,maximum:99},variant_id:{type:'string'}},required:['storefront_product_id','quantity']}},
+      {name:'remove_from_cart',description:'Remove a product or selected variant from the WhatsApp cart.',parameters:{type:'object',properties:{storefront_product_id:{type:'string'},variant_id:{type:'string'}},required:['storefront_product_id']}},
+      {name:'clear_cart',description:'Empty the WhatsApp cart. Only use after the customer clearly asks to clear/remove everything.',parameters:{type:'object',properties:{}}},
+      {name:'create_checkout_link',description:'Create the independent storefront cart/checkout handoff link for the current WhatsApp cart. Use when the customer wants to checkout or pay.',parameters:{type:'object',properties:{}}},
       {name:'get_sales_recommendations',description:'Get relevant cross-sell recommendations for a product.',parameters:{type:'object',properties:{current_product_id:{type:'string'},intent_type:{type:'string',enum:['PRODUCT_SEARCH','REPEAT_PURCHASE','GENERAL_INQUIRY']}}}},
       {name:'create_support_ticket',description:'MANDATORY for requests the AI cannot reliably solve, including unsupported requests, unresolved product/data questions, complaints, refunds, payment problems, damaged/wrong/missing orders, delivery issues or human decisions. Creates or refreshes a ticket and alerts the admin.',parameters:{type:'object',properties:{category:{type:'string',enum:SUPPORT_CATEGORIES},reason:{type:'string'}},required:['category','reason']}},
       {name:'track_customer_interest',description:'Record product interest.',parameters:{type:'object',properties:{product_id:{type:'string'},interest_type:{type:'string',enum:['asked_about','recommended']}},required:['product_id','interest_type']}},
@@ -456,6 +662,147 @@ serve(async(req)=>{
             storeSlug: store?.slug || null,
             query: String(args.query || ''),
           })
+        } else if (name === 'get_cart') {
+          try {
+            const cart = await getOrCreateWhatsappCart(db, { storeId, conversationId, contactId })
+            const items = await readWhatsappCart(db, cart.id)
+            result = whatsappCartSummary(items)
+          } catch (e:any) {
+            result = { error: e?.message || 'Unable to load cart' }
+          }
+        } else if (name === 'add_to_cart') {
+          try {
+            const productId = String(args.storefront_product_id || '')
+            const quantity = Math.max(1, Math.min(99, Number(args.quantity || 1)))
+            if (!productId) throw new Error('Storefront product ID is required')
+            const live = await getStorefrontProductForCart({
+              storeSlug: store?.slug || null,
+              storeDomain: store?.domain || null,
+              productId,
+              variantId: args.variant_id ? String(args.variant_id) : null,
+            })
+            if (live?.error || live?.requires_variant) {
+              result = live
+            } else if (!live?.id) {
+              result = { error: 'Unable to confirm that product.' }
+            } else if (!live.backorder_enabled && quantity > Number(live.max_quantity || 0)) {
+              result = { error: `Only ${live.max_quantity} available right now.`, available_quantity: live.max_quantity }
+            } else {
+              const cart = await getOrCreateWhatsappCart(db, { storeId, conversationId, contactId })
+              let existingQuery = db.from('whatsapp_cart_items')
+                .select('id,quantity')
+                .eq('cart_id', cart.id)
+                .eq('storefront_product_id', live.id)
+              existingQuery = live.variant_id ? existingQuery.eq('variant_id', live.variant_id) : existingQuery.is('variant_id', null)
+              const { data: existing } = await existingQuery.maybeSingle()
+              const targetQty = Math.min(99, Number(existing?.quantity || 0) + quantity)
+              if (!live.backorder_enabled && targetQty > Number(live.max_quantity || 0)) {
+                result = { error: `Only ${live.max_quantity} available right now.`, available_quantity: live.max_quantity }
+              } else {
+                const lineData = {
+                  cart_id: cart.id,
+                  storefront_product_id: live.id,
+                  centralhub_product_id: live.centralhub_product_id || null,
+                  variant_id: live.variant_id || null,
+                  product_name: live.variant_name ? `${live.name} — ${live.variant_name}` : live.name,
+                  brand: live.brand || null,
+                  quantity: targetQty,
+                  unit_price: Number(live.current_price),
+                  regular_price: Number.isFinite(Number(live.regular_price)) ? Number(live.regular_price) : null,
+                  currency: 'GBP',
+                  stock_snapshot: Number(live.stock_quantity || 0),
+                  product_url: live.product_url || null,
+                  image_url: live.image_url || null,
+                  updated_at: new Date().toISOString(),
+                }
+                if (existing?.id) {
+                  const { error } = await db.from('whatsapp_cart_items').update(lineData).eq('id', existing.id)
+                  if (error) throw error
+                } else {
+                  const { error } = await db.from('whatsapp_cart_items').insert(lineData)
+                  if (error) throw error
+                }
+                await db.from('whatsapp_carts').update({ status:'active', updated_at:new Date().toISOString(), last_activity_at:new Date().toISOString() }).eq('id', cart.id)
+                const items = await readWhatsappCart(db, cart.id)
+                result = { added: true, product: { id: live.id, name: live.name, variant: live.variant_name || null, quantity: targetQty, unit_price: live.current_price }, cart: whatsappCartSummary(items) }
+              }
+            }
+          } catch (e:any) {
+            result = { error: e?.message || 'Unable to add item to cart' }
+          }
+        } else if (name === 'update_cart_item') {
+          try {
+            const productId = String(args.storefront_product_id || '')
+            const quantity = Math.max(1, Math.min(99, Number(args.quantity || 1)))
+            const variantId = args.variant_id ? String(args.variant_id) : null
+            const cart = await getOrCreateWhatsappCart(db, { storeId, conversationId, contactId })
+            let lineQuery = db.from('whatsapp_cart_items').select('id').eq('cart_id', cart.id).eq('storefront_product_id', productId)
+            lineQuery = variantId ? lineQuery.eq('variant_id', variantId) : lineQuery.is('variant_id', null)
+            const { data: line } = await lineQuery.maybeSingle()
+            if (!line) {
+              result = { error: 'That item is not currently in the cart.' }
+            } else {
+              const live = await getStorefrontProductForCart({ storeSlug: store?.slug || null, storeDomain: store?.domain || null, productId, variantId })
+              if (live?.error || live?.requires_variant) result = live
+              else if (!live.backorder_enabled && quantity > Number(live.max_quantity || 0)) result = { error: `Only ${live.max_quantity} available right now.`, available_quantity: live.max_quantity }
+              else {
+                const { error } = await db.from('whatsapp_cart_items').update({
+                  quantity,
+                  unit_price: Number(live.current_price),
+                  regular_price: Number.isFinite(Number(live.regular_price)) ? Number(live.regular_price) : null,
+                  stock_snapshot: Number(live.stock_quantity || 0),
+                  updated_at: new Date().toISOString(),
+                }).eq('id', line.id)
+                if (error) throw error
+                const items = await readWhatsappCart(db, cart.id)
+                result = { updated: true, cart: whatsappCartSummary(items) }
+              }
+            }
+          } catch (e:any) {
+            result = { error: e?.message || 'Unable to update cart item' }
+          }
+        } else if (name === 'remove_from_cart') {
+          try {
+            const productId = String(args.storefront_product_id || '')
+            const variantId = args.variant_id ? String(args.variant_id) : null
+            const cart = await getOrCreateWhatsappCart(db, { storeId, conversationId, contactId })
+            let deleteQuery = db.from('whatsapp_cart_items').delete().eq('cart_id', cart.id).eq('storefront_product_id', productId)
+            deleteQuery = variantId ? deleteQuery.eq('variant_id', variantId) : deleteQuery.is('variant_id', null)
+            const { error } = await deleteQuery
+            if (error) throw error
+            const items = await readWhatsappCart(db, cart.id)
+            result = { removed: true, cart: whatsappCartSummary(items) }
+          } catch (e:any) {
+            result = { error: e?.message || 'Unable to remove cart item' }
+          }
+        } else if (name === 'clear_cart') {
+          try {
+            const cart = await getOrCreateWhatsappCart(db, { storeId, conversationId, contactId })
+            const { error } = await db.from('whatsapp_cart_items').delete().eq('cart_id', cart.id)
+            if (error) throw error
+            result = { cleared: true, cart: whatsappCartSummary([]) }
+          } catch (e:any) {
+            result = { error: e?.message || 'Unable to clear cart' }
+          }
+        } else if (name === 'create_checkout_link') {
+          try {
+            const cart = await getOrCreateWhatsappCart(db, { storeId, conversationId, contactId })
+            const items = await readWhatsappCart(db, cart.id)
+            if (!items.length) {
+              result = { error: 'The cart is empty.' }
+            } else if (String(store?.slug || '').toLowerCase() !== 'malluspices') {
+              result = { error: 'WhatsApp storefront handoff is not enabled for this store yet.' }
+            } else {
+              const domain = String(store?.domain || 'malluspices.com').replace(/^https?:\/\//, '').replace(/\/$/, '')
+              const payload = encodeWhatsappCartPayload(items)
+              const checkoutUrl = `https://${domain}/whatsapp-cart?c=${encodeURIComponent(payload)}`
+              const now = new Date().toISOString()
+              await db.from('whatsapp_carts').update({ status:'checkout_started', checkout_link_created_at:now, updated_at:now, last_activity_at:now }).eq('id', cart.id)
+              result = { checkout_url: checkoutUrl, cart: whatsappCartSummary(items), note: 'The storefront will revalidate price, stock, offers, delivery and payment before the order is created.' }
+            }
+          } catch (e:any) {
+            result = { error: e?.message || 'Unable to create checkout link' }
+          }
         } else if (name === 'get_sales_recommendations') {
           let recommendations = []
           if (args.current_product_id) {
