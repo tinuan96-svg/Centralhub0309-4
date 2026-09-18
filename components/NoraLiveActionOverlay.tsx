@@ -46,7 +46,7 @@ type ActionQuestion = {
 
 type NativeComputerBridge = {
   getPlatform?: () => string;
-  openNoraComputerMode?: (sessionId: string, targetUrl: string, accessToken: string, supabaseUrl: string) => boolean;
+  openNoraComputerMode?: (sessionId: string, targetUrl: string, accessToken: string, supabaseUrl: string, publishableKey: string) => boolean;
 };
 
 const ACTIVE_STATUSES = ['planned', 'running', 'waiting_input', 'waiting_approval', 'paused'];
@@ -153,8 +153,9 @@ export default function NoraLiveActionOverlay() {
       if (bridge?.getPlatform?.() !== 'android' || !bridge.openNoraComputerMode) throw new Error('Live Web requires the CentralHub Android app.');
       const currentUrl = publicHttps(session.metadata?.active_url) || publicHttps(session.target_url);
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-      if (!currentUrl || !supabaseUrl) throw new Error('Live Web URL is unavailable.');
-      if (bridge.openNoraComputerMode(session.id, currentUrl, authSession.access_token, supabaseUrl) !== true) throw new Error('Could not reopen Shruthi Live Web.');
+      const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+      if (!currentUrl || !supabaseUrl || !publishableKey) throw new Error('Live Web URL is unavailable.');
+      if (bridge.openNoraComputerMode(session.id, currentUrl, authSession.access_token, supabaseUrl, publishableKey) !== true) throw new Error('Could not reopen Shruthi Live Web.');
       setCollapsed(true);
     } catch (error: any) {
       window.alert(error?.message || 'Could not reopen Shruthi Live Web.');

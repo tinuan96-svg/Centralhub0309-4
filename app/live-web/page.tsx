@@ -10,7 +10,7 @@ import { supabase } from '@/lib/supabase';
 
 type NativeBrowserBridge = {
   getPlatform?: () => string;
-  openNoraComputerMode?: (sessionId: string, targetUrl: string, accessToken: string, supabaseUrl: string) => boolean;
+  openNoraComputerMode?: (sessionId: string, targetUrl: string, accessToken: string, supabaseUrl: string, publishableKey: string) => boolean;
 };
 
 type BookmarkRow = { id: string; title: string; url: string; created_at: string };
@@ -190,7 +190,9 @@ export default function LiveWebPage() {
       });
 
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-      const launched = bridge.openNoraComputerMode(actionSession.id, targetUrl, auth.access_token, supabaseUrl) === true;
+      const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+      if (!supabaseUrl || !publishableKey) throw new Error('CentralHub Supabase client configuration is missing.');
+      const launched = bridge.openNoraComputerMode(actionSession.id, targetUrl, auth.access_token, supabaseUrl, publishableKey) === true;
       if (!launched) {
         await supabase.from('nora_action_sessions').update({
           status: 'failed',

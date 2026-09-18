@@ -57,11 +57,12 @@ public final class NoraComputerActivity extends android.app.Activity {
     private static final String EXTRA_TARGET_URL = "nora_target_url";
     private static final String EXTRA_ACCESS_TOKEN = "nora_access_token";
     private static final String EXTRA_SUPABASE_URL = "nora_supabase_url";
+    private static final String EXTRA_PUBLISHABLE_KEY = "nora_publishable_key";
     private static final String BROWSER_PREFS = "centralhub_live_web_browser";
     private static final int MAX_TABS = 8;
     private static final int WEB_PERMISSION_REQUEST_CODE = 4517;
-    private static final long PAGE_STABLE_MS = 350L;
-    private static final int PAGE_READY_MAX_ATTEMPTS = 36;
+    private static final long PAGE_STABLE_MS = 300L;
+    private static final int PAGE_READY_MAX_ATTEMPTS = 20;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
@@ -70,13 +71,16 @@ public final class NoraComputerActivity extends android.app.Activity {
 
     private WebView webView;
     private TextView statusView;
+    private TextView voiceStateView;
     private EditText addressView;
     private Button takeoverButton;
     private String sessionId;
     private String targetUrl;
     private String accessToken;
     private String supabaseUrl;
+    private String publishableKey;
     private String agentEndpoint;
+    private String voiceEndpoint;
     private String controlEndpoint;
     private int activeTabIndex = 0;
     private int navigationGeneration = 0;
@@ -87,11 +91,16 @@ public final class NoraComputerActivity extends android.app.Activity {
     private boolean waitingSensitiveHandoff = false;
     private boolean pageLoading = true;
     private boolean sessionCompleted = false;
+    private boolean waitingForVoiceAnswer = false;
+    private boolean liveVoicePausedForSecureInput = false;
+    private int actionGeneration = 0;
     private long lastPageFinishedAt = 0L;
     private long lastSyntheticActionAt = 0L;
     private String lastResponseId = "";
     private String lastCallId = "";
     private String lastStepId = "";
+    private String lastVoiceUserText = "";
+    private ShruthiRealtimeVoiceClient liveVoiceClient;
     private PermissionRequest pendingWebPermissionRequest;
 
     private static final class BrowserTab {
@@ -111,10 +120,12 @@ public final class NoraComputerActivity extends android.app.Activity {
         targetUrl = safe(intent.getStringExtra(EXTRA_TARGET_URL));
         accessToken = safe(intent.getStringExtra(EXTRA_ACCESS_TOKEN));
         supabaseUrl = safe(intent.getStringExtra(EXTRA_SUPABASE_URL)).replaceAll("/+$", "");
+        publishableKey = safe(intent.getStringExtra(EXTRA_PUBLISHABLE_KEY));
         agentEndpoint = supabaseUrl + "/functions/v1/nora-computer-agent";
+        voiceEndpoint = supabaseUrl + "/functions/v1/centralhub-voice-assistant";
         controlEndpoint = supabaseUrl + "/functions/v1/live-web-control";
 
-        if (sessionId.isEmpty() || accessToken.isEmpty() || supabaseUrl.isEmpty() || !isAllowedUrl(targetUrl)) {
+        if (sessionId.isEmpty() || accessToken.isEmpty() || supabaseUrl.isEmpty() || publishableKey.isEmpty() || !isAllowedUrl(targetUrl)) {
             Toast.makeText(this, "Shruthi Live Web could not start safely.", Toast.LENGTH_LONG).show();
             finish();
             return;
@@ -125,6 +136,7 @@ public final class NoraComputerActivity extends android.app.Activity {
         restoreTabs();
         setManualControl(false, "Shruthi is opening Live Web…");
         webView.loadUrl(targetUrl);
+        startLiveVoice();
     }
 
     private void buildUi() {
@@ -152,6 +164,14 @@ public final class NoraComputerActivity extends android.app.Activity {
         statusView.setSingleLine(true);
         statusView.setGravity(Gravity.CENTER_VERTICAL);
         bar.addView(statusView, new LinearLayout.LayoutParams(0, dp(46), 1f));
+
+        voiceStateView = new TextView(this);
+        voiceStateView.setText("Voice");
+        voiceStateView.setTextColor(Color.rgb(130, 207, 255));
+        voiceStateView.setTextSize(10f);
+        voiceStateView.setGravity(Gravity.CENTER);
+        voiceStateView.setSingleLine(true);
+        bar.addView(voiceStateView, new LinearLayout.LayoutParams(dp(72), dp(44)));
 
         takeoverButton = browserButton("Take over");
         takeoverButton.setOnClickListener(v -> toggleTakeover());
@@ -442,7 +462,8 @@ public final class NoraComputerActivity extends android.app.Activity {
         webView.setWebChromeClient(new WebChromeClient() {
             @Override public void onPermissionRequest(PermissionRequest request) { runOnUiThread(() -> handleWebPermissionRequest(request)); }
             @Override public void onProgressChanged(WebView view, int newProgress) {
-                if (newProgress < 100) pageLoading = true;
+                if (newProgress < 85 && lastPageFinishedAt <= 0) pageLoading = true;
+                else if (newProgress >= 90 && lastPageFinishedAt > 0) pageLoading = false;
             }
         });
         webView.setOnTouchListener((v, event) -> !manualControl && !syntheticInput);
@@ -481,16 +502,24 @@ public final class NoraComputerActivity extends android.app.Activity {
 
     private void waitForPageReady(Runnable ready, int attempt) {
         if (finishedOrDestroyed || webView == null) return;
-        if (attempt >= PAGE_READY_MAX_ATTEMPTS) { failVisible("This page did not become ready in time. You can take over or retry from Shruthi."); return; }
-        long now = System.currentTimeMillis();
-        boolean stable = !pageLoading && webView.getProgress() >= 100 && lastPageFinishedAt > 0
-                && now - lastPageFinishedAt >= PAGE_STABLE_MS && now - lastSyntheticActionAt >= PAGE_STABLE_MS;
         String current = safe(webView.getUrl());
-        if (!stable || !isAllowedUrl(current)) {
+        if (!isAllowedUrl(current)) {
             mainHandler.postDelayed(() -> waitForPageReady(ready, attempt + 1), 250L);
             return;
         }
-        webView.evaluateJavascript("(function(){try{return document.readyState==='complete'?'ready':'loading'}catch(e){return 'loading'}})()", value -> {
+        if (attempt >= PAGE_READY_MAX_ATTEMPTS) {
+            setStatus("Page is interactive · Shruthi is checking it…");
+            ready.run();
+            return;
+        }
+        long now = System.currentTimeMillis();
+        boolean stableEnough = webView.getProgress() >= 85 && lastPageFinishedAt > 0
+                && now - lastPageFinishedAt >= PAGE_STABLE_MS && now - lastSyntheticActionAt >= PAGE_STABLE_MS;
+        if (!stableEnough) {
+            mainHandler.postDelayed(() -> waitForPageReady(ready, attempt + 1), 250L);
+            return;
+        }
+        webView.evaluateJavascript("(function(){try{var s=document.readyState;var b=document.body;return ((s==='interactive'||s==='complete')&&b)?'ready':'loading'}catch(e){return 'loading'}})()", value -> {
             if (value != null && value.contains("ready")) ready.run();
             else mainHandler.postDelayed(() -> waitForPageReady(ready, attempt + 1), 250L);
         });
@@ -548,6 +577,8 @@ public final class NoraComputerActivity extends android.app.Activity {
             setManualControl(false, "Shruthi is resuming…");
             if (waitingSensitiveHandoff) {
                 waitingSensitiveHandoff = false;
+                liveVoicePausedForSecureInput = false;
+                startLiveVoice();
                 requestResume(false, "completed manually");
             } else if (!lastCallId.isEmpty()) captureAndContinue();
             else if (!lastResponseId.isEmpty()) requestResume(false, "Continue from the current screen after my manual check.");
@@ -559,6 +590,7 @@ public final class NoraComputerActivity extends android.app.Activity {
     }
 
     private void setManualControl(boolean enabled, String status) {
+        if (enabled && !manualControl) actionGeneration += 1;
         manualControl = enabled;
         if (takeoverButton != null) takeoverButton.setText(sessionCompleted ? "Return to Shruthi" : enabled ? "Continue Shruthi" : "Take over");
         setStatus(status);
@@ -577,7 +609,7 @@ public final class NoraComputerActivity extends android.app.Activity {
     }
 
     private boolean isPageReadyNow() {
-        if (webView == null || pageLoading || webView.getProgress() < 100 || lastPageFinishedAt <= 0) return false;
+        if (webView == null || webView.getProgress() < 85 || lastPageFinishedAt <= 0) return false;
         long now = System.currentTimeMillis();
         return now - lastPageFinishedAt >= PAGE_STABLE_MS && now - lastSyntheticActionAt >= PAGE_STABLE_MS;
     }
@@ -624,7 +656,8 @@ public final class NoraComputerActivity extends android.app.Activity {
                 lastCallId = result.optString("call_id", "");
                 lastStepId = result.optString("step_id", "");
                 setManualControl(false, result.optString("current_step", "Shruthi is working…"));
-                executeActions(result.optJSONArray("actions"), 0);
+                int batchGeneration = ++actionGeneration;
+                executeActions(result.optJSONArray("actions"), 0, batchGeneration);
                 break;
             case "input_required":
                 handleInputRequest(result.optString("question", "Shruthi needs your input."), result.optBoolean("sensitive", false));
@@ -637,16 +670,19 @@ public final class NoraComputerActivity extends android.app.Activity {
                 setManualControl(true, "Completed · " + result.optString("message", "Shruthi finished the task."));
                 showCompletion(result.optString("message", "Shruthi completed and verified the task."));
                 break;
+            case "message":
+                setManualControl(false, result.optString("message", "Got it · Shruthi is continuing…"));
+                break;
             case "paused": setManualControl(true, "Paused · you have control"); break;
             default: failVisible("Shruthi returned an unexpected computer state.");
         }
     }
 
-    private void executeActions(JSONArray actions, int index) {
-        if (finishedOrDestroyed || manualControl) return;
-        if (actions == null || index >= actions.length()) { mainHandler.postDelayed(this::captureAndContinue, 140L); return; }
+    private void executeActions(JSONArray actions, int index, int generation) {
+        if (finishedOrDestroyed || manualControl || generation != actionGeneration) return;
+        if (actions == null || index >= actions.length()) { mainHandler.postDelayed(() -> { if (generation == actionGeneration) captureAndContinue(); }, 140L); return; }
         JSONObject action = actions.optJSONObject(index);
-        if (action == null) { executeActions(actions, index + 1); return; }
+        if (action == null) { executeActions(actions, index + 1, generation); return; }
         String type = action.optString("type", "");
         long delay = "wait".equals(type) ? 1100L : 120L;
         try {
@@ -662,7 +698,7 @@ public final class NoraComputerActivity extends android.app.Activity {
             }
         } catch (Exception error) { failVisible("Shruthi action failed: " + safe(error.getMessage())); return; }
         if (!"wait".equals(type) && !"screenshot".equals(type) && !"move".equals(type)) lastSyntheticActionAt = System.currentTimeMillis();
-        mainHandler.postDelayed(() -> executeActions(actions, index + 1), delay);
+        mainHandler.postDelayed(() -> executeActions(actions, index + 1, generation), delay);
     }
 
     private void tap(float x, float y, boolean doubleClick) {
@@ -761,17 +797,135 @@ public final class NoraComputerActivity extends android.app.Activity {
         lastCallId = "";
         if (sensitive) {
             waitingSensitiveHandoff = true;
-            setManualControl(true, "Your turn · complete the secure step, then tap Continue Shruthi");
+            liveVoicePausedForSecureInput = true;
+            stopLiveVoice();
+            setManualControl(true, "Your turn · secure step · voice paused");
             new AlertDialog.Builder(this).setTitle("Shruthi needs you")
-                    .setMessage(question + "\n\nComplete this directly in the browser. Shruthi will not read or store your password, OTP, passkey, CAPTCHA response, or other login secret.")
+                    .setMessage(question + "\n\nComplete this directly in the browser. Live voice is paused so passwords, OTPs, passkeys and CAPTCHA responses are not captured. Then tap Continue Shruthi.")
                     .setPositiveButton("Take over", null).show();
             return;
         }
-        setManualControl(true, "Shruthi needs an answer in the main conversation");
+        waitingForVoiceAnswer = true;
+        setManualControl(true, "Shruthi needs one detail · answer by voice or take over");
         new AlertDialog.Builder(this).setTitle("Shruthi needs one detail")
-                .setMessage(question + "\n\nTo keep one Shruthi conversation and one input bar, answer this from the normal Shruthi input in CentralHub.")
-                .setPositiveButton("Return to Shruthi", (dialog, which) -> { requestAgent("pause", null); finish(); })
-                .setNegativeButton("Stay here", null).show();
+                .setMessage(question + "\n\nYou can answer Shruthi out loud here, or use the browser manually.")
+                .setPositiveButton("Answer by voice", null)
+                .setNegativeButton("Take over", null).show();
+    }
+
+
+    private void startLiveVoice() {
+        if (finishedOrDestroyed || liveVoicePausedForSecureInput || publishableKey.isEmpty() || accessToken.isEmpty() || supabaseUrl.isEmpty() || liveVoiceClient != null) return;
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { setVoiceState("Voice off"); return; }
+        ShruthiRealtimeVoiceClient client = new ShruthiRealtimeVoiceClient(this, accessToken, supabaseUrl, publishableKey, sessionId, new ShruthiRealtimeVoiceClient.Listener() {
+            @Override public void onState(String state) { runOnUiThread(() -> setVoiceState(state)); }
+            @Override public void onUserTranscript(String text) { runOnUiThread(() -> handleLiveVoiceTranscript(text)); }
+            @Override public void onAssistantTranscript(String text) { runOnUiThread(() -> handleLiveVoiceAssistantTranscript(text)); }
+            @Override public void onError(String message) { runOnUiThread(() -> setVoiceState("Voice retry")); }
+        });
+        liveVoiceClient = client;
+        client.connect();
+    }
+
+    private void stopLiveVoice() {
+        ShruthiRealtimeVoiceClient client = liveVoiceClient;
+        liveVoiceClient = null;
+        if (client != null) client.release();
+        setVoiceState(liveVoicePausedForSecureInput ? "Voice paused" : "Voice off");
+    }
+
+    private void setVoiceState(String state) {
+        if (voiceStateView == null) return;
+        String value = state == null ? "" : state.toLowerCase(Locale.ROOT);
+        if (value.contains("listen")) voiceStateView.setText("● Listening");
+        else if (value.contains("speak")) voiceStateView.setText("● Speaking");
+        else if (value.contains("think") || value.contains("connect") || value.contains("reconnect")) voiceStateView.setText("● Thinking");
+        else if (value.contains("paused")) voiceStateView.setText("Voice paused");
+        else if (value.contains("retry") || value.contains("error")) voiceStateView.setText("Voice retry");
+        else voiceStateView.setText("Voice");
+    }
+
+    private boolean looksSensitiveVoiceText(String text) {
+        String value = text == null ? "" : text.toLowerCase(Locale.ROOT);
+        return value.matches(".*\\b(password|passcode|otp|2fa|two[- ]factor|captcha|security code|recovery code|api key|private key|card number|cvv)\\b.*");
+    }
+
+    private void handleLiveVoiceTranscript(String rawText) {
+        String text = safe(rawText);
+        if (text.isEmpty() || finishedOrDestroyed) return;
+        lastVoiceUserText = text;
+        if (looksSensitiveVoiceText(text)) { lastVoiceUserText = ""; setStatus("Sensitive value was not sent · enter it directly in the page"); return; }
+
+        String lower = text.toLowerCase(Locale.ROOT);
+        if (lower.matches(".*\\b(stop|pause|wait|hold on|hold up)\\b.*")) {
+            actionGeneration += 1;
+            setManualControl(true, "Paused by voice · you have control");
+            requestAgent("pause", null);
+            return;
+        }
+        if (waitingForVoiceAnswer) {
+            waitingForVoiceAnswer = false;
+            setManualControl(false, "Got it · Shruthi is continuing…");
+            requestResume(false, text);
+            return;
+        }
+        if (waitingSensitiveHandoff) { setStatus("Secure step is manual · finish it, then tap Continue Shruthi"); return; }
+        if (manualControl && lower.matches(".*\\b(continue|resume|go on|carry on)\\b.*")) {
+            setManualControl(false, "Shruthi is resuming…");
+            requestResume(false, "Continue from the current page.");
+            return;
+        }
+        sendVoiceMessageToAgent(text);
+    }
+
+    private void handleLiveVoiceAssistantTranscript(String text) {
+        String assistantText = safe(text);
+        String userText = lastVoiceUserText;
+        lastVoiceUserText = "";
+        if (assistantText.isEmpty() || userText.isEmpty() || looksSensitiveVoiceText(userText)) return;
+        browserExecutor.execute(() -> recordRealtimeTurn(userText, assistantText));
+    }
+
+    private void recordRealtimeTurn(String userText, String assistantText) {
+        try {
+            HttpURLConnection connection = (HttpURLConnection) new URL(voiceEndpoint).openConnection();
+            connection.setRequestMethod("POST");
+            connection.setConnectTimeout(10_000);
+            connection.setReadTimeout(15_000);
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Authorization", "Bearer " + accessToken);
+            connection.setRequestProperty("apikey", publishableKey);
+            connection.setRequestProperty("Content-Type", "application/json");
+            JSONObject body = new JSONObject();
+            body.put("action", "record_realtime_turn");
+            body.put("user_text", userText);
+            body.put("assistant_text", assistantText);
+            body.put("page_context", "live_web:" + sessionId);
+            try (OutputStream output = connection.getOutputStream()) { output.write(body.toString().getBytes(StandardCharsets.UTF_8)); }
+            try { connection.getResponseCode(); } finally { connection.disconnect(); }
+        } catch (Exception ignored) { }
+    }
+
+    private void sendVoiceMessageToAgent(String text) {
+        actionGeneration += 1;
+        setManualControl(false, "Heard you · Shruthi is adjusting…");
+        JSONObject extra = new JSONObject();
+        try {
+            extra.put("user_message", text);
+            if (!lastResponseId.isEmpty()) extra.put("previous_response_id", lastResponseId);
+            if (!lastCallId.isEmpty()) extra.put("call_id", lastCallId);
+            if (!lastStepId.isEmpty()) extra.put("step_id", lastStepId);
+            if (webView != null && webView.getWidth() > 0 && webView.getHeight() > 0) {
+                Bitmap bitmap = Bitmap.createBitmap(webView.getWidth(), webView.getHeight(), Bitmap.Config.ARGB_8888);
+                Canvas canvas = new Canvas(bitmap); webView.draw(canvas);
+                ByteArrayOutputStream output = new ByteArrayOutputStream();
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 78, output); bitmap.recycle();
+                extra.put("screenshot_mime", "image/jpeg");
+                extra.put("screenshot_base64", Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP));
+            }
+            addBrowserState(extra);
+        } catch (Exception error) { failVisible("Shruthi could not attach your browser context."); return; }
+        requestAgent("user_message", extra);
     }
 
     private void showApproval(String reason) {
@@ -841,8 +995,19 @@ public final class NoraComputerActivity extends android.app.Activity {
                 .setNegativeButton("Stay", null).show();
     }
 
+    @Override protected void onResume() {
+        super.onResume();
+        if (!liveVoicePausedForSecureInput) startLiveVoice();
+    }
+
+    @Override protected void onPause() {
+        stopLiveVoice();
+        super.onPause();
+    }
+
     @Override protected void onDestroy() {
         finishedOrDestroyed = true;
+        stopLiveVoice();
         mainHandler.removeCallbacksAndMessages(null);
         if (pendingWebPermissionRequest != null) { try { pendingWebPermissionRequest.deny(); } catch (Exception ignored) { } pendingWebPermissionRequest = null; }
         networkExecutor.shutdownNow(); browserExecutor.shutdownNow();

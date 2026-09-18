@@ -37,7 +37,7 @@ type NativeBridge = {
   setTaraEnabled?: (enabled: boolean) => void;
   setTaraSpeaking?: (speaking: boolean) => void;
   stopTaraTts?: () => void;
-  openNoraComputerMode?: (sessionId: string, targetUrl: string, accessToken: string, supabaseUrl: string) => boolean;
+  openNoraComputerMode?: (sessionId: string, targetUrl: string, accessToken: string, supabaseUrl: string, publishableKey: string) => boolean;
   isShruthiRealtimeAvailable?: () => boolean;
   startShruthiRealtime?: (accessToken: string, supabaseUrl: string, publishableKey: string) => boolean;
   stopShruthiRealtime?: () => void;
@@ -306,12 +306,13 @@ export default function CentralHubVoiceAssistant() {
     const activeUrl = safePublicHttps(metadata.active_url) || safePublicHttps(pendingSession.target_url);
     const native = getNativeBridge();
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-    if (native?.getPlatform?.() !== 'android' || !native.openNoraComputerMode || !activeUrl || !supabaseUrl) {
+    const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+    if (native?.getPlatform?.() !== 'android' || !native.openNoraComputerMode || !activeUrl || !supabaseUrl || !publishableKey) {
       throw new Error('Shruthi Live Web needs the current CentralHub Android app to continue this browser task.');
     }
 
     if (pendingQuestion.is_sensitive) {
-      const launched = native.openNoraComputerMode(pendingSession.id, activeUrl, authSession.access_token, supabaseUrl) === true;
+      const launched = native.openNoraComputerMode(pendingSession.id, activeUrl, authSession.access_token, supabaseUrl, publishableKey) === true;
       if (!launched) throw new Error('Could not reopen Shruthi Live Web for the secure step.');
       const secureReply = 'That step is sensitive, so I will not use or store that answer here. Complete it directly in the visible browser, then tap Continue Shruthi.';
       const localResult: AssistantReply = { success: true, reply: secureReply, intent: 'browser_secure_handoff', mode: 'operations', risk_level: 'read_only', requires_confirmation: false, speak: true, status: 'waiting_input' };
@@ -328,7 +329,7 @@ export default function CentralHubVoiceAssistant() {
 
     const resumePayload = resumed && typeof resumed === 'object' ? resumed as Record<string, unknown> : {};
     const resumeUrl = safePublicHttps(resumePayload.active_url) || activeUrl;
-    const launched = native.openNoraComputerMode(pendingSession.id, resumeUrl, authSession.access_token, supabaseUrl) === true;
+    const launched = native.openNoraComputerMode(pendingSession.id, resumeUrl, authSession.access_token, supabaseUrl, publishableKey) === true;
     if (!launched) throw new Error('Could not reopen the same Shruthi Live Web session.');
 
     const reply = 'Got it — I’m continuing the same Live Web task from your answer.';
@@ -388,7 +389,8 @@ export default function CentralHubVoiceAssistant() {
 
       const native = getNativeBridge();
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-      if (native?.getPlatform?.() !== 'android' || !native.openNoraComputerMode || !supabaseUrl) {
+      const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+      if (native?.getPlatform?.() !== 'android' || !native.openNoraComputerMode || !supabaseUrl || !publishableKey) {
         throw new Error('Shruthi Live Web requires the current CentralHub Android app.');
       }
 
@@ -423,7 +425,7 @@ export default function CentralHubVoiceAssistant() {
         });
       }
 
-      const launched = native.openNoraComputerMode(actionSession.id, targetUrl, authSession.access_token, supabaseUrl) === true;
+      const launched = native.openNoraComputerMode(actionSession.id, targetUrl, authSession.access_token, supabaseUrl, publishableKey) === true;
       if (!launched) {
         await supabase.from('nora_action_sessions').update({
           status: 'failed',

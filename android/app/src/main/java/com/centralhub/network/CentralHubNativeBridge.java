@@ -198,8 +198,8 @@ public final class CentralHubNativeBridge {
     }
 
     @JavascriptInterface
-    public boolean openNoraComputerMode(String sessionId, String targetUrl, String accessToken, String supabaseUrl) {
-        if (sessionId == null || sessionId.trim().isEmpty() || targetUrl == null || targetUrl.trim().isEmpty() || accessToken == null || accessToken.trim().isEmpty() || supabaseUrl == null || supabaseUrl.trim().isEmpty()) return false;
+    public boolean openNoraComputerMode(String sessionId, String targetUrl, String accessToken, String supabaseUrl, String publishableKey) {
+        if (sessionId == null || sessionId.trim().isEmpty() || targetUrl == null || targetUrl.trim().isEmpty() || accessToken == null || accessToken.trim().isEmpty() || supabaseUrl == null || supabaseUrl.trim().isEmpty() || publishableKey == null || publishableKey.trim().isEmpty()) return false;
         try {
             Uri target = Uri.parse(targetUrl.trim());
             Uri backend = Uri.parse(supabaseUrl.trim());
@@ -209,6 +209,7 @@ public final class CentralHubNativeBridge {
             intent.putExtra("nora_target_url", targetUrl.trim());
             intent.putExtra("nora_access_token", accessToken.trim());
             intent.putExtra("nora_supabase_url", supabaseUrl.trim());
+            intent.putExtra("nora_publishable_key", publishableKey.trim());
             activity.runOnUiThread(() -> activity.startActivity(intent));
             return true;
         } catch (Exception ignored) { return false; }

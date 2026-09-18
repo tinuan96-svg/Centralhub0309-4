@@ -56,7 +56,7 @@ final class ShruthiRealtimeVoiceClient {
     }
 
     private final Context context;
-    private final String accessToken,supabaseUrl,publishableKey;
+    private final String accessToken,supabaseUrl,publishableKey,liveWebSessionId;
     private final Listener listener;
     private final AudioManager audioManager;
     private final ExecutorService io=Executors.newCachedThreadPool();
@@ -79,7 +79,11 @@ final class ShruthiRealtimeVoiceClient {
     private volatile String activeResponseId="",audioEventType="",transcriptEventType="";
 
     ShruthiRealtimeVoiceClient(Context c,String token,String url,String key,Listener l){
-        context=c.getApplicationContext();accessToken=token;supabaseUrl=url.replaceAll("/+$","");publishableKey=key;listener=l;
+        this(c, token, url, key, "", l);
+    }
+
+    ShruthiRealtimeVoiceClient(Context c,String token,String url,String key,String liveSessionId,Listener l){
+        context=c.getApplicationContext();accessToken=token;supabaseUrl=url.replaceAll("/+$","");publishableKey=key;liveWebSessionId=liveSessionId==null?"":liveSessionId.trim();listener=l;
         audioManager=(AudioManager)context.getSystemService(Context.AUDIO_SERVICE);
     }
     void connect(){
@@ -115,7 +119,11 @@ final class ShruthiRealtimeVoiceClient {
         c.setRequestMethod("POST");c.setConnectTimeout(10000);c.setReadTimeout(15000);c.setDoOutput(true);
         if(!publishableKey.isEmpty())c.setRequestProperty("apikey",publishableKey);
         c.setRequestProperty("Authorization","Bearer "+accessToken);c.setRequestProperty("Content-Type","application/json");
-        try(OutputStream out=c.getOutputStream()){out.write("{}".getBytes(StandardCharsets.UTF_8));}
+        try(OutputStream out=c.getOutputStream()){
+            JSONObject requestBody=new JSONObject();
+            if(!liveWebSessionId.isEmpty())requestBody.put("live_web_session_id",liveWebSessionId);
+            out.write(requestBody.toString().getBytes(StandardCharsets.UTF_8));
+        }
         try{
             int code=c.getResponseCode();InputStream in=code>=200&&code<300?c.getInputStream():c.getErrorStream();StringBuilder raw=new StringBuilder();
             if(in!=null)try(BufferedReader r=new BufferedReader(new InputStreamReader(in,StandardCharsets.UTF_8))){String line;while((line=r.readLine())!=null)raw.append(line);}

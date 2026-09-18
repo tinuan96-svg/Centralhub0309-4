@@ -16,7 +16,7 @@ type VoiceCommand = {
 
 type NativeComputerBridge = {
   getPlatform?: () => string;
-  openNoraComputerMode?: (sessionId: string, targetUrl: string, accessToken: string, supabaseUrl: string) => boolean;
+  openNoraComputerMode?: (sessionId: string, targetUrl: string, accessToken: string, supabaseUrl: string, publishableKey: string) => boolean;
 };
 
 type Target = { key: string; system: string; url: string };
@@ -231,7 +231,9 @@ export default function NoraComputerLauncher() {
       if (insertError || !actionSession?.id) throw new Error(insertError?.message || 'Could not create Shruthi Live Web session.');
 
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-      const launched = native.openNoraComputerMode(actionSession.id, target.url, authSession.access_token, supabaseUrl) === true;
+      const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+      if (!supabaseUrl || !publishableKey) throw new Error('CentralHub Supabase client configuration is missing.');
+      const launched = native.openNoraComputerMode(actionSession.id, target.url, authSession.access_token, supabaseUrl, publishableKey) === true;
       if (!launched) {
         await supabase.from('nora_action_sessions').update({
           status: 'failed',
