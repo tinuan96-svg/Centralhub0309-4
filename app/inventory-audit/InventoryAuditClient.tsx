@@ -55,6 +55,18 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
 
   const [isListening, setIsListening] = useState(false);
 
+  const productSizeLabel = (product: AuditProduct | null) => {
+    if (!product) return '';
+    if (product.weight_grams && product.weight_grams > 0) {
+      return product.weight_grams >= 1000 && product.weight_grams % 1000 === 0
+        ? `${product.weight_grams / 1000} kg`
+        : `${product.weight_grams} g`;
+    }
+    if (product.weight != null && product.unit) return `${product.weight} ${product.unit}`;
+    if (product.pack_size && product.pack_unit) return `${product.pack_size} ${product.pack_unit}`;
+    return product.unit || '';
+  };
+
   // Lists
   const [unauditedProducts, setUnauditedProducts] = useState<AuditProduct[]>([]);
   const [newlyAddedProducts, setNewlyAddedProducts] = useState<AuditProduct[]>([]);
@@ -301,7 +313,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                     </div>
                     <div>
                       <p className="text-xs text-slate-500 uppercase font-bold tracking-wider">Last Audited</p>
-                      <p className="text-sm text-slate-200 font-medium">{lastAuditedProduct.name}</p>
+                      <p className="text-sm text-slate-200 font-medium">{lastAuditedProduct.name}{productSizeLabel(lastAuditedProduct) ? ` — ${productSizeLabel(lastAuditedProduct)}` : ''}</p>
                       <p className="text-xs text-slate-400">Stock: {lastAuditedProduct.current_stock} | Loc: {lastAuditedProduct.warehouse_location || 'None'}</p>
                     </div>
                     <Button variant="ghost" className="ml-auto" onClick={() => setLastAuditedProduct(null)}>Dismiss</Button>
