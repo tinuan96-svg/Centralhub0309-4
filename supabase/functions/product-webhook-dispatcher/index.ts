@@ -96,23 +96,12 @@ function mapVariant(variant: any) {
   } as Record<string, any>;
 }
 
-function variantStockTotals(variants: Record<string, any>[]) {
-  const totals = new Map<string, number>();
-  for (const variant of variants) {
-    if (variant.is_active !== true || Number(variant.price || 0) <= 0) continue;
-    const parentId = String(variant.centralhub_product_id || "");
-    if (!parentId) continue;
-    const stock = Math.max(0, Math.trunc(Number(variant.stock || 0)));
-    totals.set(parentId, (totals.get(parentId) ?? 0) + stock);
-  }
-  return totals;
-}
-
-function mapProduct(product: any, inventoryStock: Map<string, number>, variableStock: Map<string, number>) {
+function mapProduct(product: any, inventoryStock: Map<string, number>) {
+  // Each CentralHub product row is one independently stocked physical SKU.
+  // Variant relationships are linking/presentation only; sibling stock is never aggregated.
   const type = product.product_type || "simple";
   const fallbackStock = num(product.stock) ?? 0;
-  const simpleStock = inventoryStock.has(product.id) ? inventoryStock.get(product.id)! : fallbackStock;
-  const stock = type === "variable" ? (variableStock.get(String(product.id)) ?? 0) : simpleStock;
+  const stock = inventoryStock.has(product.id) ? inventoryStock.get(product.id)! : fallbackStock;
   const weight = num(product.weight) ?? num(product.weight_kg);
 
   return {
@@ -323,8 +312,7 @@ Deno.serve(async (req: Request) => {
     if (eventType === "FULL_SYNC" || eventType === "RECONCILE") {
       const loadedProducts = await loadCentralProducts(db);
       const variants = await loadCentralVariants(db);
-      const variableStock = variantStockTotals(variants);
-      const products = loadedProducts.products.map((product: any) => mapProduct(product, loadedProducts.inventoryStock, variableStock));
+      const products = loadedProducts.products.map((product: any) => mapProduct(product, loadedProducts.inventoryStock));
       const centralProductIds = new Set(products.map((row: any) => String(row.centralhub_id)));
 
       const results = await Promise.all(targets.map(async (target) => {
@@ -356,8 +344,7 @@ Deno.serve(async (req: Request) => {
     const loadedProducts = await loadCentralProducts(db, [productId]);
     if (!loadedProducts.products.length) return json({ ok: false, error: "Product not found" }, 404);
     const variants = await loadCentralVariants(db, [productId]);
-    const variableStock = variantStockTotals(variants);
-    const product = mapProduct(loadedProducts.products[0], loadedProducts.inventoryStock, variableStock);
+    const product = mapProduct(loadedProducts.products[0], loadedProducts.inventoryStock);
 
     const results = await Promise.all(targets.map(async (target) => {
       const productSync = await upsertProducts(target, [product]);
@@ -367,7 +354,7 @@ Deno.serve(async (req: Request) => {
 
     await writeAudit(db, eventType, productId, productName || loadedProducts.products[0]?.name, results);
     const ok = results.every((result) => result.success === true);
-    return json({ ok, variant_count: variants.length, variable_parent_stock: product.stock, stores: results }, ok ? 200 : 207);
+    return json({ ok, linked_variant_count: variants.length, product_stock: product.stock, stores: results }, ok ? 200 : 207);
   } catch (error) {
     const detail = errorText(error);
     console.error("[product-webhook-dispatcher]", detail);
