@@ -14,6 +14,11 @@ export interface AuditProduct {
   current_stock: number;
   last_audited_at: string | null;
   expiry_date: string | null;
+  weight: number | null;
+  weight_grams: number | null;
+  unit: string | null;
+  pack_size: number | null;
+  pack_unit: string | null;
 }
 
 export interface BinLocation {
@@ -35,6 +40,11 @@ const mapProduct = (product: any): AuditProduct => {
     is_active: product.is_active,
     is_published: product.is_published,
     expiry_date: product.expiry_date,
+    weight: product.weight == null ? null : Number(product.weight),
+    weight_grams: product.weight_grams == null ? null : Number(product.weight_grams),
+    unit: product.unit,
+    pack_size: product.pack_size == null ? null : Number(product.pack_size),
+    pack_unit: product.pack_unit,
     current_stock: inventory?.stock_quantity ?? 0,
     last_audited_at: inventory?.last_audited_at ?? null,
   };
@@ -44,7 +54,7 @@ export class AuditService {
   static async findProductByGTIN(gtin: string): Promise<AuditProduct | null> {
     const { data, error } = await supabase
       .from('products')
-      .select(`id, name, gtin, sku, brand, category, warehouse_location, is_active, is_published, expiry_date, central_inventory(stock_quantity, last_audited_at)`)
+      .select(`id, name, gtin, sku, brand, category, warehouse_location, is_active, is_published, expiry_date, weight, weight_grams, unit, pack_size, pack_unit, central_inventory(stock_quantity, last_audited_at)`)
       .eq('gtin', gtin)
       .maybeSingle();
     if (error) {
@@ -199,7 +209,7 @@ export class AuditService {
     const pattern = `%${query}%`;
     const { data, error } = await supabase
       .from('products')
-      .select(`id, name, gtin, sku, brand, category, warehouse_location, is_active, is_published, expiry_date, central_inventory(stock_quantity, last_audited_at)`)
+      .select(`id, name, gtin, sku, brand, category, warehouse_location, is_active, is_published, expiry_date, weight, weight_grams, unit, pack_size, pack_unit, central_inventory(stock_quantity, last_audited_at)`)
       .eq('is_active', true)
       .or('is_deleted.is.null,is_deleted.eq.false')
       .or(`name.ilike.${pattern},brand.ilike.${pattern},category.ilike.${pattern},gtin.ilike.${pattern},sku.ilike.${pattern}`)
@@ -213,7 +223,7 @@ export class AuditService {
     date.setDate(date.getDate() - daysAgo);
     const { data, error } = await supabase
       .from('products')
-      .select(`id, name, gtin, sku, brand, category, warehouse_location, is_active, is_published, expiry_date, central_inventory(stock_quantity, last_audited_at)`)
+      .select(`id, name, gtin, sku, brand, category, warehouse_location, is_active, is_published, expiry_date, weight, weight_grams, unit, pack_size, pack_unit, central_inventory(stock_quantity, last_audited_at)`)
       .eq('is_active', true)
       .or('is_deleted.is.null,is_deleted.eq.false')
       .or(`central_inventory.last_audited_at.is.null,central_inventory.last_audited_at.lt.${date.toISOString()}`)
