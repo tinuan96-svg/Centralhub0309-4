@@ -17,6 +17,11 @@ const PRODUCT_SELECT = "id,name,slug,brand,price,sale_price,cost_price,stock,uni
 const VARIANT_SELECT = "id,product_id,variant_name,sku,barcode,unit_value,unit_type,pack_type,pack_quantity,weight_grams,price,discounted_price,cost_price,stock,is_active,sort_order,attributes,updated_at";
 
 type Target = { slug: string; url: string; key: string };
+type ExpiryAvailability = {
+  blocked_remaining: number;
+  fresh_remaining: number;
+  sellable_stock: number;
+};
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -101,12 +106,14 @@ function mapVariant(variant: any) {
   } as Record<string, any>;
 }
 
-function mapProduct(product: any, inventoryStock: Map<string, number>) {
+function mapProduct(product: any, inventoryStock: Map<string, number>, expiryAvailability: Map<string, ExpiryAvailability>) {
   // Each CentralHub product row is one independently stocked physical SKU.
   // Variant relationships are linking/presentation only; sibling stock is never aggregated.
   const type = product.product_type || "simple";
   const fallbackStock = num(product.stock) ?? 0;
-  const stock = inventoryStock.has(product.id) ? inventoryStock.get(product.id)! : fallbackStock;
+  const physicalStock = inventoryStock.has(product.id) ? inventoryStock.get(product.id)! : fallbackStock;
+  const expiry = expiryAvailability.get(String(product.id));
+  const stock = expiry ? Math.min(Math.max(0, physicalStock), Math.max(0, expiry.sellable_stock)) : physicalStock;
   const weight = num(product.weight) ?? num(product.weight_kg);
 
   return {
@@ -188,6 +195,26 @@ async function loadVariantLinks(db: any, productIds?: string[]) {
   if (error) throw new Error(`Variant links read failed: ${errorText(error)}`);
   return new Map((data || []).map((row: any) => [String(row.product_id), String(row.group_key)]));
 }
+
+async function loadExpiryAvailability(db: any, productIds?: string[]) {
+  let query = db
+    .from("product_expiry_product_summary")
+    .select("product_id,blocked_remaining,fresh_remaining,sellable_stock");
+  if (productIds?.length) query = query.in("product_id", productIds);
+  const { data, error } = await query.limit(5000);
+  if (error) throw new Error(`Expiry availability read failed: ${errorText(error)}`);
+  return new Map(
+    (data || []).map((row: any) => [
+      String(row.product_id),
+      {
+        blocked_remaining: Number(row.blocked_remaining || 0),
+        fresh_remaining: Number(row.fresh_remaining || 0),
+        sellable_stock: Number(row.sellable_stock || 0),
+      } as ExpiryAvailability,
+    ]),
+  );
+}
+
 
 function attachVariantLinks(products: Record<string, any>[], links: Map<string, string>) {
   return products.map((row) => ({
@@ -343,6 +370,7 @@ Deno.serve(async (req: Request) => {
     if (eventType === "FULL_SYNC" || eventType === "RECONCILE") {
       const loadedProducts = await loadCentralProducts(db);
       const variantLinks = await loadVariantLinks(db);
+      const expiryAvailability = await loadExpiryAvailability(db);
       const linkedIds = new Set([...variantLinks.keys()]);
       const legacyParentIds = loadedProducts.products
         .filter((product: any) =>
@@ -352,7 +380,7 @@ Deno.serve(async (req: Request) => {
         .map((product: any) => String(product.id));
       const variants = legacyParentIds.length ? await loadCentralVariants(db, legacyParentIds) : [];
       const products = attachVariantLinks(
-        loadedProducts.products.map((product: any) => mapProduct(product, loadedProducts.inventoryStock)),
+        loadedProducts.products.map((product: any) => mapProduct(product, loadedProducts.inventoryStock, expiryAvailability)),
         variantLinks,
       );
       const centralProductIds = new Set(products.map((row: any) => String(row.centralhub_id)));
@@ -385,6 +413,7 @@ Deno.serve(async (req: Request) => {
     const loadedProducts = await loadCentralProducts(db, [productId]);
     if (!loadedProducts.products.length) return json({ ok: false, error: "Product not found" }, 404);
     const variantLinks = await loadVariantLinks(db, [productId]);
+    const expiryAvailability = await loadExpiryAvailability(db, [productId]);
     const sourceProduct = loadedProducts.products[0];
     const isLinked = variantLinks.has(productId);
     const isLegacyVariable =
@@ -392,7 +421,7 @@ Deno.serve(async (req: Request) => {
       !isLinked;
     const variants = isLegacyVariable ? await loadCentralVariants(db, [productId]) : [];
     const product = attachVariantLinks(
-      [mapProduct(sourceProduct, loadedProducts.inventoryStock)],
+      [mapProduct(sourceProduct, loadedProducts.inventoryStock, expiryAvailability)],
       variantLinks,
     )[0];
 
@@ -404,7 +433,7 @@ Deno.serve(async (req: Request) => {
 
     await writeAudit(db, eventType, productId, productName || loadedProducts.products[0]?.name, results);
     const ok = results.every((result) => result.success === true);
-    return json({ ok, legacy_variant_count: variants.length, product_stock: product.stock, stores: results }, ok ? 200 : 207);
+    return json({ ok, legacy_variant_count: variants.length, product_stock: product.stock, expiry_blocked_stock: expiryAvailability.get(productId)?.blocked_remaining ?? 0, stores: results }, ok ? 200 : 207);
   } catch (error) {
     const detail = errorText(error);
     console.error("[product-webhook-dispatcher]", detail);
