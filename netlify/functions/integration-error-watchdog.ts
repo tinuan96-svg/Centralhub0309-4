@@ -89,7 +89,7 @@ export default async function integrationErrorWatchdog() {
     db.from('whatsapp_webhook_events').select('id,event_id,provider,event_type,processing_status,error_message,created_at').gte('created_at', since).order('created_at', { ascending: false }).limit(LIMIT),
     db.from('mollie_webhook_events').select('id,store_slug,mollie_payment_id,error_message,created_at,updated_at').gte('updated_at', since).order('updated_at', { ascending: false }).limit(LIMIT),
     db.from('marketing_sync_jobs').select('id,store_id,provider_id,job_type,status,error_message,created_at,completed_at').gte('created_at', since).order('created_at', { ascending: false }).limit(LIMIT),
-    db.from('webhook_logs').select('id,event_type,product_id,status_code,response_body,success,status,created_at').gte('created_at', since).order('created_at', { ascending: false }).limit(LIMIT),
+    db.from('webhook_logs').select('id,event_type,product_id,status_code,response_body,response,success,status,created_at').gte('created_at', since).order('created_at', { ascending: false }).limit(LIMIT),
   ]);
 
   const storeById = new Map<string, any>();
@@ -157,7 +157,7 @@ export default async function integrationErrorWatchdog() {
 
   for (const row of webhookLogs.data || []) if (row.success === false || failed(row.status)) incidents.push({
     kind: 'products', source: 'webhook_logs', id: str(row.id), at: when(row.created_at),
-    error: first(row.response_body, `${row.event_type || 'Product webhook'} failed with HTTP ${row.status_code || 'unknown'}`), url: '/inventory', severity: 'critical',
+    error: first(row.response_body, row.response, `${row.event_type || 'Product webhook'} failed with HTTP ${row.status_code || 'unknown'}`), url: '/inventory', severity: 'critical',
   });
 
   const groups = new Map<string, Incident[]>();
