@@ -231,11 +231,33 @@ function externalBrowserTask(text: string) {
   if (action && /\bsupabase\b/iu.test(value)) return {key:'supabase',system:'Supabase',url:'https://supabase.com/dashboard/'};
   const domain=value.match(/(?:https?:\/\/)?(?:www\.)?([a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)*\.[a-z]{2,})(?:\/[^\s]*)?/i);
   if(action && domain?.[1]){const host=domain[1].replace(/^www\./i,'');return {key:'external_web',system:host,url:`https://${host}/`};}
-  if (action && /\b(?:web\s*session|websession|live\s*web|browser)\b/iu.test(value)) return {key:'web_search',system:'Shruthi Live Web',url:'https://www.google.com/'};
   if(search) return {key:'web_search',system:'Web Search',url:'https://www.google.com/'};
   return null;
 }
 
+
+function browserContinuationCue(text: string) {
+  const value=String(text||"").toLowerCase().trim();
+  if(!value) return false;
+  return /\b(?:continue|resume|carry on|go on|proceed|keep going|same session|same page|live web|web session|websession|browser|log in|login|logged in|sign in|start|try again|there|that page)\b|(?:തുടര|തുടങ്ങ|ലോഗിൻ|ലോഗ് ഇൻ|അതേ|അവിടെ|വെബ് സെഷൻ)|(?:தொடர|லாகின்|அதே|அங்கே)/iu.test(value)
+    || /^(?:ok(?:ay)?|yes|yeah|yep|sure|right|fine|go ahead|start|continue|resume|carry on)[\s.!,-]*$/iu.test(value);
+}
+function browserTaskFromSession(session: any) {
+  const metadata=session?.metadata&&typeof session.metadata==="object"?session.metadata:{};
+  const rawUrl=String(metadata?.active_url||session?.target_url||"").trim();
+  let key=String(metadata?.target_key||"external_web").trim()||"external_web";
+  let system=String(session?.target_system||"External web").trim()||"External web";
+  let url=rawUrl;
+  try{
+    const parsed=new URL(rawUrl);
+    const host=parsed.hostname.toLowerCase();
+    if(host==="facebook.com"||host.endsWith(".facebook.com")){key="facebook";system="Facebook";}
+    else if(host==="instagram.com"||host.endsWith(".instagram.com")){key="instagram";system="Instagram";}
+    else if(host==="business.facebook.com"){key="meta_business";system="Meta Business";}
+    else if(host==="developers.facebook.com"){key="meta_developer";system="Meta for Developers";}
+  }catch{}
+  return {key,system,url};
+}
 function instantReply(text: string) {
   const v = text.toLowerCase().trim().replace(/[.!?]+$/g, "").trim();
   if (/^(hi|hello|hey|hiya|good morning|good afternoon|good evening|ഹായ്|ഹലോ|നമസ്കാരം|வணக்கம்|ஹாய்|ஹலோ)$/iu.test(v)) {
@@ -382,10 +404,45 @@ Deno.serve(async (req: Request) => {
   if(action==="route_realtime"){
     const text=normalizeCentralHubSpeech(String(body?.text||"").trim()).slice(0,6000);
     if(!text) return send(400,{success:false,error:"missing_command"});
-    const task=externalBrowserTask(text);
+
+    const directTask=externalBrowserTask(text);
+    const wantsContinuation=browserContinuationCue(text);
+    let recentSession:any=null;
+    if(wantsContinuation || !directTask){
+      const cutoff=new Date(Date.now()-45*60*1000).toISOString();
+      const {data}=await db.from("nora_action_sessions")
+        .select("id,title,goal,target_system,target_url,status,current_step,metadata,updated_at")
+        .eq("user_id",user.id)
+        .gte("updated_at",cutoff)
+        .order("updated_at",{ascending:false})
+        .limit(1)
+        .maybeSingle();
+      recentSession=data||null;
+    }
+
+    let task:any=directTask;
+    let reuseSessionId:string|null=null;
+    let inheritedGoal="";
+    if(recentSession && wantsContinuation){
+      const recentTask=browserTaskFromSession(recentSession);
+      const directMatchesRecent=!directTask || directTask.key==="web_search" || directTask.key===recentTask.key;
+      if(directMatchesRecent && recentTask.url){
+        task=recentTask;
+        inheritedGoal=String(recentSession.goal||"").slice(0,4200);
+        if(["planned","running","waiting_input","waiting_approval","paused"].includes(String(recentSession.status||""))){
+          reuseSessionId=String(recentSession.id);
+        }
+      }
+    }
+
+    // A generic mention of "browser/live web" is context, not a request to Google-search.
     if(!task) return send(200,{success:true,routed:false,status:"realtime_only"});
-    const final={reply:`Opening ${task.system} in Shruthi Live Web.`,intent:"external_web_action",mode:"operations",risk_level:"read_only",requires_confirmation:false,suggested_action:null,navigation_path:null,speak:false,browser_required:true,browser_target_key:task.key,browser_target_system:task.system,browser_target_url:task.url,browser_goal:text};
-    const stored=await storeHistory(db,user.id,text,final,{page_context:String(body?.page_context||"").slice(0,300),fast_path:true,model:"realtime-router",latency_ms:{snapshot:0,model:0,total:Date.now()-started}});
+
+    const browserGoal=inheritedGoal
+      ? `${inheritedGoal}\n\nCURRENT USER FOLLOW-UP: ${text}\nContinue the same browser task from the current visible state. Do not restart from Google or a generic search page.`
+      : text;
+    const final={reply:reuseSessionId?`Continuing ${task.system} in the same Shruthi Live Web session.`:`Opening ${task.system} in Shruthi Live Web.`,intent:"external_web_action",mode:"operations",risk_level:"read_only",requires_confirmation:false,suggested_action:null,navigation_path:null,speak:false,browser_required:true,browser_target_key:task.key,browser_target_system:task.system,browser_target_url:task.url,browser_goal:browserGoal};
+    const stored=await storeHistory(db,user.id,text,final,{page_context:String(body?.page_context||"").slice(0,300),fast_path:true,model:"realtime-router",latency_ms:{snapshot:0,model:0,total:Date.now()-started},browser_reuse_session_id:reuseSessionId});
     const routedPayload=(stored?.action_payload && typeof stored.action_payload==="object") ? stored.action_payload : {};
     return send(200,{
       success:true,
@@ -393,10 +450,11 @@ Deno.serve(async (req: Request) => {
       status:String(stored?.status||"ready_for_computer"),
       command_id:stored?.id||null,
       browser_required:true,
+      browser_reuse_session_id:reuseSessionId,
       browser_target_key:routedPayload.computer_target_key||task.key,
       browser_target_system:routedPayload.computer_target_system||task.system,
       browser_target_url:routedPayload.computer_target_url||task.url,
-      browser_goal:routedPayload.computer_goal||text
+      browser_goal:routedPayload.computer_goal||browserGoal
     });
   }
 

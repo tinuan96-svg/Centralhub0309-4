@@ -28,6 +28,7 @@ type AssistantReply = {
   browser_target_system?: string | null;
   browser_target_url?: string | null;
   browser_goal?: string | null;
+  browser_reuse_session_id?: string | null;
 };
 
 type NativeBridge = {
@@ -392,6 +393,33 @@ export default function CentralHubVoiceAssistant() {
       const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
       if (native?.getPlatform?.() !== 'android' || !native.openNoraComputerMode || !supabaseUrl || !publishableKey) {
         throw new Error('Shruthi Live Web requires the current CentralHub Android app.');
+      }
+
+      const reuseSessionId = String(routed.browser_reuse_session_id || '').trim();
+      if (reuseSessionId) {
+        if (routed.command_id) {
+          await supabase.rpc('complete_voice_computer_command', {
+            p_command_id: routed.command_id,
+            p_session_id: reuseSessionId,
+            p_target_key: targetKey,
+            p_target_url: targetUrl,
+          });
+        }
+        const launched = native.openNoraComputerMode(reuseSessionId, targetUrl, authSession.access_token, supabaseUrl, publishableKey) === true;
+        if (!launched) throw new Error('Could not reopen the same Shruthi Live Web session.');
+        const local: AssistantReply = {
+          success:true,
+          reply:`Continuing ${targetSystem} in the same Shruthi Live Web session.`,
+          intent:'external_web_action',
+          mode:'operations',
+          risk_level:'read_only',
+          requires_confirmation:false,
+          speak:false,
+          status:'running',
+        };
+        setResponse(local);
+        responseRef.current = local;
+        return true;
       }
 
       const { data: actionSession, error: insertError } = await supabase

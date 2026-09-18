@@ -93,6 +93,7 @@ public final class NoraComputerActivity extends android.app.Activity {
     private boolean sessionCompleted = false;
     private boolean waitingForVoiceAnswer = false;
     private boolean liveVoicePausedForSecureInput = false;
+    private boolean desktopMode = false;
     private int actionGeneration = 0;
     private long lastPageFinishedAt = 0L;
     private long lastSyntheticActionAt = 0L;
@@ -673,6 +674,9 @@ public final class NoraComputerActivity extends android.app.Activity {
             case "message":
                 setManualControl(false, result.optString("message", "Got it · Shruthi is continuing…"));
                 break;
+            case "browser_fallback":
+                applyBrowserFallback(result);
+                break;
             case "paused": setManualControl(true, "Paused · you have control"); break;
             default: failVisible("Shruthi returned an unexpected computer state.");
         }
@@ -791,6 +795,31 @@ public final class NoraComputerActivity extends android.app.Activity {
             setStatus("Shruthi is checking the current page…");
             requestAgent("continue", extra);
         } catch (Exception error) { failVisible("Could not capture Shruthi browser state."); }
+    }
+
+
+    private void applyBrowserFallback(JSONObject result) {
+        String fallbackUrl = safe(result.optString("url", webView == null ? targetUrl : webView.getUrl()));
+        boolean useDesktop = result.optBoolean("desktop_mode", true);
+        if (!isAllowedUrl(fallbackUrl)) { failVisible("Shruthi could not open the safe fallback page."); return; }
+        if (useDesktop && webView != null) {
+            desktopMode = true;
+            WebSettings settings = webView.getSettings();
+            String ua = settings.getUserAgentString();
+            if (ua == null) ua = "";
+            ua = ua.replace("; wv", "").replace(" Mobile ", " ").replace(" Mobile", "");
+            if (!ua.contains("X11")) {
+                ua = ua.replace("Linux; Android", "X11; Linux x86_64");
+            }
+            settings.setUserAgentString(ua);
+            settings.setUseWideViewPort(true);
+            settings.setLoadWithOverviewMode(true);
+        }
+        setManualControl(false, result.optString("message", "Shruthi is switching to a web fallback…"));
+        pageLoading = true;
+        lastPageFinishedAt = 0L;
+        webView.loadUrl(fallbackUrl);
+        mainHandler.postDelayed(() -> waitForPageReady(() -> requestResume(false, "The fallback web page is loaded. Continue the same task from the current screen."), 0), 350L);
     }
 
     private void handleInputRequest(String question, boolean sensitive) {
