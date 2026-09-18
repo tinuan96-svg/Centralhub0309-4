@@ -14,7 +14,7 @@ import {
   getInputClasses,
   SectionHeader
 } from '@/lib/design-system';
-import { AuditService, AuditProduct } from '@/lib/services/inventory/auditService';
+import { AuditService, AuditProduct, ExpiryBatch } from '@/lib/services/inventory/auditService';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
@@ -65,7 +65,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
 
   // Audit Form State
   const [bins, setBins] = useState<{ location_code: string; stock_quantity: string }[]>([]);
-  const [expiryDate, setExpiryDate] = useState<string>('');
+  const [expiryBatches, setExpiryBatches] = useState<ExpiryBatch[]>([]);
   const [notes, setNotes] = useState('');
 
   const [isListening, setIsListening] = useState(false);
@@ -151,7 +151,10 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
   const handleProductSelect = async (product: AuditProduct) => {
     setCurrentProduct(product);
     setIsLoading(true);
-    const productBins = await AuditService.getBinLocations(product.id);
+    const [productBins, productExpiryBatches] = await Promise.all([
+      AuditService.getBinLocations(product.id),
+      AuditService.getExpiryBatches(product.id),
+    ]);
     setIsLoading(false);
 
     if (productBins.length > 0) {
@@ -167,7 +170,18 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
       }]);
     }
 
-    setExpiryDate(product.expiry_date || '');
+    if (productExpiryBatches.length > 0) {
+      setExpiryBatches(productExpiryBatches);
+    } else if (product.expiry_date && product.current_stock > 0) {
+      setExpiryBatches([{
+        batch_id: null,
+        expiry_date: product.expiry_date,
+        quantity: product.current_stock,
+        remaining_quantity: product.current_stock,
+      }]);
+    } else {
+      setExpiryBatches([]);
+    }
     setStep('audit-form');
   };
 
@@ -197,6 +211,29 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     setBins(newBins);
   };
 
+  const addExpiryBatch = () => {
+    setExpiryBatches([...expiryBatches, {
+      batch_id: null,
+      expiry_date: '',
+      quantity: 0,
+      remaining_quantity: 0,
+    }]);
+  };
+
+  const removeExpiryBatch = (index: number) => {
+    setExpiryBatches(expiryBatches.filter((_, i) => i !== index));
+  };
+
+  const updateExpiryBatch = (index: number, field: 'batch_id' | 'expiry_date' | 'quantity', value: string) => {
+    const next = [...expiryBatches];
+    if (field === 'quantity') {
+      next[index] = { ...next[index], quantity: Math.max(0, parseInt(value, 10) || 0) };
+    } else {
+      next[index] = { ...next[index], [field]: value || (field === 'batch_id' ? null : '') } as ExpiryBatch;
+    }
+    setExpiryBatches(next);
+  };
+
   const handleAuditSubmit = async () => {
     if (!currentProduct) return;
 
@@ -209,12 +246,26 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     }));
 
     const totalStock = formattedBins.reduce((sum, b) => sum + b.stock_quantity, 0);
+    const expiryTotal = expiryBatches.reduce((sum, batch) => sum + Math.max(0, Number(batch.quantity) || 0), 0);
+    const nonZeroExpiryBatches = expiryBatches.filter(batch => Math.max(0, Number(batch.quantity) || 0) > 0);
+
+    if (nonZeroExpiryBatches.some(batch => !batch.expiry_date)) {
+      setAuditStatus({ type: 'error', text: 'Every expiry batch with stock needs an expiry date.' });
+      setIsLoading(false);
+      return;
+    }
+
+    if (nonZeroExpiryBatches.length > 0 && expiryTotal !== totalStock) {
+      setAuditStatus({ type: 'error', text: `Expiry batch total (${expiryTotal}) must match audited stock total (${totalStock}).` });
+      setIsLoading(false);
+      return;
+    }
 
     const success = await AuditService.performAudit({
       productId: currentProduct.id,
       totalStock: totalStock,
       bins: formattedBins,
-      expiryDate: expiryDate || null,
+      expiryBatches,
       notes: notes,
       userId: user?.id,
       gtin: scannedGtin // Update GTIN if it was scanned and assigned
@@ -259,7 +310,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     setScannedGtin('');
     setCurrentProduct(null);
     setBins([]);
-    setExpiryDate('');
+    setExpiryBatches([]);
     setNotes('');
     setSearchResults([]);
   };
@@ -511,15 +562,75 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                     <div className="space-y-6 pt-4">
 
                       {/* Expiry Tracking */}
-                      <div className="space-y-2 p-4 rounded-xl bg-amber-500/5 border border-amber-500/10">
-                        <label className={designTokens.typography.label}>Product Expiry Date</label>
-                        <input
-                          type="date"
-                          value={expiryDate}
-                          onChange={(e) => setExpiryDate(e.target.value)}
-                          className={`w-full ${getInputClasses()}`}
-                        />
-                        <p className="text-[10px] text-amber-500 font-medium">Important for fresh and pantry items.</p>
+                      <div className="space-y-4 p-4 rounded-xl bg-amber-500/5 border border-amber-500/10">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <label className={designTokens.typography.label}>Expiry Boxes / Batches</label>
+                            <p className="text-[10px] text-amber-500 font-medium mt-1">
+                              Same SKU can have multiple boxes with different expiry dates. Keep each one separate.
+                            </p>
+                          </div>
+                          <Button variant="secondary" onClick={addExpiryBatch}>
+                            <Icons.Plus size={14} /> Add Batch
+                          </Button>
+                        </div>
+
+                        {expiryBatches.length === 0 ? (
+                          <div className="rounded-xl border border-dashed border-slate-700 p-4 text-xs text-slate-500 text-center">
+                            No expiry batch tracked. Add one only if this stock has an expiry date.
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {expiryBatches.map((batch, index) => (
+                              <div key={batch.id || index} className="grid grid-cols-12 gap-2 items-end rounded-xl bg-slate-900/40 border border-slate-800 p-3">
+                                <div className="col-span-12 sm:col-span-4 space-y-1">
+                                  <label className="text-[10px] text-slate-500 uppercase font-bold">Batch / Lot</label>
+                                  <input
+                                    type="text"
+                                    value={batch.batch_id || ''}
+                                    onChange={(e) => updateExpiryBatch(index, 'batch_id', e.target.value)}
+                                    placeholder={`Box ${index + 1} / lot code`}
+                                    className={`w-full text-sm ${getInputClasses()}`}
+                                  />
+                                </div>
+                                <div className="col-span-7 sm:col-span-5 space-y-1">
+                                  <label className="text-[10px] text-slate-500 uppercase font-bold">Expiry Date</label>
+                                  <input
+                                    type="date"
+                                    value={batch.expiry_date || ''}
+                                    onChange={(e) => updateExpiryBatch(index, 'expiry_date', e.target.value)}
+                                    className={`w-full text-sm ${getInputClasses()}`}
+                                  />
+                                </div>
+                                <div className="col-span-4 sm:col-span-2 space-y-1">
+                                  <label className="text-[10px] text-slate-500 uppercase font-bold">Qty</label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={batch.quantity}
+                                    onChange={(e) => updateExpiryBatch(index, 'quantity', e.target.value)}
+                                    className={`w-full text-sm font-bold ${getInputClasses()}`}
+                                  />
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => removeExpiryBatch(index)}
+                                  className="col-span-1 p-2.5 text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors"
+                                  aria-label={`Remove expiry batch ${index + 1}`}
+                                >
+                                  <Icons.Trash size={18} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between rounded-xl bg-slate-900/40 border border-slate-800 px-3 py-2">
+                          <span className="text-xs text-slate-500">Expiry batch quantity total</span>
+                          <span className="font-black text-amber-300">
+                            {expiryBatches.reduce((sum, batch) => sum + Math.max(0, Number(batch.quantity) || 0), 0)}
+                          </span>
+                        </div>
                       </div>
 
                       {/* Multi-Location Bins */}
