@@ -138,6 +138,7 @@ public final class NoraComputerActivity extends android.app.Activity {
         setManualControl(false, "Shruthi is opening Live Web…");
         webView.loadUrl(targetUrl);
         startLiveVoice();
+        ShruthiBackgroundTaskService.start(this, sessionId, targetUrl, accessToken, supabaseUrl, publishableKey);
     }
 
     private void buildUi() {
@@ -451,6 +452,8 @@ public final class NoraComputerActivity extends android.app.Activity {
         settings.setUseWideViewPort(true);
         settings.setLoadWithOverviewMode(false);
         settings.setSupportMultipleWindows(false);
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) settings.setOffscreenPreRaster(true);
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, true);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
@@ -489,6 +492,7 @@ public final class NoraComputerActivity extends android.app.Activity {
                 lastPageFinishedAt = System.currentTimeMillis();
                 if (addressView != null) addressView.setText(url);
                 if (!isAllowedUrl(url)) return;
+                ShruthiBackgroundTaskService.updateUrl(NoraComputerActivity.this, url);
                 updateActiveTab(url, safe(view.getTitle()));
                 CookieManager.getInstance().flush();
                 recordHistory(url, safe(view.getTitle()));
@@ -982,6 +986,7 @@ public final class NoraComputerActivity extends android.app.Activity {
 
     private void cancelAndClose() {
         if (finishedOrDestroyed) return;
+        ShruthiBackgroundTaskService.stop(this);
         if (sessionCompleted) { finish(); return; }
         setStatus("Ending Shruthi task…");
         networkExecutor.execute(() -> {
@@ -1020,16 +1025,18 @@ public final class NoraComputerActivity extends android.app.Activity {
         if (webView != null && webView.canGoBack()) { takeOverForBrowser(); webView.goBack(); return; }
         new AlertDialog.Builder(this).setTitle("Return to Shruthi?")
                 .setMessage("The Live Web tool will close and the main Shruthi conversation will remain your only assistant input.")
-                .setPositiveButton("Return", (dialog, which) -> { if (!sessionCompleted) requestAgent("pause", null); finish(); })
+                .setPositiveButton("Return", (dialog, which) -> { ShruthiBackgroundTaskService.stop(this); if (!sessionCompleted) requestAgent("pause", null); finish(); })
                 .setNegativeButton("Stay", null).show();
     }
 
     @Override protected void onResume() {
         super.onResume();
+        ShruthiBackgroundTaskService.markVisible(this);
         if (!liveVoicePausedForSecureInput) startLiveVoice();
     }
 
     @Override protected void onPause() {
+        ShruthiBackgroundTaskService.markBackground(this);
         stopLiveVoice();
         super.onPause();
     }
