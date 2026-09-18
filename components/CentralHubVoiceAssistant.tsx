@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { ChevronRight, Maximize2, Mic, MicOff, Minus, Send, Settings, Square, Volume2, VolumeX, X } from 'lucide-react';
+import { ChevronRight, Maximize2, Mic, MicOff, Minus, Send, Square, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
-type AssistantMode = 'operations' | 'board' | 'developer';
+type AssistantMode = 'operations';
 type AssistantReply = {
   success?: boolean;
   transcript?: string;
@@ -48,17 +48,7 @@ type NativeBridge = {
 
 type NativeTranscriptEvent = CustomEvent<{ text?: string }>;
 type VoiceState = 'waiting' | 'listening' | 'processing' | 'speaking';
-type NoraThemeId =
-  | 'signature'
-  | 'waveform'
-  | 'holographic'
-  | 'minimal'
-  | 'executive'
-  | 'galaxy'
-  | 'ripple'
-  | 'aurora'
-  | 'glass'
-  | 'earth';
+type NoraThemeId = 'signature';
 
 type NoraTheme = {
   id: NoraThemeId;
@@ -71,16 +61,15 @@ type NoraTheme = {
 };
 
 const THEMES: NoraTheme[] = [
-  { id: 'signature', name: 'Signature Orb', subtitle: 'Clean · Elegant · Professional', accent: '#55b8ff', secondary: '#b9dcff', background: 'radial-gradient(circle at 50% 32%, rgba(26,111,255,.18), transparent 35%), #02050a', orb: 'signature' },
-  { id: 'waveform', name: 'Waveform Flow', subtitle: 'Modern · Dynamic · Minimal', accent: '#58aaff', secondary: '#9d6cff', background: 'radial-gradient(circle at 50% 22%, rgba(87,67,255,.14), transparent 34%), #02050a', orb: 'waveform' },
-  { id: 'holographic', name: 'Holographic Core', subtitle: 'High-Tech · Intelligent · Futuristic', accent: '#5ac8ff', secondary: '#315dff', background: 'radial-gradient(circle at 50% 32%, rgba(18,121,255,.18), transparent 38%), #01040a', orb: 'holographic' },
-  { id: 'minimal', name: 'Minimal Circle', subtitle: 'Simple · Calm · Beautiful', accent: '#b3dcff', secondary: '#5a9cff', background: 'linear-gradient(180deg, #010204, #03070d 70%, #010204)', orb: 'minimal' },
-  { id: 'executive', name: 'Executive Mode', subtitle: 'Stylish · Professional · Powerful', accent: '#67c7ff', secondary: '#345dff', background: 'radial-gradient(circle at 75% 24%, rgba(23,102,255,.20), transparent 30%), #02050b', orb: 'executive' },
-  { id: 'galaxy', name: 'Particle Galaxy', subtitle: 'Creative · Premium · Immersive', accent: '#48a8ff', secondary: '#93d4ff', background: 'radial-gradient(circle at 50% 34%, rgba(20,117,255,.16), transparent 34%), #01030a', orb: 'galaxy' },
-  { id: 'ripple', name: 'Voice Ripple', subtitle: 'Bold · Interactive · Intuitive', accent: '#6ec7ff', secondary: '#4578ff', background: 'radial-gradient(circle at 50% 42%, rgba(32,111,255,.14), transparent 30%), #02050a', orb: 'ripple' },
-  { id: 'aurora', name: 'Aurora Blend', subtitle: 'Vibrant · Modern · Premium', accent: '#57c7ff', secondary: '#945cff', background: 'radial-gradient(circle at 58% 28%, rgba(103,72,255,.19), transparent 33%), #02040a', orb: 'aurora' },
-  { id: 'glass', name: 'Glass UI', subtitle: 'Refined · Elegant · Productive', accent: '#70cfff', secondary: '#8fe6ff', background: 'linear-gradient(160deg, #030813, #010205 65%)', orb: 'glass' },
-  { id: 'earth', name: 'Earth View', subtitle: 'Inspiring · Bold · Next Level', accent: '#57aaff', secondary: '#b2e4ff', background: 'radial-gradient(circle at 50% 72%, rgba(22,91,190,.22), transparent 30%), #01040a', orb: 'earth' },
+  {
+    id: 'signature',
+    name: 'Shruthi Live',
+    subtitle: 'Private · Voice + text · Approval-controlled',
+    accent: '#55b8ff',
+    secondary: '#b9dcff',
+    background: 'radial-gradient(circle at 50% 32%, rgba(26,111,255,.18), transparent 35%), #02050a',
+    orb: 'signature',
+  },
 ];
 
 const WAKE_WORD = /(?:^|[\s,.:!?])(shruthi|sruthi|shruti|nora|norah|noora|noura|norra)(?=$|[\s,.:!?])|ശ്രുതി|ஸ்ருதி|നോറാ?|நோரா?/iu;
@@ -169,20 +158,13 @@ async function invokeShruthiSpeech(text: string): Promise<ShruthiSpeechReply> {
   if (error) throw new Error(error.message || 'Shruthi speech request failed.');
   return (data || {}) as ShruthiSpeechReply;
 }
-function inferMode(pathname: string, text: string): AssistantMode {
-  const value = `${pathname} ${text}`.toLowerCase();
-  if (/developer|github|supabase|netlify|deploy|code|schema|api|webhook|integration/.test(value)) return 'developer';
-  if (/board|strategy|executive|finance|financial|profit|revenue|forecast|planning|risk/.test(value)) return 'board';
+function inferMode(_pathname: string, _text: string): AssistantMode {
+  // Compatibility field only. Shruthi has one behaviour/persona, matching Nivo.
   return 'operations';
 }
 
-function themePoolForContext(pathname: string, text = ''): NoraThemeId[] {
-  const value = `${pathname} ${text}`.toLowerCase();
-  if (/finance|bank|payment|security|legal|risk/.test(value)) return ['executive', 'minimal', 'glass', 'holographic'];
-  if (/marketing|campaign|creative|whatsapp/.test(value)) return ['aurora', 'waveform', 'galaxy', 'signature'];
-  if (/analytics|business-intelligence|report|strategy|executive/.test(value)) return ['earth', 'holographic', 'signature', 'glass'];
-  if (/product|stock|purchase|procurement|order|fulfil/.test(value)) return ['signature', 'ripple', 'glass', 'holographic'];
-  return THEMES.map((theme) => theme.id);
+function themePoolForContext(_pathname: string, _text = ''): NoraThemeId[] {
+  return ['signature'];
 }
 
 function quickPrompts(pathname: string) {
@@ -245,14 +227,11 @@ export default function CentralHubVoiceAssistant() {
   const theme = useMemo(() => THEMES.find((item) => item.id === themeId) || THEMES[0], [themeId]);
   const prompts = useMemo(() => quickPrompts(pathname), [pathname]);
 
-  const chooseTheme = useCallback((text = '') => {
-    const pool = themePoolForContext(pathname, text);
-    const candidates = pool.filter((id) => id !== themeRef.current);
-    const list = candidates.length ? candidates : pool;
-    const next = list[Math.floor(Math.random() * list.length)] || 'signature';
-    themeRef.current = next;
-    setThemeId(next);
-  }, [pathname]);
+  const chooseTheme = useCallback((_text = '') => {
+    // Fixed Shruthi identity. Appearance no longer changes persona or behaviour.
+    themeRef.current = 'signature';
+    setThemeId('signature');
+  }, []);
 
   const setSession = useCallback((active: boolean) => {
     noraSessionRef.current = active;
@@ -427,8 +406,7 @@ export default function CentralHubVoiceAssistant() {
       const localResult: AssistantReply = { success: true, reply: secureReply, intent: 'browser_secure_handoff', mode: 'operations', risk_level: 'read_only', requires_confirmation: false, speak: true, status: 'waiting_input' };
       setResponse(localResult);
       responseRef.current = localResult;
-      speak(secureReply);
-      return true;
+        return true;
     }
 
     const { data: resumed, error: resumeError } = await supabase.rpc('shruthi_resume_browser_question', {
@@ -446,7 +424,6 @@ export default function CentralHubVoiceAssistant() {
     const localResult: AssistantReply = { success: true, reply, intent: 'browser_question_answered', mode: 'operations', risk_level: 'read_only', requires_confirmation: false, speak: true, status: 'running' };
     setResponse(localResult);
     responseRef.current = localResult;
-    speak(reply);
     return true;
   }, [speak]);
 
@@ -507,14 +484,14 @@ export default function CentralHubVoiceAssistant() {
         mode,
         page_context: pathname,
         assistant_name: 'SHRUTHI',
-        adaptive_behavior: true,
+        adaptive_behavior: false,
       });
       if (turnGeneration !== turnGenerationRef.current) return;
       if (!result.success || !result.reply) throw new Error(result.error || 'Shruthi could not answer.');
       setResponse(result);
       responseRef.current = result;
-      if (result.speak !== false) speak(result.reply);
-      else stopSpeech();
+      // Match Nivo: typed/fallback answers stay text-only. Realtime owns spoken audio.
+      stopSpeech();
     } catch (e: any) {
       if (turnGeneration !== turnGenerationRef.current) return;
       setError(e?.message || 'Shruthi failed.');
@@ -771,9 +748,7 @@ export default function CentralHubVoiceAssistant() {
                 <div className="text-[22px] font-light tracking-tight sm:text-[26px]">Central<span className="font-semibold text-[var(--nora-accent)]">Hub</span></div>
                 <div className="mt-0.5 text-[8px] uppercase tracking-[0.42em] text-slate-500">Business · Insights · Action</div>
               </div>
-              <button type="button" onClick={() => chooseTheme()} className="nora-icon-button" aria-label="Change SHRUTHI appearance">
-                <Settings size={20} />
-              </button>
+              <span className="h-11 w-11" aria-hidden="true" />
             </header>
 
             <main className="flex min-h-0 flex-1 flex-col items-center justify-center py-3 sm:py-6">
@@ -793,7 +768,7 @@ export default function CentralHubVoiceAssistant() {
                     ))}
                   </div>
                   <p className="mt-1 text-sm font-medium tracking-[0.18em] text-[var(--nora-accent)]">{statusLabel}</p>
-                  <p className="mt-2 text-[10px] text-slate-500">{theme.name} · {theme.subtitle}</p>
+                  <p className="mt-2 text-[10px] text-slate-500">Private · voice + text · changes require approval</p>
                 </div>
 
                 {(transcript || processing || response?.reply || error) && (
@@ -878,16 +853,6 @@ export default function CentralHubVoiceAssistant() {
               >
                 <Mic size={21} />
                 <span className="hidden sm:block">{realtimeState === 'speaking' ? 'Interrupt' : realtimeState === 'connecting' || realtimeState === 'reconnecting' ? 'Connecting' : realtimeState === 'thinking' ? 'Heard you' : realtimeState === 'listening' ? 'Live' : realtimeState === 'error' ? 'Retry' : 'Voice'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => { setAutoSpeak((value) => !value); if (autoSpeak) stopSpeech(); }}
-                className="nora-action-button"
-                aria-label={autoSpeak ? 'Mute SHRUTHI' : 'Enable SHRUTHI voice'}
-              >
-                {autoSpeak ? <Volume2 size={20} /> : <VolumeX size={20} />}
-                <span className="hidden sm:block">{autoSpeak ? 'Mute' : 'Voice'}</span>
               </button>
 
               <button type="button" onClick={endConversation} className="nora-action-button nora-end-button" aria-label="End SHRUTHI conversation">
