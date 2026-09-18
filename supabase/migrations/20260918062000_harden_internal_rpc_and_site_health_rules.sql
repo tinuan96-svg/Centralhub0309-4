@@ -7,6 +7,7 @@ revoke execute on function public.shruthi_sync_browser_result_to_source_command(
 revoke execute on function public.sync_shared_publisher_account(uuid) from public, anon, authenticated;
 revoke execute on function public.trg_sync_shared_publisher_account() from public, anon, authenticated;
 revoke execute on function public.trg_sync_shared_publisher_link() from public, anon, authenticated;
+revoke execute on function public.archive_stale_unpaid_orders() from public, anon, authenticated;
 
 grant execute on function public.mark_synced_source_order_inventory_handled() to service_role;
 grant execute on function public.shruthi_complete_source_command_on_session_insert() to service_role;
@@ -14,6 +15,7 @@ grant execute on function public.shruthi_sync_browser_result_to_source_command()
 grant execute on function public.sync_shared_publisher_account(uuid) to service_role;
 grant execute on function public.trg_sync_shared_publisher_account() to service_role;
 grant execute on function public.trg_sync_shared_publisher_link() to service_role;
+grant execute on function public.archive_stale_unpaid_orders() to service_role;
 
 insert into public.site_health_rules
   (check_name, category, default_risk_level, auto_fix_allowed, requires_preview, requires_manual_approval, max_files_changed, notes)
