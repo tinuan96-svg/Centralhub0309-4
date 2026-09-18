@@ -21,12 +21,12 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Checkout event revision
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
@@ -68,7 +68,7 @@ jobs:
 
       - name: Export verified source artifact
         if: github.event_name == 'push' && contains(github.event.head_commit.message, '[export-source]')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: centralhub-main-source-${{ github.sha }}
           path: |
