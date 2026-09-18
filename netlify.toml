@@ -1,3 +1,6 @@
+# CentralHub production hosting: Netlify only.
+# Cloudflare/OpenNext deployment paths are intentionally removed to avoid split hosting.
+
 [functions]
   directory = "netlify/functions"
 
