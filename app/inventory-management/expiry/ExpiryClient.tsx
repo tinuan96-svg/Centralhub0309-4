@@ -69,7 +69,7 @@ export default function ExpiryClient() {
   const loadData = async () => {
     setLoading(true);
 
-    const [batchResult, summaryResult, writeoffResult] = await Promise.all([
+    const [batchResult, summaryResult, inventoryResult, writeoffResult] = await Promise.all([
       supabase
         .from('product_expiry')
         .select('id,product_id,batch_id,expiry_date,quantity,remaining_quantity,products(id,name,sku,cost_price,image_url,stock,is_active,is_published,expiry_blocked)')
@@ -80,6 +80,9 @@ export default function ExpiryClient() {
         .from('product_expiry_product_summary')
         .select('product_id,physical_stock,active_batch_count,blocked_remaining,fresh_remaining,sellable_stock,nearest_expiry,nearest_sellable_expiry'),
       supabase
+        .from('central_inventory')
+        .select('product_id,stock_quantity'),
+      supabase
         .from('inventory_expiry_writeoffs')
         .select('id,product_id,quantity,unit_cost,total_cost,expiry_date,recorded_at')
         .order('recorded_at', { ascending: true }),
@@ -87,15 +90,21 @@ export default function ExpiryClient() {
 
     if (batchResult.error) console.error('[Expiry] Failed to load batch entries:', batchResult.error);
     if (summaryResult.error) console.error('[Expiry] Failed to load expiry availability:', summaryResult.error);
+    if (inventoryResult.error) console.error('[Expiry] Failed to load central inventory:', inventoryResult.error);
     if (writeoffResult.error) console.error('[Expiry] Failed to load expiry losses:', writeoffResult.error);
 
     setBatches((batchResult.data || []) as unknown as BatchRow[]);
+
+    const physicalStock = new Map<string, number>();
+    for (const row of inventoryResult.data || []) {
+      physicalStock.set(String(row.product_id), Number(row.stock_quantity || 0));
+    }
 
     const nextSummary = new Map<string, SummaryRow>();
     for (const row of (summaryResult.data || []) as SummaryRow[]) {
       nextSummary.set(row.product_id, {
         ...row,
-        physical_stock: Number(row.physical_stock || 0),
+        physical_stock: physicalStock.get(String(row.product_id)) ?? Number(row.physical_stock || 0),
         active_batch_count: Number(row.active_batch_count || 0),
         blocked_remaining: Number(row.blocked_remaining || 0),
         fresh_remaining: Number(row.fresh_remaining || 0),
