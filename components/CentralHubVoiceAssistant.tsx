@@ -244,6 +244,22 @@ export default function CentralHubVoiceAssistant() {
     bridge?.setTaraSpeaking?.(false);
   }, []);
 
+  const interruptPendingTurn = useCallback(() => {
+    if (realtimeActiveRef.current) getNativeBridge()?.interruptShruthiRealtime?.();
+    turnGenerationRef.current += 1;
+    processingRef.current = false;
+    setProcessing(false);
+    stopSpeech();
+    setError('');
+  }, [stopSpeech]);
+
+  useEffect(() => () => {
+    if (realtimeActiveRef.current) getNativeBridge()?.stopShruthiRealtime?.();
+    turnGenerationRef.current += 1;
+    stopTracks();
+    stopSpeech();
+  }, [stopSpeech, stopTracks]);
+
   const tryResumePendingBrowserQuestion = useCallback(async (answerText: string) => {
     const { data: authData } = await supabase.auth.getSession();
     const authSession = authData.session;
@@ -389,7 +405,7 @@ export default function CentralHubVoiceAssistant() {
         setProcessing(false);
       }
     }
-  }, [pathname, speak, stopSpeech, tryResumePendingBrowserQuestion]);
+  }, [pathname, stopSpeech, tryResumePendingBrowserQuestion]);
 
   const handleNativeTranscript = useCallback((rawText: string) => {
     if (realtimeActiveRef.current) return;
