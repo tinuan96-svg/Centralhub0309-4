@@ -38,6 +38,21 @@ const Icons = {
 type AuditStep = 'scan' | 'select-product' | 'audit-form' | 'create-new' | 'summary';
 type Tab = 'audit' | 'idle' | 'newly-found';
 
+const measurementLabel = (product: AuditProduct | null) => {
+  if (!product) return '';
+  if (product.weight != null && product.unit) return `${product.weight} ${product.unit}`;
+  if (product.weight_grams != null) return `${product.weight_grams} g`;
+  if (product.weight_kg != null) return `${product.weight_kg} kg`;
+  if (product.pack_size != null && product.pack_unit) return `${product.pack_size} ${product.pack_unit}`;
+  return '';
+};
+
+const productDisplayName = (product: AuditProduct | null) => {
+  if (!product) return '';
+  const measure = measurementLabel(product);
+  return measure ? `${product.name} · ${measure}` : product.name;
+};
+
 export default function InventoryAuditPage({ params, searchParams }: { params: any; searchParams: any }) {
   const [activeTab, setActiveTab] = useState<Tab>('audit');
   const [step, setStep] = useState<AuditStep>('scan');
@@ -214,7 +229,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
         warehouse_location: formattedBins[0]?.location_code || '',
         gtin: scannedGtin || currentProduct.gtin
       });
-      setAuditStatus({ type: 'success', text: `Audited ${currentProduct.name} across ${bins.length} locations.` });
+      setAuditStatus({ type: 'success', text: `Audited ${productDisplayName(currentProduct)} across ${bins.length} locations.` });
       resetAudit();
       loadUnaudited();
     } else {
@@ -418,7 +433,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                               className="w-full flex items-center justify-between p-4 rounded-xl bg-slate-800/40 border border-slate-700/50 hover:bg-slate-800 hover:border-blue-500/50 transition-all text-left group"
                             >
                               <div className="min-w-0">
-                                <p className="text-slate-200 font-medium truncate">{p.name}</p>
+                                <p className="text-slate-200 font-medium truncate">{productDisplayName(p)}</p>
                                 <p className="text-xs text-slate-500">{p.brand || 'No Brand'} · {p.category || 'No Category'}</p>
                               </div>
                               <Icons.Plus />
@@ -461,7 +476,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                   <CardHeader>
                     <div className="flex justify-between items-start">
                       <div>
-                        <CardTitle className="text-xl">{currentProduct.name}</CardTitle>
+                        <CardTitle className="text-xl">{productDisplayName(currentProduct)}</CardTitle>
                         <CardDescription>SKU: {currentProduct.sku || 'N/A'} | GTIN: {scannedGtin || currentProduct.gtin}</CardDescription>
                       </div>
                       <Badge variant={currentProduct.is_active ? 'success' : 'danger'}>
@@ -599,7 +614,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                     unauditedProducts.map(p => (
                       <div key={p.id} className="flex items-center justify-between p-4 rounded-xl bg-slate-800/20 border border-slate-700/50">
                         <div>
-                          <p className="text-slate-200 font-medium">{p.name}</p>
+                          <p className="text-slate-200 font-medium">{productDisplayName(p)}</p>
                           <p className="text-xs text-slate-500">Stock: {p.current_stock} | Loc: {p.warehouse_location || 'None'}</p>
                         </div>
                         <Button variant="secondary" onClick={() => {
