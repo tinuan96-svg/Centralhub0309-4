@@ -1,0 +1,43 @@
+name: CentralHub Windows x64
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/build-centralhub-windows.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-x64:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout CentralHub
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+
+      - name: Build Windows x64 installer and portable EXE
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run dist:win
+
+      - name: Upload Windows x64 application
+        uses: actions/upload-artifact@v7
+        with:
+          name: CentralHub-Windows-x64-${{ github.sha }}
+          path: desktop/dist/*.exe
+          if-no-files-found: error
+          retention-days: 30
