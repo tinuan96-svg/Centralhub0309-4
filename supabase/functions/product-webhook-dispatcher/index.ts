@@ -120,7 +120,9 @@ function mapProduct(product: any, inventoryStock: Map<string, number>) {
     stock: Math.max(0, Math.trunc(Number(stock || 0))),
     product_type: type,
     brand: product.brand,
-    warehouse_location: product.warehouse_location,
+    // Store product tables require a non-null location. Empty means "not assigned yet";
+    // do not invent a physical bin.
+    warehouse_location: product.warehouse_location || "",
     weight,
     weight_grams: product.weight_grams,
     gtin: product.gtin,
