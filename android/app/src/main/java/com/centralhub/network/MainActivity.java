@@ -950,6 +950,11 @@ public class MainActivity extends BridgeActivity {
         if (client != null) client.interrupt();
     }
 
+    public void sendShruthiRealtimeText(String text) {
+        ShruthiRealtimeVoiceClient client = shruthiRealtimeClient;
+        if (client != null) client.sendTextTurn(text);
+    }
+
     public void stopShruthiRealtime() {
         ShruthiRealtimeVoiceClient client = shruthiRealtimeClient;
         shruthiRealtimeClient = null;

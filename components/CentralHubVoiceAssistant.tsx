@@ -44,6 +44,7 @@ type NativeBridge = {
   startShruthiRealtime?: (accessToken: string, supabaseUrl: string, publishableKey: string) => boolean;
   stopShruthiRealtime?: () => void;
   interruptShruthiRealtime?: () => void;
+  sendShruthiRealtimeText?: (text: string) => void;
 };
 
 type NativeTranscriptEvent = CustomEvent<{ text?: string }>;
@@ -481,6 +482,10 @@ export default function CentralHubVoiceAssistant() {
     setProcessing(false);
   }, []);
 
+  const routeRealtimeExternalTask = useCallback((text: string) => {
+    void invokeVoice({ action:'route_realtime', text, page_context:pathname, assistant_name:'SHRUTHI' }).catch(() => {});
+  }, [pathname]);
+
   const runCommand = useCallback(async (text: string) => {
     const clean = text.trim();
     if (!clean) return;
@@ -532,37 +537,49 @@ export default function CentralHubVoiceAssistant() {
 
     const woke = hasWakeWord(heard);
     if (STOP_WORDS.test(heard) && (noraSessionRef.current || woke)) {
+      stopNativeRealtime();
       setSession(false);
       setOpen(false);
       setMinimized(false);
       setTranscript('');
       setResponse(null);
-      speak('Of course. I’ll stay quiet until you call me again.');
       return;
     }
 
-    if (!noraSessionRef.current) {
-      if (!woke) return;
-      chooseTheme(heard);
+    const activateRealtime = (command: string) => {
+      chooseTheme(command || heard);
       setSession(true);
       setOpen(true);
       setMinimized(false);
+      setError('');
+      setResponse(null);
+      if (command) setTranscript(command);
+      void startNativeRealtime().then((started) => {
+        if (started) {
+          if (command) {
+            getNativeBridge()?.sendShruthiRealtimeText?.(command);
+            routeRealtimeExternalTask(command);
+          }
+          return;
+        }
+        if (command) void runCommand(command);
+      }).catch(() => {
+        if (command) void runCommand(command);
+      });
+    };
+
+    if (!noraSessionRef.current) {
+      if (!woke) return;
       const command = stripWakeWord(heard);
-      if (!command) {
-        setTranscript('SHRUTHI');
-        setResponse(null);
-        speak('Yes?');
-        return;
-      }
-      void runCommand(command);
+      activateRealtime(command);
       return;
     }
 
     const command = woke ? stripWakeWord(heard) : heard;
     if (!command) return;
     const hasContext = Boolean(responseRef.current?.reply);
-    if (woke || looksAddressedToNora(command, hasContext)) void runCommand(command);
-  }, [chooseTheme, interruptPendingTurn, runCommand, setSession, speak]);
+    if (woke || looksAddressedToNora(command, hasContext)) activateRealtime(command);
+  }, [chooseTheme, interruptPendingTurn, routeRealtimeExternalTask, runCommand, setSession, startNativeRealtime, stopNativeRealtime]);
 
   useEffect(() => {
     const onState = (event: Event) => {
@@ -579,7 +596,7 @@ export default function CentralHubVoiceAssistant() {
       if (!text) return;
       setTranscript(text);
       setSession(true);
-      void invokeVoice({ action:'route_realtime', text, page_context:pathname, assistant_name:'SHRUTHI' }).catch(() => {});
+      routeRealtimeExternalTask(text);
     };
     const onAssistant = (event: Event) => {
       const text = String((event as CustomEvent<{ text?: string }>).detail?.text || '').trim();
@@ -608,7 +625,7 @@ export default function CentralHubVoiceAssistant() {
       window.removeEventListener('centralhub:shruthi-realtime-assistant-transcript', onAssistant as EventListener);
       window.removeEventListener('centralhub:shruthi-realtime-error', onError as EventListener);
     };
-  }, [pathname, setSession]);
+  }, [pathname, routeRealtimeExternalTask, setSession]);
 
   useEffect(() => {
     const bridge = getNativeBridge();
@@ -730,14 +747,16 @@ export default function CentralHubVoiceAssistant() {
     chooseTheme();
     setMinimized(false);
     setOpen(true);
-  }, [chooseTheme]);
+    setSession(true);
+    void startNativeRealtime().catch(() => {});
+  }, [chooseTheme, setSession, startNativeRealtime]);
 
   const voiceState: VoiceState = realtimeState === 'speaking' ? 'speaking' : (realtimeState === 'connecting' || realtimeState === 'thinking' || realtimeState === 'reconnecting') ? 'processing' : realtimeState === 'listening' ? 'listening' : processing ? 'processing' : speaking ? 'speaking' : recording ? 'listening' : (noraSession ? 'listening' : 'waiting');
   const statusLabel =
     voiceState === 'processing' ? 'Processing…' :
     voiceState === 'speaking' ? 'Speaking…' :
     voiceState === 'listening' ? 'Listening…' :
-    nativeWakeAvailable ? 'Say “SHRUTHI”' : 'Ready';
+    realtimeState === 'idle' && nativeWakeAvailable ? 'Say “SHRUTHI”' : 'Ready';
 
   const rootStyle = {
     '--nora-accent': theme.accent,
