@@ -7,6 +7,11 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey, x-product-sync-secret",
 };
 
+// Fixed product identity rule:
+// - every sellable weight/size is a separate products row / physical SKU;
+// - variant_group_key links sibling SKUs for storefront presentation only;
+// - barcode, stock, price, warehouse location and expiry always stay on the individual SKU;
+// - sibling stock must never be aggregated.
 // Store-owned merchandising fields (category, description, SEO and images) are intentionally excluded.
 const PRODUCT_SELECT = "id,name,slug,brand,price,sale_price,cost_price,stock,unit,weight,weight_kg,weight_grams,is_active,is_published,is_archived,is_deleted,gtin,sku,pack_size,pack_unit,product_type,warehouse_location,backorder,allow_backorder,parent_product_id,variant_group_key,updated_at";
 const VARIANT_SELECT = "id,product_id,variant_name,sku,barcode,unit_value,unit_type,pack_type,pack_quantity,weight_grams,price,discounted_price,cost_price,stock,is_active,sort_order,attributes,updated_at";
