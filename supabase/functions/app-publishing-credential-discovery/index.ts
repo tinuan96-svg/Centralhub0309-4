@@ -20,11 +20,19 @@ const b64urlEncode = (bytes: Uint8Array) => {
   for (const byte of bytes) raw += String.fromCharCode(byte)
   return btoa(raw).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
 }
+async function publisherEncryptionSecret() {
+  const envSecret = Deno.env.get('MARKETING_TOKEN_ENCRYPTION_KEY')?.trim()
+  if (envSecret) return envSecret
+  const { data, error } = await dbAdmin().rpc('publisher_credential_encryption_key')
+  if (error) throw error
+  const secret = clean(data)
+  if (!secret) throw new Error('Publisher credential encryption key is not configured')
+  return secret
+}
 async function encryptionKey() {
-  const encoded = Deno.env.get('MARKETING_TOKEN_ENCRYPTION_KEY')?.trim()
-  if (!encoded) throw new Error('MARKETING_TOKEN_ENCRYPTION_KEY is not configured')
+  const encoded = await publisherEncryptionSecret()
   const raw = b64urlDecode(encoded)
-  if (raw.length !== 32) throw new Error('MARKETING_TOKEN_ENCRYPTION_KEY must decode to 32 bytes')
+  if (raw.length !== 32) throw new Error('Publisher credential encryption key must decode to 32 bytes')
   return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt'])
 }
 async function encrypt(value: string) {
