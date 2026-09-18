@@ -11,6 +11,8 @@
 [build.environment]
   NODE_VERSION = "22.23.1"
   SECRETS_SCAN_ENABLED = "true"
+  CENTRALHUB_SITE_URL = "https://centralhub.network"
+  NEXT_PUBLIC_CENTRALHUB_API_URL = "https://centralhub.network"
   # Keep secret scanning enabled, but skip Turbopack's non-published build cache.
   # Public NEXT_PUBLIC_* client configuration must remain non-secret in Netlify.
   SECRETS_SCAN_OMIT_PATHS = ".netlify/.next/cache/**"
