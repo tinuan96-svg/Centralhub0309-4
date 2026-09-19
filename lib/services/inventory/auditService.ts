@@ -63,6 +63,12 @@ export interface AuditLabelPhotoResult {
   analysis_error: string | null;
 }
 
+export interface VoiceTranscriptionResult {
+  transcript: string;
+  normalized: string;
+  stage: 'quantity' | 'location' | 'pack-size' | 'confirm';
+}
+
 export interface FullAuditSession {
   id: string;
   status: 'open' | 'finalized' | 'cancelled';
@@ -276,6 +282,36 @@ export class AuditService {
       storage_path: photo.storage_path,
       extraction: analysis?.success && analysis?.result ? analysis.result as LabelExtraction : null,
       analysis_error: analysisError?.message || (!analysis?.success ? String(analysis?.error || 'Label analysis unavailable') : null),
+    };
+  }
+
+  static async transcribeVoiceClip(
+    blob: Blob,
+    stage: 'quantity' | 'location' | 'pack-size' | 'confirm',
+  ): Promise<VoiceTranscriptionResult | null> {
+    if (!blob || blob.size <= 0) return null;
+
+    const extension = blob.type.includes('ogg') ? 'ogg'
+      : blob.type.includes('mp4') || blob.type.includes('m4a') ? 'm4a'
+        : 'webm';
+
+    const form = new FormData();
+    form.append('audio', blob, `audit-voice-${Date.now()}.${extension}`);
+    form.append('stage', stage);
+
+    const { data, error } = await supabase.functions.invoke('inventory-voice-transcribe', {
+      body: form,
+    });
+
+    if (error || !data?.success) {
+      console.error('[AuditService] Voice transcription failed:', error || data?.error);
+      return null;
+    }
+
+    return {
+      transcript: String(data.transcript || '').trim(),
+      normalized: String(data.normalized || '').trim(),
+      stage,
     };
   }
 
