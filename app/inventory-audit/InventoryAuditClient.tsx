@@ -881,21 +881,37 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                                   Take or upload a label photo. CentralHub can prefill batch, expiry, pack count, manufacture date and carton number.
                                 </p>
                               </div>
-                              <label className={`cursor-pointer px-4 py-3 rounded-xl border border-violet-500/30 bg-violet-500/10 text-xs font-black text-violet-200 text-center ${labelPhotoBusy ? 'opacity-50 pointer-events-none' : ''}`}>
-                                {labelPhotoBusy ? 'Reading label…' : '📷 Add Label Photo'}
-                                <input
-                                  type="file"
-                                  accept="image/*"
-                                  capture="environment"
-                                  className="hidden"
-                                  disabled={labelPhotoBusy}
-                                  onChange={(e) => {
-                                    const file = e.target.files?.[0] || null;
-                                    void handleLabelPhoto(file);
-                                    e.currentTarget.value = '';
-                                  }}
-                                />
-                              </label>
+                              <div className="flex flex-wrap gap-2">
+                                <label className={`cursor-pointer px-4 py-3 rounded-xl border border-violet-500/30 bg-violet-500/10 text-xs font-black text-violet-200 text-center ${labelPhotoBusy ? 'opacity-50 pointer-events-none' : ''}`}>
+                                  {labelPhotoBusy ? 'Reading label…' : '📷 Take Photo'}
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    capture="environment"
+                                    className="hidden"
+                                    disabled={labelPhotoBusy}
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0] || null;
+                                      void handleLabelPhoto(file);
+                                      e.currentTarget.value = '';
+                                    }}
+                                  />
+                                </label>
+                                <label className={`cursor-pointer px-4 py-3 rounded-xl border border-violet-500/30 bg-slate-950/40 text-xs font-black text-violet-200 text-center ${labelPhotoBusy ? 'opacity-50 pointer-events-none' : ''}`}>
+                                  🖼️ Upload Photo
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    disabled={labelPhotoBusy}
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0] || null;
+                                      void handleLabelPhoto(file);
+                                      e.currentTarget.value = '';
+                                    }}
+                                  />
+                                </label>
+                              </div>
                             </div>
                             <p className="text-[10px] text-amber-300/80 mt-2">
                               AI extraction is a suggestion only. You confirm the values before the audit is saved.
