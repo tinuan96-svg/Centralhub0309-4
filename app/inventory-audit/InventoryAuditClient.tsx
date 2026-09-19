@@ -181,6 +181,9 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
   const voiceDraftRef = useRef<VoiceDraft>(EMPTY_VOICE_DRAFT);
   const voiceRecognitionRef = useRef<any>(null);
   const voiceProductRef = useRef<AuditProduct | null>(null);
+  const voiceMediaStreamRef = useRef<MediaStream | null>(null);
+  const voiceRecorderRef = useRef<MediaRecorder | null>(null);
+  const voiceCaptureGenerationRef = useRef(0);
 
   // Audit Form State
   const [bins, setBins] = useState<{ location_code: string; stock_quantity: string }[]>([]);
@@ -225,6 +228,13 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
   useEffect(() => {
     return () => {
       try { voiceRecognitionRef.current?.abort?.(); } catch {}
+      try {
+        if (voiceRecorderRef.current && voiceRecorderRef.current.state !== 'inactive') {
+          voiceRecorderRef.current.stop();
+        }
+      } catch {}
+      voiceMediaStreamRef.current?.getTracks().forEach(track => track.stop());
+      voiceMediaStreamRef.current = null;
       if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
     };
   }, []);
@@ -235,8 +245,15 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
   }
 
   function stopVoiceRecognition() {
+    voiceCaptureGenerationRef.current += 1;
     try { voiceRecognitionRef.current?.abort?.(); } catch {}
     voiceRecognitionRef.current = null;
+    try {
+      if (voiceRecorderRef.current && voiceRecorderRef.current.state !== 'inactive') {
+        voiceRecorderRef.current.stop();
+      }
+    } catch {}
+    voiceRecorderRef.current = null;
   }
 
   function speakVoice(text: string, onEnd?: () => void) {
@@ -253,57 +270,183 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     window.speechSynthesis.speak(utterance);
   }
 
-  function listenForVoiceStage(stage: VoiceStage) {
-    if (!handsFreeVoiceRef.current || stage === 'off' || stage === 'waiting-product' || stage === 'saving') return;
-    const Recognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!Recognition) {
-      setVoiceStatus('Speech recognition is not supported on this browser.');
-      setAuditStatus({ type: 'error', text: 'Hands-free voice recognition is not supported on this browser.' });
+  async function listenForVoiceStage(stage: VoiceStage) {
+    if (!handsFreeVoiceRef.current || !['quantity', 'location', 'pack-size', 'confirm'].includes(stage)) return;
+
+    stopVoiceRecognition();
+    const generation = ++voiceCaptureGenerationRef.current;
+
+    let stream = voiceMediaStreamRef.current;
+    if (!stream || stream.getAudioTracks().every(track => track.readyState !== 'live')) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+        voiceMediaStreamRef.current = stream;
+      } catch {
+        setAuditStatus({ type: 'error', text: 'Microphone permission is required for hands-free stock audit.' });
+        disableHandsFreeVoice();
+        return;
+      }
+    }
+
+    if (!handsFreeVoiceRef.current || generation !== voiceCaptureGenerationRef.current) return;
+
+    const mimeCandidates = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/ogg;codecs=opus',
+    ];
+    const mimeType = mimeCandidates.find(type =>
+      typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported?.(type)
+    ) || '';
+
+    let recorder: MediaRecorder;
+    try {
+      recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+    } catch {
+      setAuditStatus({ type: 'error', text: 'This browser cannot record microphone audio for hands-free audit.' });
+      disableHandsFreeVoice();
       return;
     }
 
-    stopVoiceRecognition();
-    const recognition = new Recognition();
-    voiceRecognitionRef.current = recognition;
-    recognition.lang = 'en-GB';
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
+    voiceRecorderRef.current = recorder;
+    const chunks: BlobPart[] = [];
+    recorder.ondataavailable = event => {
+      if (event.data && event.data.size > 0) chunks.push(event.data);
+    };
 
-    let heard = false;
-    recognition.onresult = (event: any) => {
-      heard = true;
-      const transcript = String(event.results?.[0]?.[0]?.transcript || '').trim();
-      handleHandsFreeTranscript(stage, transcript);
-    };
-    recognition.onerror = (event: any) => {
-      const error = String(event?.error || '');
-      if (['aborted', 'no-speech'].includes(error)) return;
-      setVoiceStatus(`Voice error: ${error || 'unknown'}`);
-    };
-    recognition.onend = () => {
-      if (
-        !heard &&
-        handsFreeVoiceRef.current &&
-        voiceStageRef.current === stage &&
-        !['off', 'waiting-product', 'saving'].includes(stage)
-      ) {
-        window.setTimeout(() => listenForVoiceStage(stage), 650);
-      }
+    const statusText = stage === 'quantity'
+      ? 'Listening only for the quantity number…'
+      : stage === 'location'
+        ? 'Listening for rack / location…'
+        : stage === 'pack-size'
+          ? 'Listening for pack size, or say skip…'
+          : 'Waiting for approve, save, cancel, or a correction…';
+    setVoiceStatus(statusText);
+
+    let audioContext: AudioContext | null = null;
+    let monitor: ReturnType<typeof window.setInterval> | null = null;
+    let hardStop: ReturnType<typeof window.setTimeout> | null = null;
+
+    const stopRecorderSafely = () => {
+      try {
+        if (recorder.state !== 'inactive') recorder.stop();
+      } catch {}
     };
 
     try {
-      recognition.start();
-      setVoiceStatus(stage === 'quantity'
-        ? 'Listening only for the quantity number…'
-        : stage === 'location'
-          ? 'Listening for rack / location…'
-          : stage === 'pack-size'
-            ? 'Listening for pack size, or say skip…'
-            : 'Waiting for approve, save, yes, cancel, or a correction…');
+      const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioContextCtor) {
+        audioContext = new AudioContextCtor();
+        const source = audioContext.createMediaStreamSource(stream);
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 1024;
+        source.connect(analyser);
+
+        const samples = new Uint8Array(analyser.fftSize);
+        const startedAt = Date.now();
+        let speechStarted = false;
+        let quietSince = 0;
+
+        monitor = window.setInterval(() => {
+          if (
+            generation !== voiceCaptureGenerationRef.current ||
+            !handsFreeVoiceRef.current ||
+            voiceStageRef.current !== stage
+          ) {
+            stopRecorderSafely();
+            return;
+          }
+
+          analyser.getByteTimeDomainData(samples);
+          let sum = 0;
+          for (let i = 0; i < samples.length; i += 1) {
+            const normalized = (samples[i] - 128) / 128;
+            sum += normalized * normalized;
+          }
+          const rms = Math.sqrt(sum / samples.length);
+          const now = Date.now();
+
+          if (rms > 0.032) {
+            speechStarted = true;
+            quietSince = 0;
+          } else if (speechStarted) {
+            quietSince = quietSince || now;
+            if (now - quietSince > 850 && now - startedAt > 900) {
+              stopRecorderSafely();
+            }
+          }
+
+          // If nothing was spoken, retry rather than hanging forever.
+          if (!speechStarted && now - startedAt > 4500) stopRecorderSafely();
+          if (now - startedAt > 7000) stopRecorderSafely();
+        }, 100);
+      }
+
+      hardStop = window.setTimeout(stopRecorderSafely, 7200);
+      recorder.start(200);
     } catch {
-      window.setTimeout(() => listenForVoiceStage(stage), 600);
+      if (monitor) window.clearInterval(monitor);
+      if (hardStop) window.clearTimeout(hardStop);
+      try { await audioContext?.close(); } catch {}
+      setVoiceStatus('Could not start microphone capture. Retrying…');
+      if (handsFreeVoiceRef.current && voiceStageRef.current === stage) {
+        window.setTimeout(() => listenForVoiceStage(stage), 800);
+      }
+      return;
     }
+
+    recorder.onstop = async () => {
+      if (monitor) window.clearInterval(monitor);
+      if (hardStop) window.clearTimeout(hardStop);
+      try { await audioContext?.close(); } catch {}
+      if (voiceRecorderRef.current === recorder) voiceRecorderRef.current = null;
+
+      if (
+        !handsFreeVoiceRef.current ||
+        generation !== voiceCaptureGenerationRef.current ||
+        voiceStageRef.current !== stage
+      ) return;
+
+      const blob = new Blob(chunks, { type: recorder.mimeType || mimeType || 'audio/webm' });
+      if (blob.size < 900) {
+        setVoiceStatus('No clear speech heard. Listening again…');
+        window.setTimeout(() => listenForVoiceStage(stage), 500);
+        return;
+      }
+
+      setVoiceStatus('Understanding what you said…');
+      const result = await AuditService.transcribeVoiceClip(
+        blob,
+        stage as 'quantity' | 'location' | 'pack-size' | 'confirm',
+      );
+
+      if (
+        !handsFreeVoiceRef.current ||
+        generation !== voiceCaptureGenerationRef.current ||
+        voiceStageRef.current !== stage
+      ) return;
+
+      if (!result || !result.normalized) {
+        const retryPrompt = stage === 'quantity'
+          ? 'I did not catch a quantity. Say only the number, for example twenty five.'
+          : stage === 'location'
+            ? 'I did not catch the rack. Say the rack or location, for example B 2 3.'
+            : stage === 'pack-size'
+              ? 'I did not catch the pack size. Say 500 grams, 1 litre, or say skip.'
+              : 'I did not catch that. Say approve, save, cancel, or a correction.';
+        promptHandsFree(stage, retryPrompt);
+        return;
+      }
+
+      handleHandsFreeTranscript(stage, result.normalized, result.transcript);
+    };
   }
 
   function promptHandsFree(stage: VoiceStage, prompt: string) {
@@ -388,11 +531,11 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     });
   }
 
-  function handleHandsFreeTranscript(stage: VoiceStage, transcript: string) {
+  function handleHandsFreeTranscript(stage: VoiceStage, transcript: string, heardText?: string) {
     if (!handsFreeVoiceRef.current) return;
     const text = transcript.trim();
     const lower = text.toLowerCase();
-    const base = { ...voiceDraftRef.current, lastTranscript: text };
+    const base = { ...voiceDraftRef.current, lastTranscript: (heardText || text).trim() };
 
     if (stage === 'quantity') {
       const quantity = parseSpokenNumber(text);
@@ -435,7 +578,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
       }
       const next = { ...base, packSizeValue: parsed.value, packSizeUnit: parsed.unit };
       setVoiceDraftNow(next);
-      if (currentProduct) presentHandsFreeSummary(currentProduct, next);
+      if (voiceProductRef.current) presentHandsFreeSummary(voiceProductRef.current, next);
       return;
     }
 
@@ -494,17 +637,21 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
   }
 
   async function enableHandsFreeVoice() {
-    const Recognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!Recognition) {
-      setAuditStatus({ type: 'error', text: 'Hands-free voice recognition is not supported on this browser.' });
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setAuditStatus({ type: 'error', text: 'Hands-free voice recording is not supported on this browser.' });
       return;
     }
 
     try {
-      if (navigator.mediaDevices?.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach(track => track.stop());
-      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      voiceMediaStreamRef.current?.getTracks().forEach(track => track.stop());
+      voiceMediaStreamRef.current = stream;
     } catch {
       setAuditStatus({ type: 'error', text: 'Microphone permission is required for hands-free stock audit.' });
       return;
@@ -528,6 +675,8 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     setVoiceDraftNow({ ...EMPTY_VOICE_DRAFT });
     setVoiceStatus('Voice audit is off.');
     stopVoiceRecognition();
+    voiceMediaStreamRef.current?.getTracks().forEach(track => track.stop());
+    voiceMediaStreamRef.current = null;
     if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
   }
 
