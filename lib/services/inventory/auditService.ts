@@ -47,6 +47,23 @@ export interface FullAuditSession {
   missing_product_count: number;
 }
 
+export interface RecentAuditItem {
+  log_id: string;
+  product_id: string;
+  name: string;
+  sku: string | null;
+  brand: string | null;
+  unit: string | null;
+  weight: number | null;
+  weight_kg: number | null;
+  weight_grams: number | null;
+  pack_size: number | null;
+  pack_unit: string | null;
+  quantity: number;
+  warehouse_location: string | null;
+  created_at: string;
+}
+
 const mapProduct = (product: any): AuditProduct => {
   const inventory = Array.isArray(product.central_inventory) ? product.central_inventory[0] : product.central_inventory;
   return {
@@ -73,6 +90,41 @@ const mapProduct = (product: any): AuditProduct => {
 };
 
 export class AuditService {
+  static async getRecentAuditItems(limit = 2): Promise<RecentAuditItem[]> {
+    const { data, error } = await supabase
+      .from('inventory_logs')
+      .select(`
+        id,product_id,new_quantity,created_at,
+        products(id,name,sku,brand,unit,weight,weight_kg,weight_grams,pack_size,pack_unit,warehouse_location)
+      `)
+      .eq('type', 'AUDIT')
+      .eq('movement_type', 'AUDIT')
+      .order('created_at', { ascending: false })
+      .limit(Math.max(1, Math.min(limit, 10)));
+
+    if (error) {
+      console.error('[AuditService] Failed to load recent audit items:', error);
+      return [];
+    }
+
+    return (data || []).map((row: any) => ({
+      log_id: row.id,
+      product_id: row.product_id,
+      name: row.products?.name || 'Unknown Product',
+      sku: row.products?.sku || null,
+      brand: row.products?.brand || null,
+      unit: row.products?.unit || null,
+      weight: row.products?.weight == null ? null : Number(row.products.weight),
+      weight_kg: row.products?.weight_kg == null ? null : Number(row.products.weight_kg),
+      weight_grams: row.products?.weight_grams == null ? null : Number(row.products.weight_grams),
+      pack_size: row.products?.pack_size == null ? null : Number(row.products.pack_size),
+      pack_unit: row.products?.pack_unit || null,
+      quantity: Number(row.new_quantity || 0),
+      warehouse_location: row.products?.warehouse_location || null,
+      created_at: row.created_at,
+    }));
+  }
+
   static async getOpenFullAuditSession(): Promise<FullAuditSession | null> {
     const { data, error } = await supabase
       .from('inventory_audit_sessions')
