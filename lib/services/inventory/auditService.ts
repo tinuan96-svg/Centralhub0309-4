@@ -38,15 +38,20 @@ export interface ExpiryBatch {
   remaining_quantity?: number;
   box_number?: number | null;
   manufacture_date?: string | null;
+  packed_date?: string | null;
   carton_no?: string | null;
   label_photo_id?: string | null;
   entry_source?: 'manual' | 'auto_split' | 'photo';
 }
 
 export interface LabelExtraction {
+  label_type: 'retail_pack' | 'carton' | 'unknown';
   item_name: string | null;
+  brand: string | null;
+  barcode: string | null;
   batch_code: string | null;
   manufacture_date: string | null;
+  packed_date: string | null;
   expiry_date: string | null;
   weight_each_value: number | null;
   weight_each_unit: 'g' | 'kg' | 'ml' | 'l' | null;
@@ -364,7 +369,7 @@ export class AuditService {
   static async getExpiryBatches(productId: string): Promise<ExpiryBatch[]> {
     const { data, error } = await supabase
       .from('product_expiry')
-      .select('id,batch_id,box_number,expiry_date,manufacture_date,carton_no,label_photo_id,quantity,remaining_quantity')
+      .select('id,batch_id,box_number,expiry_date,manufacture_date,packed_date,carton_no,label_photo_id,quantity,remaining_quantity')
       .eq('product_id', productId)
       .gt('remaining_quantity', 0)
       .order('expiry_date', { ascending: true })
@@ -383,6 +388,7 @@ export class AuditService {
       remaining_quantity: Number(row.remaining_quantity ?? row.quantity ?? 0),
       box_number: row.box_number == null ? null : Number(row.box_number),
       manufacture_date: row.manufacture_date || null,
+      packed_date: row.packed_date || null,
       carton_no: row.carton_no || null,
       label_photo_id: row.label_photo_id || null,
     }));
@@ -576,6 +582,7 @@ export class AuditService {
             box_number: batch.box_number || index + 1,
             expiry_date: batch.expiry_date,
             manufacture_date: batch.manufacture_date || null,
+            packed_date: batch.packed_date || null,
             carton_no: batch.carton_no?.trim() || null,
             label_photo_id: batch.label_photo_id || null,
             quantity: Math.max(0, Number(batch.quantity) || 0),
