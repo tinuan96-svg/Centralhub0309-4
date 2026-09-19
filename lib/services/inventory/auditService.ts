@@ -14,6 +14,7 @@ export interface AuditProduct {
   weight_grams: number | null;
   pack_size: number | null;
   pack_unit: string | null;
+  units_per_box: number | null;
   variant_group_key: string | null;
   warehouse_location: string | null;
   is_active: boolean;
@@ -35,6 +36,7 @@ export interface ExpiryBatch {
   expiry_date: string;
   quantity: number;
   remaining_quantity?: number;
+  box_number?: number | null;
 }
 
 export interface FullAuditSession {
@@ -79,6 +81,7 @@ const mapProduct = (product: any): AuditProduct => {
     weight_grams: product.weight_grams == null ? null : Number(product.weight_grams),
     pack_size: product.pack_size == null ? null : Number(product.pack_size),
     pack_unit: product.pack_unit ?? null,
+    units_per_box: product.units_per_box == null ? null : Number(product.units_per_box),
     variant_group_key: product.variant_group_key ?? null,
     warehouse_location: product.warehouse_location,
     is_active: product.is_active,
@@ -165,7 +168,7 @@ export class AuditService {
   static async findProductByGTIN(gtin: string): Promise<AuditProduct | null> {
     const { data, error } = await supabase
       .from('products')
-      .select(`id, name, gtin, sku, brand, category, unit, weight, weight_kg, weight_grams, pack_size, pack_unit, variant_group_key, warehouse_location, is_active, is_published, expiry_date, central_inventory(stock_quantity, last_audited_at)`)
+      .select(`id, name, gtin, sku, brand, category, unit, weight, weight_kg, weight_grams, pack_size, pack_unit, units_per_box, variant_group_key, warehouse_location, is_active, is_published, expiry_date, central_inventory(stock_quantity, last_audited_at)`)
       .eq('gtin', gtin)
       .maybeSingle();
     if (error) {
@@ -184,7 +187,7 @@ export class AuditService {
   static async getExpiryBatches(productId: string): Promise<ExpiryBatch[]> {
     const { data, error } = await supabase
       .from('product_expiry')
-      .select('id,batch_id,expiry_date,quantity,remaining_quantity')
+      .select('id,batch_id,box_number,expiry_date,quantity,remaining_quantity')
       .eq('product_id', productId)
       .gt('remaining_quantity', 0)
       .order('expiry_date', { ascending: true })
@@ -201,6 +204,7 @@ export class AuditService {
       expiry_date: row.expiry_date,
       quantity: Number(row.remaining_quantity ?? row.quantity ?? 0),
       remaining_quantity: Number(row.remaining_quantity ?? row.quantity ?? 0),
+      box_number: row.box_number == null ? null : Number(row.box_number),
     }));
   }
 
@@ -210,11 +214,12 @@ export class AuditService {
     bins: { location_code: string; stock_quantity: number }[];
     expiryDate?: string | null;
     expiryBatches?: ExpiryBatch[];
+    unitsPerBox?: number | null;
     notes?: string;
     userId?: string;
     gtin?: string;
   }): Promise<boolean> {
-    const { productId, totalStock, bins, expiryDate, expiryBatches, notes, userId, gtin } = params;
+    const { productId, totalStock, bins, expiryDate, expiryBatches, unitsPerBox, notes, userId, gtin } = params;
     const auditedAt = new Date().toISOString();
     const auditNote = notes?.trim() || `Physical stock audit across ${bins.length} location${bins.length === 1 ? '' : 's'}`;
 
@@ -243,6 +248,7 @@ export class AuditService {
         updated_at: auditedAt
       };
       if (gtin) productUpdate.gtin = gtin;
+      if (unitsPerBox !== undefined) productUpdate.units_per_box = unitsPerBox;
       if (expiryBatches === undefined) productUpdate.expiry_date = expiryDate || null;
 
       const { error: productError } = await supabase
@@ -327,8 +333,9 @@ export class AuditService {
 
       if (expiryBatches !== undefined) {
         const cleanBatches = expiryBatches
-          .map(batch => ({
+          .map((batch, index) => ({
             batch_id: batch.batch_id?.trim() || null,
+            box_number: batch.box_number || index + 1,
             expiry_date: batch.expiry_date,
             quantity: Math.max(0, Number(batch.quantity) || 0),
           }))
@@ -342,10 +349,11 @@ export class AuditService {
           throw new Error('Every non-zero expiry batch needs an expiry date.');
         }
 
-        const { error: expiryBatchError } = await supabase.rpc('replace_product_expiry_batches_for_audit', {
+        const { error: expiryBatchError } = await supabase.rpc('replace_product_expiry_boxes_for_audit', {
           p_product_id: productId,
-          p_batches: cleanBatches,
+          p_boxes: cleanBatches,
           p_total_stock: totalStock,
+          p_units_per_box: unitsPerBox ?? null,
         });
         if (expiryBatchError) throw expiryBatchError;
       }
@@ -369,7 +377,7 @@ export class AuditService {
     const pattern = `%${query}%`;
     const { data, error } = await supabase
       .from('products')
-      .select(`id, name, gtin, sku, brand, category, unit, weight, weight_kg, weight_grams, pack_size, pack_unit, variant_group_key, warehouse_location, is_active, is_published, expiry_date, central_inventory(stock_quantity, last_audited_at)`)
+      .select(`id, name, gtin, sku, brand, category, unit, weight, weight_kg, weight_grams, pack_size, pack_unit, units_per_box, variant_group_key, warehouse_location, is_active, is_published, expiry_date, central_inventory(stock_quantity, last_audited_at)`)
       .eq('is_active', true)
       .or('is_deleted.is.null,is_deleted.eq.false')
       .or(`name.ilike.${pattern},brand.ilike.${pattern},category.ilike.${pattern},gtin.ilike.${pattern},sku.ilike.${pattern}`)
@@ -383,7 +391,7 @@ export class AuditService {
     date.setDate(date.getDate() - daysAgo);
     const { data, error } = await supabase
       .from('products')
-      .select(`id, name, gtin, sku, brand, category, unit, weight, weight_kg, weight_grams, pack_size, pack_unit, variant_group_key, warehouse_location, is_active, is_published, expiry_date, central_inventory(stock_quantity, last_audited_at)`)
+      .select(`id, name, gtin, sku, brand, category, unit, weight, weight_kg, weight_grams, pack_size, pack_unit, units_per_box, variant_group_key, warehouse_location, is_active, is_published, expiry_date, central_inventory(stock_quantity, last_audited_at)`)
       .eq('is_active', true)
       .or('is_deleted.is.null,is_deleted.eq.false')
       .or(`central_inventory.last_audited_at.is.null,central_inventory.last_audited_at.lt.${date.toISOString()}`)
@@ -419,6 +427,7 @@ export class AuditService {
       weight_grams: data.weight_grams == null ? null : Number(data.weight_grams),
       pack_size: data.pack_size == null ? null : Number(data.pack_size),
       pack_unit: data.pack_unit ?? null,
+      units_per_box: data.units_per_box == null ? null : Number(data.units_per_box),
       variant_group_key: data.variant_group_key ?? null,
       warehouse_location: data.warehouse_location,
       is_active: data.is_active,
