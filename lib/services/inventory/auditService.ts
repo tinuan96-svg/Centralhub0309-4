@@ -454,7 +454,7 @@ export class AuditService {
 
       let cleanBatches: any[] | null = null;
       if (expiryBatches !== undefined) {
-        cleanBatches = expiryBatches
+        const rawBatches = expiryBatches
           .map((batch, index) => ({
             batch_id: batch.batch_id?.trim() || null,
             box_number: batch.box_number || index + 1,
@@ -466,6 +466,33 @@ export class AuditService {
             quantity: Math.max(0, Number(batch.quantity) || 0),
           }))
           .filter(batch => batch.quantity > 0);
+
+        // Box mode safety: a physical box cannot contain more than its configured capacity.
+        // If a single row contains more pieces than the box capacity, split it automatically
+        // into multiple physical boxes while preserving its expiry/batch metadata.
+        if (unitsPerBox && unitsPerBox > 0) {
+          const normalized: any[] = [];
+          for (const batch of rawBatches) {
+            let remaining = batch.quantity;
+            let firstChunk = true;
+            while (remaining > 0) {
+              const qty = Math.min(unitsPerBox, remaining);
+              normalized.push({
+                ...batch,
+                box_number: normalized.length + 1,
+                quantity: qty,
+                // One uploaded photo is evidence for the original row; don't duplicate
+                // the same attachment across all generated rows.
+                label_photo_id: firstChunk ? batch.label_photo_id : null,
+              });
+              remaining -= qty;
+              firstChunk = false;
+            }
+          }
+          cleanBatches = normalized;
+        } else {
+          cleanBatches = rawBatches;
+        }
 
         const expiryTotal = cleanBatches.reduce((sum, batch) => sum + batch.quantity, 0);
         if (cleanBatches.length > 0 && expiryTotal !== totalStock) {
