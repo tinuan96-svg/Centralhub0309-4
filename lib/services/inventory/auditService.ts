@@ -521,7 +521,25 @@ export class AuditService {
       }
 
       try {
-        await StockSyncService.syncStockToAllWebsites(productId, totalStock);
+        // Physical stock and sellable stock are deliberately different.
+        // Expired / <=20-day stock remains in the warehouse audit but must sync as zero
+        // (or only the fresh remainder) to storefronts.
+        const { data: expirySummary, error: expirySummaryError } = await supabase
+          .from('product_expiry_product_summary')
+          .select('sellable_stock')
+          .eq('product_id', productId)
+          .maybeSingle();
+
+        if (expirySummaryError) {
+          console.warn('[AuditService] Could not read sellable stock after audit:', expirySummaryError);
+        }
+
+        const sellableStock =
+          expirySummary?.sellable_stock == null
+            ? totalStock
+            : Math.max(0, Number(expirySummary.sellable_stock) || 0);
+
+        await StockSyncService.syncStockToAllWebsites(productId, sellableStock);
       } catch (syncError) {
         // Local physical audit is committed. Downstream sync retries separately.
         console.warn('[AuditService] audit saved but downstream stock sync failed:', syncError);
