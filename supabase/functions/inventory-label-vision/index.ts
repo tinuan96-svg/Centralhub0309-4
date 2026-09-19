@@ -130,15 +130,20 @@ serve(async (req) => {
     const mime = String(photo.mime_type || blob.type || "image/jpeg").toLowerCase();
     const model = Deno.env.get("OPENAI_MODEL_DOCUMENTS") || Deno.env.get("OPENAI_MODEL_DEFAULT") || "gpt-5.6-luna";
 
-    const developer = `You extract carton/box label facts for a grocery warehouse inventory audit.
+    const developer = `You extract grocery retail-pack OR carton/box facts for a warehouse stock audit.
 Read only what is visibly supported by the image. Never invent obscured or missing values.
-Dates must be ISO YYYY-MM-DD. Interpret BBE / best before / expiry as expiry_date.
-"Number of Packets", "x 24 Nos", "1L x 12" etc indicate pack_count.
+The photo can be a retail pack front, retail pack back/side, or an outer carton.
+Dates must be ISO YYYY-MM-DD.
+Interpret BBE / best before / expiry / EXP as expiry_date.
+Interpret Pkd / Packed / Packed on as packed_date. Do NOT call packed_date manufacture_date unless the label explicitly says manufacture/manufactured.
+"Number of Packets", "x 24 Nos", "1L x 12" etc indicate pack_count only for outer cartons. A single retail pack photo does NOT imply pack_count=1.
 weight_each_value/unit is the individual retail unit size, not the total carton net weight.
+barcode should contain only the visible GTIN/EAN digits if confidently readable.
 carton_no and batch_code are different fields when both are present.
+label_type must be one of retail_pack, carton, unknown.
 Return ONLY valid JSON exactly matching:
-{"item_name":string|null,"batch_code":string|null,"manufacture_date":"YYYY-MM-DD"|null,"expiry_date":"YYYY-MM-DD"|null,"weight_each_value":number|null,"weight_each_unit":"g|kg|ml|l"|null,"pack_count":number|null,"carton_no":string|null,"net_quantity_text":string|null,"confidence":number,"notes":string|null}
-If a field is blank on the printed carton or unreadable, use null. confidence must be 0..1.`;
+{"label_type":"retail_pack|carton|unknown","item_name":string|null,"brand":string|null,"barcode":string|null,"batch_code":string|null,"manufacture_date":"YYYY-MM-DD"|null,"packed_date":"YYYY-MM-DD"|null,"expiry_date":"YYYY-MM-DD"|null,"weight_each_value":number|null,"weight_each_unit":"g|kg|ml|l"|null,"pack_count":number|null,"carton_no":string|null,"net_quantity_text":string|null,"confidence":number,"notes":string|null}
+If a field is blank or unreadable, use null. confidence must be 0..1.`;
 
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
@@ -149,7 +154,7 @@ If a field is blank on the printed carton or unreadable, use null. confidence mu
         input: [
           { role: "developer", content: [{ type: "input_text", text: developer }] },
           { role: "user", content: [
-            { type: "input_text", text: "Extract the visible warehouse carton/box label fields from this photo." },
+            { type: "input_text", text: "Extract the visible retail-pack or carton fields from this photo." },
             { type: "input_image", image_url: `data:${mime};base64,${b64}`, detail: "high" },
           ]},
         ],
@@ -163,10 +168,19 @@ If a field is blank on the printed carton or unreadable, use null. confidence mu
     if (!response.ok) throw new Error(payload?.error?.message || `OpenAI label analysis failed (${response.status})`);
 
     const parsed = parseJsonLoose(outputText(payload));
+    const labelType = ["retail_pack","carton","unknown"].includes(String(parsed.label_type || "").toLowerCase())
+      ? String(parsed.label_type).toLowerCase()
+      : "unknown";
+
+    const barcode = String(parsed.barcode || "").replace(/\D/g, "");
     const result = {
+      label_type: labelType,
       item_name: parsed.item_name ? String(parsed.item_name).trim().slice(0, 200) : null,
+      brand: parsed.brand ? String(parsed.brand).trim().slice(0, 120) : null,
+      barcode: barcode.length >= 8 && barcode.length <= 14 ? barcode : null,
       batch_code: parsed.batch_code ? String(parsed.batch_code).trim().slice(0, 120) : null,
       manufacture_date: cleanDate(parsed.manufacture_date),
+      packed_date: cleanDate(parsed.packed_date),
       expiry_date: cleanDate(parsed.expiry_date),
       weight_each_value: cleanNumber(parsed.weight_each_value),
       weight_each_unit: ["g","kg","ml","l"].includes(String(parsed.weight_each_unit || "").toLowerCase())
