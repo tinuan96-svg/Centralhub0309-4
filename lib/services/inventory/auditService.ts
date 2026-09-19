@@ -37,6 +37,16 @@ export interface ExpiryBatch {
   remaining_quantity?: number;
 }
 
+export interface FullAuditSession {
+  id: string;
+  status: 'open' | 'finalized' | 'cancelled';
+  started_at: string;
+  finalized_at: string | null;
+  snapshot_product_count: number;
+  counted_product_count: number;
+  missing_product_count: number;
+}
+
 const mapProduct = (product: any): AuditProduct => {
   const inventory = Array.isArray(product.central_inventory) ? product.central_inventory[0] : product.central_inventory;
   return {
@@ -63,6 +73,43 @@ const mapProduct = (product: any): AuditProduct => {
 };
 
 export class AuditService {
+  static async getOpenFullAuditSession(): Promise<FullAuditSession | null> {
+    const { data, error } = await supabase
+      .from('inventory_audit_sessions')
+      .select('id,status,started_at,finalized_at,snapshot_product_count,counted_product_count,missing_product_count')
+      .eq('status', 'open')
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      console.error('[AuditService] Failed to load full audit session:', error);
+      return null;
+    }
+    return data as FullAuditSession | null;
+  }
+
+  static async startFullAudit(notes?: string): Promise<FullAuditSession | null> {
+    const { data: sessionId, error } = await supabase.rpc('start_full_inventory_audit', {
+      p_notes: notes?.trim() || null,
+    });
+    if (error || !sessionId) {
+      console.error('[AuditService] Failed to start full audit:', error);
+      return null;
+    }
+    return this.getOpenFullAuditSession();
+  }
+
+  static async finalizeFullAudit(sessionId: string): Promise<number | null> {
+    const { data, error } = await supabase.rpc('finalize_full_inventory_audit', {
+      p_session_id: sessionId,
+    });
+    if (error) {
+      console.error('[AuditService] Failed to finalize full audit:', error);
+      return null;
+    }
+    return Number(data || 0);
+  }
+
   static async findProductByGTIN(gtin: string): Promise<AuditProduct | null> {
     const { data, error } = await supabase
       .from('products')
