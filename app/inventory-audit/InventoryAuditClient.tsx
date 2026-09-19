@@ -107,6 +107,11 @@ const parseSpokenPackSize = (input: string): { value: number; unit: VoicePackUni
   return unit ? { value, unit } : null;
 };
 
+const looksLikePhysicalBarcode = (value: string) => {
+  const code = String(value || '').trim();
+  return /^(?=.*\d)[A-Za-z0-9._:/-]{4,128}$/.test(code);
+};
+
 const parseRackLocation = (input: string) => {
   const digitWords: Record<string, string> = {
     zero: '0', one: '1', two: '2', three: '3', four: '4',
@@ -523,8 +528,6 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     setVoiceStage('saving');
     setVoiceStatus('Saving the confirmed voice audit…');
     stopVoiceRecognition();
-    const { data: { user } } = await supabase.auth.getUser();
-
     let packSizeSaved = true;
     if (draft.packSizeValue && draft.packSizeUnit) {
       packSizeSaved = await AuditService.updateProductPackSize(
@@ -534,17 +537,18 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
       );
     }
 
-    const success = await AuditService.performAudit({
+    const result = await AuditService.performAudit({
       productId: product.id,
       totalStock: draft.quantity,
       bins: [{ location_code: draft.location, stock_quantity: draft.quantity }],
       notes: 'Hands-free voice stock audit',
-      userId: user?.id,
-      gtin: scannedGtin || product.gtin || undefined,
     });
 
-    if (!success) {
-      setAuditStatus({ type: 'error', text: 'Hands-free audit could not be saved. Nothing was auto-approved.' });
+    if (!result.success) {
+      setAuditStatus({
+        type: 'error',
+        text: result.error || 'Hands-free audit could not be saved. Nothing was changed.',
+      });
       promptHandsFree('confirm', 'Save failed. Say approve to retry, or cancel.');
       return;
     }
@@ -842,7 +846,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     // If this screen was reached from an unknown physical barcode, choosing an
     // existing product is the confirmation that the barcode belongs to it.
     // Remember it immediately instead of waiting until the audit is saved.
-    if (scannedGtin) {
+    if (scannedGtin && looksLikePhysicalBarcode(scannedGtin)) {
       const barcodeRemembered = await AuditService.assignProductBarcode(product.id, scannedGtin);
       if (!barcodeRemembered) {
         setAuditStatus({
@@ -1130,13 +1134,34 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
       return;
     }
 
-    setIsLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
+    const hasExplicitQuantity = bins.some(bin => String(bin.stock_quantity ?? '').trim() !== '');
+    if (!hasExplicitQuantity) {
+      setAuditStatus({ type: 'error', text: 'Enter the physical stock quantity before saving.' });
+      return;
+    }
 
     const formattedBins = bins.map(b => ({
-      location_code: b.location_code,
-      stock_quantity: parseInt(b.stock_quantity) || 0
+      location_code: String(b.location_code || '').trim().toUpperCase(),
+      stock_quantity: Math.max(0, parseInt(String(b.stock_quantity), 10) || 0),
     }));
+
+    const positiveWithoutLocation = formattedBins.some(
+      bin => bin.stock_quantity > 0 && !bin.location_code,
+    );
+    if (positiveWithoutLocation) {
+      setAuditStatus({ type: 'error', text: 'Enter Location / Bin for the stock you counted.' });
+      return;
+    }
+
+    const usedLocations = formattedBins
+      .filter(bin => bin.location_code)
+      .map(bin => bin.location_code);
+    if (new Set(usedLocations).size !== usedLocations.length) {
+      setAuditStatus({ type: 'error', text: 'The same Location / Bin is entered more than once.' });
+      return;
+    }
+
+    setIsLoading(true);
 
     const totalStock = formattedBins.reduce((sum, b) => sum + b.stock_quantity, 0);
 
@@ -1182,9 +1207,9 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
       return;
     }
 
-    const success = await AuditService.performAudit({
+    const result = await AuditService.performAudit({
       productId: currentProduct.id,
-      totalStock: totalStock,
+      totalStock,
       bins: formattedBins,
       // In blind mode, photo-only / zero-quantity rows never replace saved expiry stock.
       expiryBatches: nonZeroExpiryBatches.length > 0 ? expiryRowsForSave : undefined,
@@ -1192,21 +1217,22 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
         stockEntryMode === 'box' && unitsPerBox
           ? Math.max(1, parseInt(unitsPerBox, 10) || 1)
           : undefined,
-      notes: notes,
-      userId: user?.id,
-      gtin: scannedGtin // Update GTIN if it was scanned and assigned
+      notes,
     });
 
     setIsLoading(false);
 
-    if (success) {
+    if (result.success) {
       setAuditStatus({ type: 'success', text: `Audited ${productDisplayName(currentProduct)} across ${bins.length} locations.` });
       resetAudit();
       loadUnaudited();
       loadFullAuditSession();
       loadRecentAudits();
     } else {
-      setAuditStatus({ type: 'error', text: 'Failed to save audit data.' });
+      setAuditStatus({
+        type: 'error',
+        text: result.error || 'Failed to save audit data.',
+      });
     }
   };
 
@@ -1216,7 +1242,10 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     if (!name) return;
 
     setIsLoading(true);
-    const product = await AuditService.quickCreateProduct(name, scannedGtin);
+    const product = await AuditService.quickCreateProduct(
+      name,
+      looksLikePhysicalBarcode(scannedGtin) ? scannedGtin : '',
+    );
     setIsLoading(false);
 
     if (product) {
@@ -1583,7 +1612,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                   <CardHeader>
                     <div>
                       <CardTitle className="text-xl">{productDisplayName(currentProduct)}</CardTitle>
-                      <CardDescription>SKU: {currentProduct.sku || 'N/A'} | GTIN: {scannedGtin || currentProduct.gtin}</CardDescription>
+                      <CardDescription>SKU: {currentProduct.sku || 'N/A'} | GTIN: {currentProduct.gtin || 'Not set'}</CardDescription>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-6">
