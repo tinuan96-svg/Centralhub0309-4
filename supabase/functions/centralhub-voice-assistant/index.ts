@@ -378,6 +378,26 @@ Deno.serve(async (req: Request) => {
   let body:any; try{body=await req.json();}catch{return send(400,{success:false,error:"invalid_json"});}
   const action=String(body?.action||"");
 
+  if(action==="record_conversation_end"){
+    const {error:historyError}=await db.from("voice_assistant_commands").insert({
+      user_id:user.id,
+      mode:"operations",
+      input_text:"[conversation ended]",
+      response_text:"Conversation ended by user.",
+      intent:"conversation_end",
+      risk_level:"read_only",
+      requires_confirmation:false,
+      action_name:null,
+      action_payload:{assistant_name:"Shruthi",source:"conversation_control",browser_required:false},
+      status:"completed"
+    });
+    if(historyError){
+      console.error("conversation end history insert failed",historyError.message);
+      return send(500,{success:false,error:"conversation_end_history_failed"});
+    }
+    return send(200,{success:true,status:"recorded"});
+  }
+
   if(action==="record_realtime_turn"){
     const userText=normalizeCentralHubSpeech(String(body?.user_text||"").trim()).slice(0,6000);
     const assistantText=String(body?.assistant_text||"").trim().slice(0,7000);
