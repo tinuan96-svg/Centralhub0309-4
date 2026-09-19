@@ -8,15 +8,22 @@
 import { useEffect, useRef, useState } from 'react';
 
 interface BarcodeScannerProps {
-  onScan: (decodedText: string) => void;
+  onScan: (decodedText: string) => void | boolean;
   onClose: () => void;
   active?: boolean;
+  mode?: 'all' | 'retail-product';
 }
 
-export default function BarcodeScanner({ onScan, onClose, active = true }: BarcodeScannerProps) {
+export default function BarcodeScanner({
+  onScan,
+  onClose,
+  active = true,
+  mode = 'all',
+}: BarcodeScannerProps) {
   const scannerRef = useRef<any>(null);
   const [scriptLoaded, setScriptLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scanNotice, setScanNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (!active) return;
@@ -75,14 +82,24 @@ export default function BarcodeScanner({ onScan, onClose, active = true }: Barco
           fps: 20,
           qrbox: { width: 300, height: 200 },
           aspectRatio: 1.0,
-          formatsToSupport: [
-            Formats.EAN_13,
-            Formats.EAN_8,
-            Formats.UPC_A,
-            Formats.UPC_E,
-            Formats.CODE_128,
-            Formats.QR_CODE
-          ]
+          formatsToSupport: (
+            mode === 'retail-product'
+              ? [
+                  Formats.EAN_13,
+                  Formats.EAN_8,
+                  Formats.UPC_A,
+                  Formats.UPC_E,
+                  Formats.CODE_128,
+                ]
+              : [
+                  Formats.EAN_13,
+                  Formats.EAN_8,
+                  Formats.UPC_A,
+                  Formats.UPC_E,
+                  Formats.CODE_128,
+                  Formats.QR_CODE,
+                ]
+          ).filter(Boolean)
         },
         /* verbose= */ false
       );
@@ -91,7 +108,16 @@ export default function BarcodeScanner({ onScan, onClose, active = true }: Barco
 
       scanner.render(
         (decodedText: string) => {
-          onScan(decodedText);
+          const accepted = onScan(decodedText);
+          if (accepted === false) {
+            setScanNotice(
+              mode === 'retail-product'
+                ? 'That code is not a retail product barcode. Aim at the long EAN/UPC barcode.'
+                : 'Code ignored. Try again.'
+            );
+            return;
+          }
+          setScanNotice(null);
           scanner.clear().catch((e: any) => console.warn("Scanner clear error:", e));
         },
         () => { /* Quietly ignore frame scan failures */ }
@@ -105,7 +131,7 @@ export default function BarcodeScanner({ onScan, onClose, active = true }: Barco
         scannerRef.current.clear().catch((err: any) => console.log("Cleanup: scanner already closed or errored"));
       }
     };
-  }, [scriptLoaded, active, onScan]);
+  }, [scriptLoaded, active, onScan, mode]);
 
   return (
     <div className="fixed inset-0 z-[110] bg-black flex flex-col animate-in fade-in duration-300">
@@ -140,9 +166,20 @@ export default function BarcodeScanner({ onScan, onClose, active = true }: Barco
         {scriptLoaded && (
           <div className="mt-8 text-center space-y-4 max-w-xs animate-in fade-in slide-in-from-bottom-4 duration-700">
             <div className="p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/20">
-              <p className="text-cyan-400 text-xs font-bold uppercase tracking-wide">Box the Barcode</p>
-              <p className="text-slate-400 text-[10px] mt-1">Position items clearly in front of the lens.</p>
+              <p className="text-cyan-400 text-xs font-bold uppercase tracking-wide">
+                {mode === 'retail-product' ? 'Scan the long product barcode' : 'Box the Barcode'}
+              </p>
+              <p className="text-slate-400 text-[10px] mt-1">
+                {mode === 'retail-product'
+                  ? 'EAN / UPC only. Website QR codes on the pack are ignored.'
+                  : 'Position items clearly in front of the lens.'}
+              </p>
             </div>
+            {scanNotice && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                <p className="text-amber-300 text-[11px] font-bold">{scanNotice}</p>
+              </div>
+            )}
           </div>
         )}
       </div>
