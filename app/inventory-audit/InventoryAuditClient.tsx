@@ -90,7 +90,9 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
   // Audit Form State
   const [bins, setBins] = useState<{ location_code: string; stock_quantity: string }[]>([]);
   const [expiryBatches, setExpiryBatches] = useState<ExpiryBatch[]>([]);
+  const [savedExpiryDates, setSavedExpiryDates] = useState<string[]>([]);
   const [unitsPerBox, setUnitsPerBox] = useState<string>('');
+  const [labelPhotoBusy, setLabelPhotoBusy] = useState(false);
   const [notes, setNotes] = useState('');
 
   const [isListening, setIsListening] = useState(false);
@@ -221,15 +223,17 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
   const handleProductSelect = async (product: AuditProduct) => {
     setCurrentProduct(product);
 
-    // Blind audit rule: the counting form must start from a clean physical observation.
-    // Do not prefill the system stock, saved location, saved bin quantities or expiry-box quantities.
+    // Blind audit rule: never preload system stock/location/box quantities.
+    // Expiry DATE values are safe to remember because they do not reveal the stock count.
     setBins([{ location_code: '', stock_quantity: '' }]);
     setExpiryBatches([]);
-
-    // Packaging metadata is not a stock answer, so pieces-per-box may be reused as a convenience.
+    setSavedExpiryDates([]);
     setUnitsPerBox(product.units_per_box ? String(product.units_per_box) : '');
     setNotes('');
     setStep('audit-form');
+
+    const dates = await AuditService.getSavedExpiryDates(product.id);
+    setSavedExpiryDates(dates);
   };
 
   const performSearch = async (query: string) => {
@@ -259,13 +263,101 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
   };
 
   const addExpiryBatch = () => {
+    const rememberedDate = savedExpiryDates.length === 1 ? savedExpiryDates[0] : '';
     setExpiryBatches([...expiryBatches, {
       batch_id: null,
-      expiry_date: '',
+      expiry_date: rememberedDate,
       quantity: 0,
       remaining_quantity: 0,
       box_number: expiryBatches.length + 1,
+      manufacture_date: null,
+      carton_no: null,
+      label_photo_id: null,
     }]);
+  };
+
+  const applySavedExpiryDate = (date: string) => {
+    if (expiryBatches.length === 0) {
+      setExpiryBatches([{
+        batch_id: null,
+        expiry_date: date,
+        quantity: 0,
+        remaining_quantity: 0,
+        box_number: 1,
+        manufacture_date: null,
+        carton_no: null,
+        label_photo_id: null,
+      }]);
+      return;
+    }
+
+    const next = [...expiryBatches];
+    let target = next.findIndex(batch => !batch.expiry_date);
+    if (target < 0) target = next.length - 1;
+    next[target] = { ...next[target], expiry_date: date };
+    setExpiryBatches(next);
+  };
+
+  const handleLabelPhoto = async (file: File | null) => {
+    if (!currentProduct || !file) return;
+    if (!file.type.startsWith('image/')) {
+      setAuditStatus({ type: 'error', text: 'Please choose a box/carton label photo.' });
+      return;
+    }
+
+    setLabelPhotoBusy(true);
+    const uploaded = await AuditService.uploadAndAnalyzeLabelPhoto(currentProduct.id, file);
+    setLabelPhotoBusy(false);
+
+    if (!uploaded) {
+      setAuditStatus({ type: 'error', text: 'Could not upload the label photo.' });
+      return;
+    }
+
+    const extracted = uploaded.extraction;
+    if (!extracted) {
+      setAuditStatus({
+        type: 'success',
+        text: 'Photo saved as audit evidence. Label details could not be read automatically, so enter them manually.',
+      });
+      return;
+    }
+
+    const rememberedDate =
+      extracted.expiry_date ||
+      (savedExpiryDates.length === 1 ? savedExpiryDates[0] : '');
+
+    const nextBox: ExpiryBatch = {
+      batch_id: extracted.batch_code || null,
+      expiry_date: rememberedDate,
+      quantity: extracted.pack_count || 0,
+      remaining_quantity: extracted.pack_count || 0,
+      box_number: expiryBatches.length + 1,
+      manufacture_date: extracted.manufacture_date || null,
+      carton_no: extracted.carton_no || null,
+      label_photo_id: uploaded.photo_id,
+    };
+
+    setExpiryBatches(prev => [...prev, nextBox]);
+
+    if (extracted.pack_count && !unitsPerBox) {
+      setUnitsPerBox(String(extracted.pack_count));
+    }
+    if (extracted.expiry_date) {
+      setSavedExpiryDates(prev => [...new Set([...prev, extracted.expiry_date as string])].sort());
+    }
+
+    const details = [
+      extracted.batch_code ? `batch ${extracted.batch_code}` : null,
+      extracted.expiry_date ? `expiry ${extracted.expiry_date}` : null,
+      extracted.pack_count ? `${extracted.pack_count} packs` : null,
+      extracted.carton_no ? `carton ${extracted.carton_no}` : null,
+    ].filter(Boolean).join(' · ');
+
+    setAuditStatus({
+      type: 'success',
+      text: details ? `Photo read: ${details}. Please verify before saving.` : 'Photo attached. Please verify the box details before saving.',
+    });
   };
 
   const splitStockIntoBoxes = () => {
@@ -310,12 +402,19 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     setExpiryBatches(expiryBatches.filter((_, i) => i !== index));
   };
 
-  const updateExpiryBatch = (index: number, field: 'batch_id' | 'expiry_date' | 'quantity', value: string) => {
+  const updateExpiryBatch = (
+    index: number,
+    field: 'batch_id' | 'expiry_date' | 'quantity' | 'manufacture_date' | 'carton_no',
+    value: string,
+  ) => {
     const next = [...expiryBatches];
     if (field === 'quantity') {
       next[index] = { ...next[index], quantity: Math.max(0, parseInt(value, 10) || 0) };
     } else {
-      next[index] = { ...next[index], [field]: value || (field === 'batch_id' ? null : '') } as ExpiryBatch;
+      next[index] = {
+        ...next[index],
+        [field]: value || (field === 'expiry_date' ? '' : null),
+      } as ExpiryBatch;
     }
     setExpiryBatches(next);
   };
@@ -395,7 +494,9 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     setCurrentProduct(null);
     setBins([]);
     setExpiryBatches([]);
+    setSavedExpiryDates([]);
     setUnitsPerBox('');
+    setLabelPhotoBusy(false);
     setNotes('');
     setSearchResults([]);
   };
@@ -753,6 +854,54 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                             </Button>
                           </div>
 
+                          {savedExpiryDates.length > 0 && (
+                            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3">
+                              <p className="text-[10px] uppercase font-black tracking-widest text-emerald-300">Remembered expiry dates</p>
+                              <p className="text-[10px] text-slate-500 mt-1">Dates only are remembered — old stock quantities stay hidden.</p>
+                              <div className="flex flex-wrap gap-2 mt-2">
+                                {savedExpiryDates.map(date => (
+                                  <button
+                                    key={date}
+                                    type="button"
+                                    onClick={() => applySavedExpiryDate(date)}
+                                    className="px-3 py-2 rounded-xl border border-emerald-500/25 bg-slate-950/40 text-xs font-black text-emerald-200"
+                                  >
+                                    {new Date(`${date}T00:00:00`).toLocaleDateString('en-GB')}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="rounded-xl border border-violet-500/20 bg-violet-500/5 p-3">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                              <div>
+                                <p className="text-[10px] uppercase font-black tracking-widest text-violet-300">Box / carton label photo</p>
+                                <p className="text-[10px] text-slate-500 mt-1">
+                                  Take or upload a label photo. CentralHub can prefill batch, expiry, pack count, manufacture date and carton number.
+                                </p>
+                              </div>
+                              <label className={`cursor-pointer px-4 py-3 rounded-xl border border-violet-500/30 bg-violet-500/10 text-xs font-black text-violet-200 text-center ${labelPhotoBusy ? 'opacity-50 pointer-events-none' : ''}`}>
+                                {labelPhotoBusy ? 'Reading label…' : '📷 Add Label Photo'}
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  capture="environment"
+                                  className="hidden"
+                                  disabled={labelPhotoBusy}
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0] || null;
+                                    void handleLabelPhoto(file);
+                                    e.currentTarget.value = '';
+                                  }}
+                                />
+                              </label>
+                            </div>
+                            <p className="text-[10px] text-amber-300/80 mt-2">
+                              AI extraction is a suggestion only. You confirm the values before the audit is saved.
+                            </p>
+                          </div>
+
                           <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
                             <div className="rounded-xl bg-slate-900/40 border border-slate-800 p-3">
                               <label className="text-[10px] text-slate-500 uppercase font-bold">Pieces per box</label>
@@ -785,9 +934,14 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                             {expiryBatches.map((batch, index) => (
                               <div key={batch.id || index} className="grid grid-cols-12 gap-2 items-end rounded-xl bg-slate-900/40 border border-slate-800 p-3">
                                 <div className="col-span-12 flex items-center justify-between">
-                                  <span className="text-[10px] uppercase tracking-widest font-black text-amber-300">
-                                    Box {batch.box_number || index + 1}
-                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] uppercase tracking-widest font-black text-amber-300">
+                                      Box {batch.box_number || index + 1}
+                                    </span>
+                                    {batch.label_photo_id && (
+                                      <span className="text-[10px] font-black text-violet-300">📷 Photo attached</span>
+                                    )}
+                                  </div>
                                   {unitsPerBox && Number(batch.quantity) < Number(unitsPerBox) && (
                                     <span className="text-[10px] font-bold text-slate-500">Partial box</span>
                                   )}
@@ -819,6 +973,25 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                                     value={batch.quantity}
                                     onChange={(e) => updateExpiryBatch(index, 'quantity', e.target.value)}
                                     className={`w-full text-sm font-bold ${getInputClasses()}`}
+                                  />
+                                </div>
+                                <div className="col-span-6 sm:col-span-3 space-y-1">
+                                  <label className="text-[10px] text-slate-500 uppercase font-bold">Manufacture date</label>
+                                  <input
+                                    type="date"
+                                    value={batch.manufacture_date || ''}
+                                    onChange={(e) => updateExpiryBatch(index, 'manufacture_date', e.target.value)}
+                                    className={`w-full text-sm ${getInputClasses()}`}
+                                  />
+                                </div>
+                                <div className="col-span-6 sm:col-span-3 space-y-1">
+                                  <label className="text-[10px] text-slate-500 uppercase font-bold">Carton no.</label>
+                                  <input
+                                    type="text"
+                                    value={batch.carton_no || ''}
+                                    onChange={(e) => updateExpiryBatch(index, 'carton_no', e.target.value)}
+                                    placeholder="e.g. 109"
+                                    className={`w-full text-sm ${getInputClasses()}`}
                                   />
                                 </div>
                                 <button
