@@ -47,7 +47,11 @@ Deno.serve(async(req:Request)=>{
  const inventoryAsOf=new Date().toISOString();
  const productRows=products.error?[]:(products.data||[]);
  const expiryByProduct=new Map((expirySummary.data||[]).map((row:any)=>[row.product_id,row]));
- const compactProducts=productRows.map((p:any)=>{
+ const prioritizedRows=[
+   ...productRows.filter((p:any)=>p.is_active===true),
+   ...productRows.filter((p:any)=>p.is_active!==true)
+ ];
+ const compactProducts=prioritizedRows.map((p:any)=>{
    const expiry:any=expiryByProduct.get(p.id);
    return {
      name:p.name,brand:p.brand,sku:p.sku,gtin:p.gtin,
@@ -68,16 +72,27 @@ Deno.serve(async(req:Request)=>{
    product_list_capped:productRows.length>=1000,
    active_products:productRows.filter((p:any)=>p.is_active===true).length,
    total_physical_units:productRows.reduce((n:number,p:any)=>n+Number(p.stock||0),0),
+   rows_included:compactProducts.length,
+   rows_are_partial:false,
    rows:compactProducts
  };
- const contextText=JSON.stringify({
+ const sessionContext={
    generated_at:inventoryAsOf,
    inventory,
    stores:stores.data||[],orders_last_24h:orders.data||[],site_health:health.data||[],
    security:security.data||[],marketing_connections:marketing.data||[],
    support:support.data||[],live_web_sessions:browser.data||[],
    live_web_focus:focus?.data||null,recent_conversation:recentConversation
- }).slice(0,90000);
+ };
+ // Never truncate serialized JSON in the middle of a product or date. Prefer
+ // active products and retain the overall inventory totals when trimming.
+ let contextText=JSON.stringify(sessionContext);
+ while(contextText.length>80000 && inventory.rows.length>0){
+   inventory.rows.pop();
+   inventory.rows_included=inventory.rows.length;
+   inventory.rows_are_partial=true;
+   contextText=JSON.stringify(sessionContext);
+ }
  const model="gpt-realtime-1.5";
  const instructions=`You are Shruthi, the current user's private AI managing partner inside the CentralHub Android app.
 Speak naturally, warmly and concisely with highly responsive human-like timing. Use short conversational turns unless detail is requested. The user may speak English, Malayalam, Tamil, or switch between them; understand code-switching naturally and reply in the language/style the user is using.
