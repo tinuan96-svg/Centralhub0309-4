@@ -14,7 +14,7 @@ import {
   getInputClasses,
   SectionHeader
 } from '@/lib/design-system';
-import { AuditService, AuditProduct, ExpiryBatch } from '@/lib/services/inventory/auditService';
+import { AuditService, AuditProduct, ExpiryBatch, FullAuditSession } from '@/lib/services/inventory/auditService';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
@@ -88,6 +88,8 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
   const [lastAuditedProduct, setLastAuditedProduct] = useState<AuditProduct | null>(null);
 
   const [isLoading, setIsLoading] = useState(false);
+  const [fullAuditSession, setFullAuditSession] = useState<FullAuditSession | null>(null);
+  const [sessionBusy, setSessionBusy] = useState(false);
   // Audit Status Notification - using auditStatus consistently
   const [auditStatus, setAuditStatus] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
@@ -128,9 +130,53 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     setUnauditedProducts(data);
   }, []);
 
+  const loadFullAuditSession = useCallback(async () => {
+    const session = await AuditService.getOpenFullAuditSession();
+    setFullAuditSession(session);
+  }, []);
+
   useEffect(() => {
     loadUnaudited();
-  }, [loadUnaudited]);
+    loadFullAuditSession();
+  }, [loadUnaudited, loadFullAuditSession]);
+
+  const handleStartFullAudit = async () => {
+    setSessionBusy(true);
+    const session = await AuditService.startFullAudit('Full physical stock audit');
+    setSessionBusy(false);
+    if (!session) {
+      setAuditStatus({ type: 'error', text: 'Could not start the full stock audit session.' });
+      return;
+    }
+    setFullAuditSession(session);
+    setAuditStatus({
+      type: 'success',
+      text: `Full audit started. ${session.snapshot_product_count} products with system stock are waiting to be physically counted.`,
+    });
+  };
+
+  const handleFinalizeFullAudit = async () => {
+    if (!fullAuditSession) return;
+    const confirmed = window.confirm(
+      'Finalize this full stock audit? Any product with positive system stock that was not counted will be set to zero, unpublished and held for confirmation.'
+    );
+    if (!confirmed) return;
+
+    setSessionBusy(true);
+    const missingCount = await AuditService.finalizeFullAudit(fullAuditSession.id);
+    setSessionBusy(false);
+    if (missingCount === null) {
+      setAuditStatus({ type: 'error', text: 'Could not finalize the full stock audit.' });
+      return;
+    }
+
+    setFullAuditSession(null);
+    setAuditStatus({
+      type: 'success',
+      text: `Audit finalized. ${missingCount} uncounted product${missingCount === 1 ? '' : 's'} moved to zero stock and unpublished pending confirmation.`,
+    });
+    loadUnaudited();
+  };
 
   const handleScan = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -283,6 +329,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
       setAuditStatus({ type: 'success', text: `Audited ${productDisplayName(currentProduct)} across ${bins.length} locations.` });
       resetAudit();
       loadUnaudited();
+      loadFullAuditSession();
     } else {
       setAuditStatus({ type: 'error', text: 'Failed to save audit data.' });
     }
@@ -330,6 +377,62 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
             </Link>
           }
         />
+
+        <Card variant="glass" className="mb-6 border-cyan-500/20">
+          <CardContent className="p-4 sm:p-5">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.18em] font-black text-cyan-400">Full Stock Audit Session</p>
+                {fullAuditSession ? (
+                  <>
+                    <p className="text-sm font-bold text-slate-100 mt-1">Audit is open — scan/count the full physical stock before finalising.</p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Started {new Date(fullAuditSession.started_at).toLocaleString('en-GB')} ·
+                      Snapshot {fullAuditSession.snapshot_product_count} ·
+                      Counted {fullAuditSession.counted_product_count}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-bold text-slate-100 mt-1">No full audit is currently open.</p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Start a full audit before stock counting if you want uncounted system stock to be automatically quarantined at the end.
+                    </p>
+                  </>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {fullAuditSession ? (
+                  <>
+                    <Link
+                      href="/inventory-management/reports/audit"
+                      className="px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-xs font-black uppercase text-slate-200"
+                    >
+                      Review Report
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={handleFinalizeFullAudit}
+                      disabled={sessionBusy}
+                      className="px-4 py-2.5 rounded-xl bg-rose-600 text-white text-xs font-black uppercase disabled:opacity-50"
+                    >
+                      {sessionBusy ? 'Finalising…' : 'Finalize Full Audit'}
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleStartFullAudit}
+                    disabled={sessionBusy}
+                    className="px-4 py-2.5 rounded-xl bg-cyan-600 text-white text-xs font-black uppercase disabled:opacity-50"
+                  >
+                    {sessionBusy ? 'Starting…' : 'Start Full Audit'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Tab Navigation */}
         <div className="flex gap-2 mb-6 bg-slate-900/40 p-1 rounded-xl border border-slate-800">
