@@ -8,6 +8,7 @@ type BatchRow = {
   id: string;
   product_id: string;
   batch_id: string | null;
+  box_number: number | null;
   expiry_date: string;
   quantity: number;
   remaining_quantity: number;
@@ -72,7 +73,7 @@ export default function ExpiryClient() {
     const [batchResult, summaryResult, inventoryResult, writeoffResult] = await Promise.all([
       supabase
         .from('product_expiry')
-        .select('id,product_id,batch_id,expiry_date,quantity,remaining_quantity,products(id,name,sku,cost_price,image_url,stock,is_active,is_published,expiry_blocked)')
+        .select('id,product_id,batch_id,box_number,expiry_date,quantity,remaining_quantity,products(id,name,sku,cost_price,image_url,stock,is_active,is_published,expiry_blocked)')
         .gt('remaining_quantity', 0)
         .order('expiry_date', { ascending: true })
         .order('created_at', { ascending: true }),
@@ -253,7 +254,7 @@ export default function ExpiryClient() {
             <thead className="bg-slate-800/50 text-slate-400 uppercase text-[10px] font-black tracking-widest">
               <tr>
                 <th className="px-5 py-4">Product</th>
-                <th className="px-5 py-4">Batch / Box</th>
+                <th className="px-5 py-4">Box / Lot</th>
                 <th className="px-5 py-4 text-center">Expiry</th>
                 <th className="px-5 py-4 text-center">Countdown</th>
                 <th className="px-5 py-4 text-right">Batch Qty</th>
@@ -282,7 +283,10 @@ export default function ExpiryClient() {
                       </div>
                     </td>
                     <td className="px-5 py-4">
-                      <span className="font-mono text-xs text-slate-300">{row.batch_id || 'No lot code'}</span>
+                      <div>
+                        <p className="font-black text-slate-200">Box {row.box_number || '—'}</p>
+                        <p className="font-mono text-[10px] text-slate-500">{row.batch_id || 'No lot code'}</p>
+                      </div>
                     </td>
                     <td className="px-5 py-4 text-center font-mono text-slate-300">
                       {new Date(`${row.expiry_date}T00:00:00`).toLocaleDateString('en-GB')}
