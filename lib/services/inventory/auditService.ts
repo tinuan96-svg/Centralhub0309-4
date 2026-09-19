@@ -40,6 +40,7 @@ export interface ExpiryBatch {
   manufacture_date?: string | null;
   carton_no?: string | null;
   label_photo_id?: string | null;
+  entry_source?: 'manual' | 'auto_split' | 'photo';
 }
 
 export interface LabelExtraction {
