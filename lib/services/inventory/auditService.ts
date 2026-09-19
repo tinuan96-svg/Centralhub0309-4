@@ -426,157 +426,35 @@ export class AuditService {
     notes?: string;
     userId?: string;
     gtin?: string;
-  }): Promise<boolean> {
-    const { productId, totalStock, bins, expiryDate, expiryBatches, unitsPerBox, notes, userId, gtin } = params;
-    const auditedAt = new Date().toISOString();
+  }): Promise<{ success: boolean; error?: string }> {
+    const { productId, totalStock, bins, expiryBatches, unitsPerBox, notes } = params;
     const auditNote = notes?.trim() || `Physical stock audit across ${bins.length} location${bins.length === 1 ? '' : 's'}`;
 
     try {
       if (!Number.isFinite(totalStock) || totalStock < 0) {
-        throw new Error('Audit stock total must be a non-negative number.');
+        return { success: false, error: 'Enter a valid physical stock quantity.' };
       }
 
-      const [inventoryResult, productResult, binResult] = await Promise.all([
-        supabase
-          .from('central_inventory')
-          .select('stock_quantity')
-          .eq('product_id', productId)
-          .maybeSingle(),
-        supabase
-          .from('products')
-          .select('warehouse_location')
-          .eq('id', productId)
-          .maybeSingle(),
-        supabase
-          .from('product_bin_locations')
-          .select('location_code,stock_quantity')
-          .eq('product_id', productId)
-          .order('location_code', { ascending: true }),
-      ]);
-
-      if (inventoryResult.error) throw inventoryResult.error;
-      if (productResult.error) throw productResult.error;
-      if (binResult.error) throw binResult.error;
-      if (!inventoryResult.data) throw new Error('Product is not registered in the inventory master.');
-
-      const oldStock = Number(inventoryResult.data.stock_quantity ?? 0);
-      const change = totalStock - oldStock;
-      const primaryLocation = bins[0]?.location_code?.trim() || '';
-
-      const systemLocations = (binResult.data || []).length > 0
-        ? (binResult.data || []).map((bin: any) => ({
-            location_code: String(bin.location_code || '').trim(),
-            stock_quantity: Number(bin.stock_quantity || 0),
-          }))
-        : productResult.data?.warehouse_location
-          ? [{
-              location_code: String(productResult.data.warehouse_location).trim(),
-              stock_quantity: oldStock,
-            }]
-          : [];
-
-      const auditedLocations = bins.map(bin => ({
+      const cleanBins = bins.map(bin => ({
         location_code: String(bin.location_code || '').trim(),
-        stock_quantity: Number(bin.stock_quantity || 0),
+        stock_quantity: Math.max(0, Number(bin.stock_quantity) || 0),
       }));
 
-      const productUpdate: any = {
-        warehouse_location: primaryLocation,
-        last_audited_at: auditedAt,
-        last_audited_by: userId || null,
-        audit_notes: auditNote,
-        updated_at: auditedAt
-      };
-      if (gtin) productUpdate.gtin = gtin;
-      if (unitsPerBox !== undefined) productUpdate.units_per_box = unitsPerBox;
-      // Blind audit: absence of expiry-box input means preserve existing expiry data.
-      // Only change the product-level expiry when the caller explicitly supplies expiryDate.
-      if (expiryBatches === undefined && expiryDate !== undefined) productUpdate.expiry_date = expiryDate || null;
-
-      const { error: productError } = await supabase
-        .from('products')
-        .update(productUpdate)
-        .eq('id', productId);
-      if (productError) throw productError;
-
-      const { error: deleteBinsError } = await supabase
-        .from('product_bin_locations')
-        .delete()
-        .eq('product_id', productId);
-      if (deleteBinsError) throw deleteBinsError;
-
-      if (bins.length > 0) {
-        const cleanBins = bins.map(bin => ({
-          product_id: productId,
-          location_code: bin.location_code.trim(),
-          stock_quantity: Number(bin.stock_quantity) || 0,
-          last_audited_at: auditedAt
-        }));
-        if (cleanBins.some(bin => !bin.location_code || bin.stock_quantity < 0)) {
-          throw new Error('Every stock location needs a location code and a non-negative quantity.');
-        }
-        const { error: binsError } = await supabase.from('product_bin_locations').insert(cleanBins);
-        if (binsError) throw binsError;
+      if (totalStock > 0 && cleanBins.some(bin => bin.stock_quantity > 0 && !bin.location_code)) {
+        return { success: false, error: 'Enter Location / Bin for every positive stock quantity.' };
       }
 
-      if (change !== 0) {
-        // central_inventory is a writable view over products. UPDATE is supported by its
-        // INSTEAD OF trigger; UPSERT/ON CONFLICT is not, which was causing audit saves to fail.
-        const { error: stockError } = await supabase
-          .from('central_inventory')
-          .update({ stock_quantity: totalStock, updated_at: auditedAt })
-          .eq('product_id', productId);
-        if (stockError) throw stockError;
-
-        const { data: warehouse } = await supabase
-          .from('warehouses')
-          .select('id')
-          .eq('is_active', true)
-          .order('created_at', { ascending: true })
-          .limit(1)
-          .maybeSingle();
-
-        const { error: movementError } = await supabase.from('inventory_movements').insert({
-          product_id: productId,
-          warehouse_id: warehouse?.id || null,
-          change_amount: change,
-          old_stock: oldStock,
-          new_stock: totalStock,
-          action_type: 'ADJUST',
-          notes: auditNote,
-          created_at: auditedAt
-        });
-
-        if (movementError) {
-          const { error: rollbackError } = await supabase
-            .from('central_inventory')
-            .update({ stock_quantity: oldStock, updated_at: new Date().toISOString() })
-            .eq('product_id', productId);
-          if (rollbackError) {
-            throw new Error(`Audit ledger failed (${movementError.message}) and stock rollback failed (${rollbackError.message}).`);
-          }
-          throw new Error(`Audit stock change was rolled back because ledger logging failed: ${movementError.message}`);
-        }
+      const binTotal = cleanBins.reduce((sum, bin) => sum + bin.stock_quantity, 0);
+      if (binTotal !== totalStock) {
+        return {
+          success: false,
+          error: `Location quantities (${binTotal}) must equal physical stock total (${totalStock}).`,
+        };
       }
 
-      const { error: logError } = await supabase.from('inventory_logs').insert([{
-        product_id: productId,
-        change,
-        old_quantity: oldStock,
-        new_quantity: totalStock,
-        type: 'AUDIT',
-        movement_type: 'AUDIT',
-        reason: 'Physical Stock Audit (Multi-Location)',
-        notes: auditNote,
-        system_locations: systemLocations,
-        audited_locations: auditedLocations,
-        edited_by: userId || null,
-        created_at: auditedAt
-      }]);
-      if (logError) console.warn('[AuditService] secondary inventory_logs write failed:', logError.message);
-
+      let cleanBatches: any[] | null = null;
       if (expiryBatches !== undefined) {
-        const cleanBatches = expiryBatches
+        cleanBatches = expiryBatches
           .map((batch, index) => ({
             batch_id: batch.batch_id?.trim() || null,
             box_number: batch.box_number || index + 1,
@@ -591,50 +469,44 @@ export class AuditService {
 
         const expiryTotal = cleanBatches.reduce((sum, batch) => sum + batch.quantity, 0);
         if (cleanBatches.length > 0 && expiryTotal !== totalStock) {
-          throw new Error(`Expiry batch quantities (${expiryTotal}) must equal audited stock total (${totalStock}).`);
+          return {
+            success: false,
+            error: `Expiry quantities (${expiryTotal}) must equal physical stock total (${totalStock}).`,
+          };
         }
         if (cleanBatches.some(batch => !batch.expiry_date)) {
-          throw new Error('Every non-zero expiry batch needs an expiry date.');
+          return { success: false, error: 'Every expiry row with stock needs an expiry date.' };
         }
+      }
 
-        const { error: expiryBatchError } = await supabase.rpc('replace_product_expiry_boxes_for_audit', {
-          p_product_id: productId,
-          p_boxes: cleanBatches,
-          p_total_stock: totalStock,
-          p_units_per_box: unitsPerBox ?? null,
-        });
-        if (expiryBatchError) throw expiryBatchError;
+      const { error } = await supabase.rpc('save_inventory_audit_atomic', {
+        p_product_id: productId,
+        p_total_stock: totalStock,
+        p_bins: cleanBins,
+        p_expiry_boxes: cleanBatches,
+        p_units_per_box: unitsPerBox ?? null,
+        p_notes: auditNote,
+      });
 
-        const confirmedPhotoIds = cleanBatches
-          .map((batch: any) => batch.label_photo_id)
-          .filter(Boolean);
-        if (confirmedPhotoIds.length > 0) {
-          const { error: photoConfirmError } = await supabase
-            .from('inventory_audit_label_photos')
-            .update({
-              status: 'confirmed',
-              confirmed_at: auditedAt,
-              updated_at: auditedAt,
-            })
-            .in('id', confirmedPhotoIds);
-          if (photoConfirmError) {
-            console.warn('[AuditService] Audit saved but label photo confirmation failed:', photoConfirmError.message);
-          }
-        }
+      if (error) {
+        console.error('[AuditService] Atomic audit save failed:', error);
+        return { success: false, error: error.message || 'Could not save stock audit.' };
       }
 
       try {
         await StockSyncService.syncStockToAllWebsites(productId, totalStock);
       } catch (syncError) {
-        // The physical audit is already saved locally. A downstream store-sync issue must not
-        // falsely report the audit itself as failed; the normal sync/retry pipeline can recover it.
+        // Local physical audit is committed. Downstream sync retries separately.
         console.warn('[AuditService] audit saved but downstream stock sync failed:', syncError);
       }
 
-      return true;
-    } catch (error) {
+      return { success: true };
+    } catch (error: any) {
       console.error('[AuditService] Audit failed:', error);
-      return false;
+      return {
+        success: false,
+        error: String(error?.message || 'Could not save stock audit.'),
+      };
     }
   }
 
