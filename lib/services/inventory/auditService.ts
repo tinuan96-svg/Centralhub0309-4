@@ -306,6 +306,28 @@ export class AuditService {
     }));
   }
 
+  static async updateProductPackSize(
+    productId: string,
+    value: number,
+    unit: 'g' | 'kg' | 'ml' | 'l',
+  ): Promise<boolean> {
+    if (!Number.isFinite(value) || value <= 0) return false;
+    const { error } = await supabase
+      .from('products')
+      .update({
+        pack_size: value,
+        pack_unit: unit,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', productId);
+
+    if (error) {
+      console.error('[AuditService] Failed to update spoken pack size:', error);
+      return false;
+    }
+    return true;
+  }
+
   static async performAudit(params: {
     productId: string;
     totalStock: number;
