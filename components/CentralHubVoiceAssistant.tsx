@@ -734,6 +734,11 @@ export default function CentralHubVoiceAssistant() {
   }, [stopNativeRealtime]);
 
   const endConversation = useCallback(() => {
+    // Invalidate any late transcript/response from the session being closed.
+    turnGenerationRef.current += 1;
+    pendingRealtimeUserRef.current = '';
+    processingRef.current = false;
+
     if (realtimeActiveRef.current) stopNativeRealtime();
     else if (recordingRef.current) stopRecording();
     stopTracks();
@@ -743,11 +748,29 @@ export default function CentralHubVoiceAssistant() {
     setMinimized(false);
     setTranscript('');
     setResponse(null);
+    responseRef.current = null;
     setError('');
-  }, [setSession, stopNativeRealtime, stopRecording, stopSpeech, stopTracks]);
+    setProcessing(false);
+
+    // Mark the boundary so the next Realtime session cannot treat an old task
+    // as something it should automatically resume.
+    void invokeVoice({
+      action:'record_conversation_end',
+      page_context:pathname,
+      assistant_name:'SHRUTHI',
+    }).catch(() => {});
+  }, [pathname, setSession, stopNativeRealtime, stopRecording, stopSpeech, stopTracks]);
 
   const openNora = useCallback(() => {
     chooseTheme();
+    // Opening Shruthi starts a clean visible turn. Old text can still exist in
+    // persistent history for explicit "continue" requests, but must not be
+    // replayed in the UI by default.
+    pendingRealtimeUserRef.current = '';
+    setTranscript('');
+    setResponse(null);
+    responseRef.current = null;
+    setError('');
     setMinimized(false);
     setOpen(true);
     setSession(true);
@@ -800,7 +823,7 @@ export default function CentralHubVoiceAssistant() {
                     ))}
                   </div>
                   <p className="mt-1 text-sm font-medium tracking-[0.18em] text-[var(--nora-accent)]">{statusLabel}</p>
-                  <p className="mt-2 text-[10px] text-slate-500">Private · voice + text · changes require approval</p>
+                  <p className="mt-2 text-[10px] text-slate-500">Private · voice + text · approvals only when required</p>
                 </div>
 
                 {(transcript || processing || response?.reply || error) && (
