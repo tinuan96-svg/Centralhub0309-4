@@ -904,6 +904,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     const newBins = [...bins];
     newBins[index][field] = value;
     setBins(newBins);
+    setAuditStatus(null);
 
     if (
       field === 'stock_quantity' &&
@@ -1150,6 +1151,16 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     );
     if (positiveWithoutLocation) {
       setAuditStatus({ type: 'error', text: 'Enter Location / Bin for the stock you counted.' });
+      window.setTimeout(() => {
+        const firstMissing = formattedBins.findIndex(
+          bin => bin.stock_quantity > 0 && !bin.location_code,
+        );
+        const input = document.querySelector<HTMLInputElement>(
+          `[data-audit-location-input="${Math.max(firstMissing, 0)}"]`,
+        );
+        input?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        input?.focus();
+      }, 50);
       return;
     }
 
@@ -1692,6 +1703,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                           type="button"
                           onClick={() => {
                             setStockEntryMode(mode);
+                            setAuditStatus(null);
                             if (mode === 'quantity') {
                               setExpiryBatches([]);
                             }
@@ -1961,8 +1973,21 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                                   value={bin.location_code}
                                   onChange={(e) => updateBin(index, 'location_code', e.target.value)}
                                   placeholder="e.g. A1-B2"
-                                  className={`w-full text-sm ${getInputClasses()}`}
+                                  data-audit-location-input={index}
+                                  aria-invalid={
+                                    (parseInt(bin.stock_quantity, 10) || 0) > 0 && !bin.location_code.trim()
+                                  }
+                                  className={`w-full text-sm ${getInputClasses()} ${
+                                    (parseInt(bin.stock_quantity, 10) || 0) > 0 && !bin.location_code.trim()
+                                      ? 'border-rose-500/60 ring-1 ring-rose-500/20'
+                                      : ''
+                                  }`}
                                 />
+                                {(parseInt(bin.stock_quantity, 10) || 0) > 0 && !bin.location_code.trim() && (
+                                  <p className="text-[10px] font-bold text-rose-400">
+                                    Location required for {parseInt(bin.stock_quantity, 10) || 0} counted item{(parseInt(bin.stock_quantity, 10) || 0) === 1 ? '' : 's'}.
+                                  </p>
+                                )}
                               </div>
                               <div className="w-24 space-y-1">
                                 <label className="text-[10px] text-slate-500 uppercase font-bold">Stock</label>
@@ -2004,14 +2029,41 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                       />
                     </div>}
 
-                    {stockEntryMode && <div className="flex flex-col sm:flex-row gap-3 pt-6">
-                      <Button variant="primary" className="flex-1 py-4 text-lg" onClick={handleAuditSubmit} disabled={isLoading}>
-                        {isLoading ? 'Saving...' : 'Save Stock Audit'}
-                      </Button>
-                      <Button variant="secondary" className="px-8" onClick={resetAudit} disabled={isLoading}>
-                        Cancel
-                      </Button>
-                    </div>}
+                    {stockEntryMode && (() => {
+                      const physicalTotal = bins.reduce(
+                        (sum, bin) => sum + Math.max(0, parseInt(bin.stock_quantity, 10) || 0),
+                        0,
+                      );
+                      const hasQuantityInput = bins.some(
+                        bin => String(bin.stock_quantity ?? '').trim() !== '',
+                      );
+                      const missingLocation = bins.some(
+                        bin => (parseInt(bin.stock_quantity, 10) || 0) > 0 && !bin.location_code.trim(),
+                      );
+                      const saveDisabled = isLoading || !hasQuantityInput || (physicalTotal > 0 && missingLocation);
+
+                      return (
+                        <div className="flex flex-col sm:flex-row gap-3 pt-6">
+                          <Button
+                            variant="primary"
+                            className="flex-1 py-4 text-lg"
+                            onClick={handleAuditSubmit}
+                            disabled={saveDisabled}
+                          >
+                            {isLoading
+                              ? 'Saving...'
+                              : !hasQuantityInput
+                                ? 'Enter Physical Quantity'
+                                : physicalTotal > 0 && missingLocation
+                                  ? 'Enter Location / Bin to Save'
+                                  : 'Save Stock Audit'}
+                          </Button>
+                          <Button variant="secondary" className="px-8" onClick={resetAudit} disabled={isLoading}>
+                            Cancel
+                          </Button>
+                        </div>
+                      );
+                    })()}
                   </CardContent>
                 </Card>
               )}
