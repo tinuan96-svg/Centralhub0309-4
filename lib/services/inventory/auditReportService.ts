@@ -9,6 +9,11 @@ export interface AuditSummary {
   affectedProductsCount: number;
 }
 
+export interface AuditLocationSnapshot {
+  location_code: string;
+  stock_quantity: number;
+}
+
 export interface AuditLogEntry {
   id: string;
   product_id: string;
@@ -20,6 +25,11 @@ export interface AuditLogEntry {
   notes: string | null;
   created_at: string;
   edited_by_name: string | null;
+  system_locations: AuditLocationSnapshot[];
+  audited_locations: AuditLocationSnapshot[];
+  system_location_text: string;
+  audited_location_text: string;
+  location_match: boolean | null;
 }
 
 export interface AuditSessionSummary {
@@ -49,6 +59,26 @@ export interface AuditException {
   warehouse_location: string | null;
   expiry_date: string | null;
 }
+
+
+const normalizeLocations = (value: unknown): AuditLocationSnapshot[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((row: any) => ({
+      location_code: String(row?.location_code || '').trim(),
+      stock_quantity: Number(row?.stock_quantity || 0),
+    }))
+    .filter(row => row.location_code)
+    .sort((a, b) =>
+      a.location_code.localeCompare(b.location_code) ||
+      a.stock_quantity - b.stock_quantity
+    );
+};
+
+const locationText = (rows: AuditLocationSnapshot[]) =>
+  rows.length
+    ? rows.map(row => `${row.location_code} × ${row.stock_quantity}`).join(' · ')
+    : '—';
 
 export class AuditReportService {
   static async getLatestFullAuditSession(): Promise<AuditSessionSummary | null> {
@@ -171,6 +201,7 @@ export class AuditReportService {
       .from('inventory_logs')
       .select(`
         id, product_id, change, old_quantity, new_quantity, notes, created_at,
+        system_locations, audited_locations,
         products (name, sku)
       `)
       .eq('type', 'AUDIT')
@@ -182,17 +213,30 @@ export class AuditReportService {
       return [];
     }
 
-    return (data || []).map((log: any) => ({
-      id: log.id,
-      product_id: log.product_id,
-      product_name: log.products?.name || 'Unknown Product',
-      sku: log.products?.sku || null,
-      old_quantity: log.old_quantity || 0,
-      new_quantity: log.new_quantity || 0,
-      change: log.change || 0,
-      notes: log.notes,
-      created_at: log.created_at,
-      edited_by_name: 'Staff' // Metadata not always available in logs
-    }));
+    return (data || []).map((log: any) => {
+      const systemLocations = normalizeLocations(log.system_locations);
+      const auditedLocations = normalizeLocations(log.audited_locations);
+      const hasLocationSnapshot = systemLocations.length > 0 || auditedLocations.length > 0;
+
+      return {
+        id: log.id,
+        product_id: log.product_id,
+        product_name: log.products?.name || 'Unknown Product',
+        sku: log.products?.sku || null,
+        old_quantity: log.old_quantity || 0,
+        new_quantity: log.new_quantity || 0,
+        change: log.change || 0,
+        notes: log.notes,
+        created_at: log.created_at,
+        edited_by_name: 'Staff',
+        system_locations: systemLocations,
+        audited_locations: auditedLocations,
+        system_location_text: locationText(systemLocations),
+        audited_location_text: locationText(auditedLocations),
+        location_match: hasLocationSnapshot
+          ? JSON.stringify(systemLocations) === JSON.stringify(auditedLocations)
+          : null,
+      };
+    });
   }
 }
