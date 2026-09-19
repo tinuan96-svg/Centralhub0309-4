@@ -14,7 +14,7 @@ import {
   getInputClasses,
   SectionHeader
 } from '@/lib/design-system';
-import { AuditService, AuditProduct, ExpiryBatch, FullAuditSession } from '@/lib/services/inventory/auditService';
+import { AuditService, AuditProduct, ExpiryBatch, FullAuditSession, RecentAuditItem } from '@/lib/services/inventory/auditService';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
@@ -85,7 +85,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
   // Lists
   const [unauditedProducts, setUnauditedProducts] = useState<AuditProduct[]>([]);
   const [newlyAddedProducts, setNewlyAddedProducts] = useState<AuditProduct[]>([]);
-  const [lastAuditedProduct, setLastAuditedProduct] = useState<AuditProduct | null>(null);
+  const [recentAudits, setRecentAudits] = useState<RecentAuditItem[]>([]);
 
   const [isLoading, setIsLoading] = useState(false);
   const [fullAuditSession, setFullAuditSession] = useState<FullAuditSession | null>(null);
@@ -135,10 +135,16 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     setFullAuditSession(session);
   }, []);
 
+  const loadRecentAudits = useCallback(async () => {
+    const items = await AuditService.getRecentAuditItems(2);
+    setRecentAudits(items);
+  }, []);
+
   useEffect(() => {
     loadUnaudited();
     loadFullAuditSession();
-  }, [loadUnaudited, loadFullAuditSession]);
+    loadRecentAudits();
+  }, [loadUnaudited, loadFullAuditSession, loadRecentAudits]);
 
   const handleStartFullAudit = async () => {
     setSessionBusy(true);
@@ -320,16 +326,11 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     setIsLoading(false);
 
     if (success) {
-      setLastAuditedProduct({
-        ...currentProduct,
-        current_stock: totalStock,
-        warehouse_location: formattedBins[0]?.location_code || '',
-        gtin: scannedGtin || currentProduct.gtin
-      });
       setAuditStatus({ type: 'success', text: `Audited ${productDisplayName(currentProduct)} across ${bins.length} locations.` });
       resetAudit();
       loadUnaudited();
       loadFullAuditSession();
+      loadRecentAudits();
     } else {
       setAuditStatus({ type: 'error', text: 'Failed to save audit data.' });
     }
@@ -473,19 +474,69 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
           {activeTab === 'audit' && (
             <div className="space-y-6">
 
-              {/* Last Audited Quick View */}
-              {lastAuditedProduct && step === 'scan' && (
+              {/* Recent audited products — persisted from audit logs so progress survives navigation/reload */}
+              {step === 'scan' && recentAudits.length > 0 && (
                 <Card variant="glass" className="border-blue-500/20">
-                  <CardContent className="p-4 flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-400">
-                      <Icons.CheckCircle2 size={20} />
+                  <CardContent className="p-4 sm:p-5">
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <div>
+                        <p className="text-[10px] text-blue-400 uppercase font-black tracking-[0.18em]">Where you stopped</p>
+                        <p className="text-xs text-slate-500 mt-1">Last two completed stock-audit scans</p>
+                      </div>
+                      <Icons.History size={18} />
                     </div>
-                    <div>
-                      <p className="text-xs text-slate-500 uppercase font-bold tracking-wider">Last Audited</p>
-                      <p className="text-sm text-slate-200 font-medium">{lastAuditedProduct.name}{productSizeLabel(lastAuditedProduct) ? ` — ${productSizeLabel(lastAuditedProduct)}` : ''}</p>
-                      <p className="text-xs text-slate-400">Stock: {lastAuditedProduct.current_stock} | Loc: {lastAuditedProduct.warehouse_location || 'None'}</p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {recentAudits.map((item, index) => {
+                        const size =
+                          item.weight_grams != null && item.weight_grams > 0
+                            ? (item.weight_grams >= 1000 && item.weight_grams % 1000 === 0
+                                ? `${item.weight_grams / 1000} kg`
+                                : `${item.weight_grams} g`)
+                            : item.weight_kg != null && item.weight_kg > 0
+                              ? `${item.weight_kg} kg`
+                              : item.weight != null && item.unit
+                                ? `${item.weight} ${item.unit}`
+                                : item.pack_size != null && item.pack_unit
+                                  ? `${item.pack_size} ${item.pack_unit}`
+                                  : item.unit || '—';
+
+                        return (
+                          <div
+                            key={item.log_id}
+                            className={`rounded-2xl border p-3.5 ${
+                              index === 0
+                                ? 'border-cyan-500/30 bg-cyan-500/5'
+                                : 'border-slate-800 bg-slate-900/40'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-[10px] uppercase font-black tracking-widest text-slate-500">
+                                  {index === 0 ? 'Last scanned' : 'Previous'}
+                                </p>
+                                <p className="font-black text-slate-100 mt-1 truncate">{item.name}</p>
+                                <p className="text-xs text-cyan-300 font-bold mt-0.5">{size}</p>
+                              </div>
+                              <span className="text-[10px] text-slate-500 whitespace-nowrap">
+                                {new Date(item.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 mt-3">
+                              <div className="rounded-xl bg-slate-950/50 border border-slate-800 px-3 py-2">
+                                <p className="text-[9px] uppercase font-black text-slate-600">Qty</p>
+                                <p className="text-lg font-black text-white">{item.quantity}</p>
+                              </div>
+                              <div className="rounded-xl bg-slate-950/50 border border-slate-800 px-3 py-2">
+                                <p className="text-[9px] uppercase font-black text-slate-600">Location</p>
+                                <p className="text-sm font-black text-white truncate">{item.warehouse_location || 'Unassigned'}</p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <Button variant="ghost" className="ml-auto" onClick={() => setLastAuditedProduct(null)}>Dismiss</Button>
                   </CardContent>
                 </Card>
               )}
