@@ -91,6 +91,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
   // Audit Form State
   const [bins, setBins] = useState<{ location_code: string; stock_quantity: string }[]>([]);
   const [expiryBatches, setExpiryBatches] = useState<ExpiryBatch[]>([]);
+  const [unitsPerBox, setUnitsPerBox] = useState<string>('');
   const [notes, setNotes] = useState('');
 
   const [isListening, setIsListening] = useState(false);
@@ -240,14 +241,20 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
       }]);
     }
 
+    setUnitsPerBox(product.units_per_box ? String(product.units_per_box) : '');
+
     if (productExpiryBatches.length > 0) {
-      setExpiryBatches(productExpiryBatches);
+      setExpiryBatches(productExpiryBatches.map((batch, index) => ({
+        ...batch,
+        box_number: batch.box_number || index + 1,
+      })));
     } else if (product.expiry_date && product.current_stock > 0) {
       setExpiryBatches([{
         batch_id: null,
         expiry_date: product.expiry_date,
         quantity: product.current_stock,
         remaining_quantity: product.current_stock,
+        box_number: 1,
       }]);
     } else {
       setExpiryBatches([]);
@@ -287,7 +294,46 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
       expiry_date: '',
       quantity: 0,
       remaining_quantity: 0,
+      box_number: expiryBatches.length + 1,
     }]);
+  };
+
+  const splitStockIntoBoxes = () => {
+    const boxSize = Math.max(0, parseInt(unitsPerBox, 10) || 0);
+    const totalStock = bins.reduce((sum, bin) => sum + (parseInt(bin.stock_quantity, 10) || 0), 0);
+    if (boxSize <= 0) {
+      setAuditStatus({ type: 'error', text: 'Enter Pieces per box first.' });
+      return;
+    }
+    if (totalStock <= 0) {
+      setAuditStatus({ type: 'error', text: 'Enter the physical stock quantity first.' });
+      return;
+    }
+
+    const fallbackExpiry = expiryBatches.find(batch => batch.expiry_date)?.expiry_date || '';
+    const fallbackLot = expiryBatches.find(batch => batch.batch_id)?.batch_id || null;
+    const rows: ExpiryBatch[] = [];
+    let remaining = totalStock;
+    let boxNo = 1;
+
+    while (remaining > 0) {
+      const qty = Math.min(boxSize, remaining);
+      rows.push({
+        batch_id: fallbackLot,
+        expiry_date: fallbackExpiry,
+        quantity: qty,
+        remaining_quantity: qty,
+        box_number: boxNo,
+      });
+      remaining -= qty;
+      boxNo += 1;
+    }
+
+    setExpiryBatches(rows);
+    setAuditStatus({
+      type: 'success',
+      text: `Split ${totalStock} pieces into ${rows.length} box${rows.length === 1 ? '' : 'es'} of up to ${boxSize} pieces.`,
+    });
   };
 
   const removeExpiryBatch = (index: number) => {
@@ -336,6 +382,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
       totalStock: totalStock,
       bins: formattedBins,
       expiryBatches,
+      unitsPerBox: unitsPerBox ? Math.max(1, parseInt(unitsPerBox, 10) || 1) : null,
       notes: notes,
       userId: user?.id,
       gtin: scannedGtin // Update GTIN if it was scanned and assigned
@@ -377,6 +424,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     setCurrentProduct(null);
     setBins([]);
     setExpiryBatches([]);
+    setUnitsPerBox('');
     setNotes('');
     setSearchResults([]);
   };
@@ -724,16 +772,40 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
 
                       {/* Expiry Tracking */}
                       <div className="space-y-4 p-4 rounded-xl bg-amber-500/5 border border-amber-500/10">
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <label className={designTokens.typography.label}>Expiry Boxes / Batches</label>
-                            <p className="text-[10px] text-amber-500 font-medium mt-1">
-                              Same SKU can have multiple boxes with different expiry dates. Keep each one separate.
-                            </p>
+                        <div className="flex flex-col gap-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <label className={designTokens.typography.label}>Expiry Boxes</label>
+                              <p className="text-[10px] text-amber-500 font-medium mt-1">
+                                One row = one physical box. All pieces inside that box share the same expiry date.
+                              </p>
+                            </div>
+                            <Button variant="secondary" onClick={addExpiryBatch}>
+                              <Icons.Plus size={14} /> Add Box
+                            </Button>
                           </div>
-                          <Button variant="secondary" onClick={addExpiryBatch}>
-                            <Icons.Plus size={14} /> Add Batch
-                          </Button>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
+                            <div className="rounded-xl bg-slate-900/40 border border-slate-800 p-3">
+                              <label className="text-[10px] text-slate-500 uppercase font-bold">Pieces per box</label>
+                              <input
+                                type="number"
+                                min={1}
+                                value={unitsPerBox}
+                                onChange={(e) => setUnitsPerBox(e.target.value)}
+                                placeholder="e.g. 25"
+                                className={`w-full mt-1 text-sm font-bold ${getInputClasses()}`}
+                              />
+                              <p className="text-[10px] text-slate-500 mt-1">Saved for this SKU and reused next time.</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={splitStockIntoBoxes}
+                              className="rounded-xl bg-amber-500/10 border border-amber-500/30 px-4 py-3 text-xs font-black text-amber-300"
+                            >
+                              Split stock into boxes
+                            </button>
+                          </div>
                         </div>
 
                         {expiryBatches.length === 0 ? (
@@ -744,13 +816,21 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                           <div className="space-y-3">
                             {expiryBatches.map((batch, index) => (
                               <div key={batch.id || index} className="grid grid-cols-12 gap-2 items-end rounded-xl bg-slate-900/40 border border-slate-800 p-3">
+                                <div className="col-span-12 flex items-center justify-between">
+                                  <span className="text-[10px] uppercase tracking-widest font-black text-amber-300">
+                                    Box {batch.box_number || index + 1}
+                                  </span>
+                                  {unitsPerBox && Number(batch.quantity) < Number(unitsPerBox) && (
+                                    <span className="text-[10px] font-bold text-slate-500">Partial box</span>
+                                  )}
+                                </div>
                                 <div className="col-span-12 sm:col-span-4 space-y-1">
-                                  <label className="text-[10px] text-slate-500 uppercase font-bold">Batch / Lot</label>
+                                  <label className="text-[10px] text-slate-500 uppercase font-bold">Lot / batch code (optional)</label>
                                   <input
                                     type="text"
                                     value={batch.batch_id || ''}
                                     onChange={(e) => updateExpiryBatch(index, 'batch_id', e.target.value)}
-                                    placeholder={`Box ${index + 1} / lot code`}
+                                    placeholder="Supplier lot code"
                                     className={`w-full text-sm ${getInputClasses()}`}
                                   />
                                 </div>
@@ -764,7 +844,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                                   />
                                 </div>
                                 <div className="col-span-4 sm:col-span-2 space-y-1">
-                                  <label className="text-[10px] text-slate-500 uppercase font-bold">Qty</label>
+                                  <label className="text-[10px] text-slate-500 uppercase font-bold">Pieces in box</label>
                                   <input
                                     type="number"
                                     min={0}
@@ -787,7 +867,9 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                         )}
 
                         <div className="flex items-center justify-between rounded-xl bg-slate-900/40 border border-slate-800 px-3 py-2">
-                          <span className="text-xs text-slate-500">Expiry batch quantity total</span>
+                          <span className="text-xs text-slate-500">
+                            {expiryBatches.length} box{expiryBatches.length === 1 ? '' : 'es'} · total pieces
+                          </span>
                           <span className="font-black text-amber-300">
                             {expiryBatches.reduce((sum, batch) => sum + Math.max(0, Number(batch.quantity) || 0), 0)}
                           </span>
