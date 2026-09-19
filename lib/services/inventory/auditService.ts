@@ -200,16 +200,61 @@ export class AuditService {
   }
 
   static async findProductByGTIN(gtin: string): Promise<AuditProduct | null> {
-    const { data, error } = await supabase
+    const barcode = String(gtin || '').trim();
+    if (!barcode) return null;
+
+    const primary = await supabase
       .from('products')
       .select(`id, name, gtin, sku, brand, category, unit, weight, weight_kg, weight_grams, pack_size, pack_unit, units_per_box, variant_group_key, is_active, is_published`)
-      .eq('gtin', gtin)
+      .eq('gtin', barcode)
       .maybeSingle();
-    if (error) {
-      console.error('[AuditService] Error finding product by GTIN:', error);
+
+    if (primary.error) {
+      console.error('[AuditService] Error finding product by primary GTIN:', primary.error);
       return null;
     }
-    return data ? mapBlindProduct(data) : null;
+    if (primary.data) return mapBlindProduct(primary.data);
+
+    const alias = await supabase
+      .from('product_barcodes')
+      .select(`
+        barcode,
+        products!inner(
+          id, name, gtin, sku, brand, category, unit, weight, weight_kg, weight_grams,
+          pack_size, pack_unit, units_per_box, variant_group_key, is_active, is_published
+        )
+      `)
+      .ilike('barcode', barcode)
+      .limit(1)
+      .maybeSingle();
+
+    if (alias.error) {
+      console.error('[AuditService] Error finding product by barcode alias:', alias.error);
+      return null;
+    }
+
+    const product = Array.isArray((alias.data as any)?.products)
+      ? (alias.data as any).products[0]
+      : (alias.data as any)?.products;
+
+    return product ? mapBlindProduct(product) : null;
+  }
+
+  static async assignProductBarcode(productId: string, barcode: string): Promise<boolean> {
+    const value = String(barcode || '').trim();
+    if (!productId || !value) return false;
+
+    const { error } = await supabase.rpc('assign_product_barcode', {
+      p_product_id: productId,
+      p_barcode: value,
+      p_source: 'inventory_audit_manual_match',
+    });
+
+    if (error) {
+      console.error('[AuditService] Failed to remember scanned barcode:', error);
+      return false;
+    }
+    return true;
   }
 
   static async getBinLocations(productId: string): Promise<BinLocation[]> {
