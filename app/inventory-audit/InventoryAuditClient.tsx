@@ -38,13 +38,38 @@ const Icons = {
 type AuditStep = 'scan' | 'select-product' | 'audit-form' | 'create-new' | 'summary';
 type Tab = 'audit' | 'idle' | 'newly-found';
 
-const measurementLabel = (product: AuditProduct | null) => {
-  if (!product) return '';
-  if (product.weight != null && product.unit) return `${product.weight} ${product.unit}`;
-  if (product.weight_grams != null) return `${product.weight_grams} g`;
-  if (product.weight_kg != null) return `${product.weight_kg} kg`;
+const formatProductSize = (product: {
+  weight?: number | null;
+  weight_kg?: number | null;
+  weight_grams?: number | null;
+  unit?: string | null;
+  pack_size?: number | null;
+  pack_unit?: string | null;
+}) => {
+  if (product.weight_grams != null && product.weight_grams > 0) {
+    return product.weight_grams >= 1000 && product.weight_grams % 1000 === 0
+      ? `${product.weight_grams / 1000} kg`
+      : `${product.weight_grams} g`;
+  }
+  if (product.weight_kg != null && product.weight_kg > 0) {
+    return product.weight_kg < 1
+      ? `${Math.round(product.weight_kg * 1000)} g`
+      : `${product.weight_kg} kg`;
+  }
+  if (product.weight != null && product.weight > 0 && product.unit) {
+    const unit = product.unit.toLowerCase();
+    // Some older imports stored kilogram-decimal weight while retaining unit='g'
+    // (for example 0.14 + g means 140 g). Normalize only that legacy shape.
+    if (unit === 'g' && product.weight < 1) return `${Math.round(product.weight * 1000)} g`;
+    return `${product.weight} ${product.unit}`;
+  }
   if (product.pack_size != null && product.pack_unit) return `${product.pack_size} ${product.pack_unit}`;
   return '';
+};
+
+const measurementLabel = (product: AuditProduct | null) => {
+  if (!product) return '';
+  return formatProductSize(product);
 };
 
 const productDisplayName = (product: AuditProduct | null) => {
@@ -72,14 +97,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
 
   const productSizeLabel = (product: AuditProduct | null) => {
     if (!product) return '';
-    if (product.weight_grams && product.weight_grams > 0) {
-      return product.weight_grams >= 1000 && product.weight_grams % 1000 === 0
-        ? `${product.weight_grams / 1000} kg`
-        : `${product.weight_grams} g`;
-    }
-    if (product.weight != null && product.unit) return `${product.weight} ${product.unit}`;
-    if (product.pack_size && product.pack_unit) return `${product.pack_size} ${product.pack_unit}`;
-    return product.unit || '';
+    return formatProductSize(product) || product.unit || '';
   };
 
   // Lists
@@ -488,18 +506,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {recentAudits.map((item, index) => {
-                        const size =
-                          item.weight_grams != null && item.weight_grams > 0
-                            ? (item.weight_grams >= 1000 && item.weight_grams % 1000 === 0
-                                ? `${item.weight_grams / 1000} kg`
-                                : `${item.weight_grams} g`)
-                            : item.weight_kg != null && item.weight_kg > 0
-                              ? `${item.weight_kg} kg`
-                              : item.weight != null && item.unit
-                                ? `${item.weight} ${item.unit}`
-                                : item.pack_size != null && item.pack_unit
-                                  ? `${item.pack_size} ${item.pack_unit}`
-                                  : item.unit || '—';
+                        const size = formatProductSize(item) || item.unit || '—';
 
                         return (
                           <div
