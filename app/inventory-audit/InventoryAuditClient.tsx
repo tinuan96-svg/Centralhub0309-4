@@ -161,6 +161,42 @@ const productDisplayName = (product: AuditProduct | null) => {
   return measure ? `${product.name} · ${measure}` : product.name;
 };
 
+const buildAutoSplitBoxes = (
+  totalStock: number,
+  boxSize: number,
+  existing: ExpiryBatch[],
+): ExpiryBatch[] => {
+  if (totalStock <= 0 || boxSize <= 0) return [];
+
+  const fallbackExpiry = existing.find(batch => batch.expiry_date)?.expiry_date || '';
+  const fallbackLot = existing.find(batch => batch.batch_id)?.batch_id || null;
+  const fallbackMfg = existing.find(batch => batch.manufacture_date)?.manufacture_date || null;
+  const fallbackCarton = existing.find(batch => batch.carton_no)?.carton_no || null;
+
+  const rows: ExpiryBatch[] = [];
+  let remaining = totalStock;
+  let boxNo = 1;
+
+  while (remaining > 0) {
+    const qty = Math.min(boxSize, remaining);
+    rows.push({
+      batch_id: fallbackLot,
+      expiry_date: fallbackExpiry,
+      quantity: qty,
+      remaining_quantity: qty,
+      box_number: boxNo,
+      manufacture_date: fallbackMfg,
+      carton_no: fallbackCarton,
+      label_photo_id: null,
+      entry_source: 'auto_split',
+    });
+    remaining -= qty;
+    boxNo += 1;
+  }
+
+  return rows;
+};
+
 export default function InventoryAuditPage({ params, searchParams }: { params: any; searchParams: any }) {
   const [activeTab, setActiveTab] = useState<Tab>('audit');
   const [step, setStep] = useState<AuditStep>('scan');
@@ -856,6 +892,19 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     const newBins = [...bins];
     newBins[index][field] = value;
     setBins(newBins);
+
+    if (
+      field === 'stock_quantity' &&
+      expiryBatches.length > 0 &&
+      expiryBatches.every(batch => batch.entry_source === 'auto_split')
+    ) {
+      const boxSize = Math.max(0, parseInt(unitsPerBox, 10) || 0);
+      const totalStock = newBins.reduce(
+        (sum, bin) => sum + Math.max(0, parseInt(bin.stock_quantity, 10) || 0),
+        0,
+      );
+      setExpiryBatches(buildAutoSplitBoxes(totalStock, boxSize, expiryBatches));
+    }
   };
 
   const addExpiryBatch = () => {
@@ -869,6 +918,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
       manufacture_date: null,
       carton_no: null,
       label_photo_id: null,
+      entry_source: 'manual',
     }]);
   };
 
@@ -883,6 +933,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
         manufacture_date: null,
         carton_no: null,
         label_photo_id: null,
+        entry_source: 'manual',
       }]);
       return;
     }
@@ -932,6 +983,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
       manufacture_date: extracted.manufacture_date || null,
       carton_no: extracted.carton_no || null,
       label_photo_id: uploaded.photo_id,
+      entry_source: 'photo',
     };
 
     setExpiryBatches(prev => [...prev, nextBox]);
@@ -958,7 +1010,11 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
 
   const splitStockIntoBoxes = () => {
     const boxSize = Math.max(0, parseInt(unitsPerBox, 10) || 0);
-    const totalStock = bins.reduce((sum, bin) => sum + (parseInt(bin.stock_quantity, 10) || 0), 0);
+    const totalStock = bins.reduce(
+      (sum, bin) => sum + Math.max(0, parseInt(bin.stock_quantity, 10) || 0),
+      0,
+    );
+
     if (boxSize <= 0) {
       setAuditStatus({ type: 'error', text: 'Enter Pieces per box first.' });
       return;
@@ -968,34 +1024,23 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
       return;
     }
 
-    const fallbackExpiry = expiryBatches.find(batch => batch.expiry_date)?.expiry_date || '';
-    const fallbackLot = expiryBatches.find(batch => batch.batch_id)?.batch_id || null;
-    const rows: ExpiryBatch[] = [];
-    let remaining = totalStock;
-    let boxNo = 1;
-
-    while (remaining > 0) {
-      const qty = Math.min(boxSize, remaining);
-      rows.push({
-        batch_id: fallbackLot,
-        expiry_date: fallbackExpiry,
-        quantity: qty,
-        remaining_quantity: qty,
-        box_number: boxNo,
-      });
-      remaining -= qty;
-      boxNo += 1;
-    }
-
+    const rows = buildAutoSplitBoxes(totalStock, boxSize, expiryBatches);
     setExpiryBatches(rows);
+
+    const lastQty = rows.at(-1)?.quantity || 0;
+    const partialText = lastQty < boxSize ? ` Last box is partial with ${lastQty} pieces.` : '';
     setAuditStatus({
       type: 'success',
-      text: `Split ${totalStock} pieces into ${rows.length} box${rows.length === 1 ? '' : 'es'} of up to ${boxSize} pieces.`,
+      text: `Split ${totalStock} physical pieces into ${rows.length} box${rows.length === 1 ? '' : 'es'} with capacity ${boxSize} each.${partialText}`,
     });
   };
 
   const removeExpiryBatch = (index: number) => {
-    setExpiryBatches(expiryBatches.filter((_, i) => i !== index));
+    setExpiryBatches(
+      expiryBatches
+        .filter((_, i) => i !== index)
+        .map(batch => ({ ...batch, entry_source: 'manual' as const })),
+    );
   };
 
   const updateExpiryBatch = (
@@ -1005,7 +1050,11 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
   ) => {
     const next = [...expiryBatches];
     if (field === 'quantity') {
-      next[index] = { ...next[index], quantity: Math.max(0, parseInt(value, 10) || 0) };
+      next[index] = {
+        ...next[index],
+        quantity: Math.max(0, parseInt(value, 10) || 0),
+        entry_source: 'manual',
+      };
     } else {
       next[index] = {
         ...next[index],
@@ -1037,7 +1086,10 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     }
 
     if (nonZeroExpiryBatches.length > 0 && expiryTotal !== totalStock) {
-      setAuditStatus({ type: 'error', text: `Expiry batch total (${expiryTotal}) must match audited stock total (${totalStock}).` });
+      setAuditStatus({
+        type: 'error',
+        text: `Box pieces total (${expiryTotal}) must match the physical count (${totalStock}). “Pieces per box” is only the carton capacity. Use Split stock into boxes, or enter the actual pieces remaining in each box.`,
+      });
       setIsLoading(false);
       return;
     }
