@@ -38,6 +38,7 @@ type AuditStep = 'scan' | 'select-product' | 'audit-form' | 'create-new' | 'summ
 type Tab = 'audit' | 'idle' | 'newly-found';
 type VoiceStage = 'off' | 'waiting-product' | 'quantity' | 'location' | 'pack-size' | 'confirm' | 'saving';
 type VoicePackUnit = 'g' | 'kg' | 'ml' | 'l';
+type StockEntryMode = 'pack' | 'box' | 'quantity';
 
 type VoiceDraft = {
   quantity: number | null;
@@ -225,6 +226,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
 
   // Audit Form State
   const [bins, setBins] = useState<{ location_code: string; stock_quantity: string }[]>([]);
+  const [stockEntryMode, setStockEntryMode] = useState<StockEntryMode | null>(null);
   const [expiryBatches, setExpiryBatches] = useState<ExpiryBatch[]>([]);
   const [savedExpiryDates, setSavedExpiryDates] = useState<string[]>([]);
   const [unitsPerBox, setUnitsPerBox] = useState<string>('');
@@ -855,6 +857,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
 
     // Blind audit rule: never preload system stock/location/box quantities.
     // Expiry DATE values are safe to remember because they do not reveal the stock count.
+    setStockEntryMode(null);
     setBins([{ location_code: '', stock_quantity: '' }]);
     setExpiryBatches([]);
     setSavedExpiryDates([]);
@@ -968,7 +971,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     if (!extracted) {
       setAuditStatus({
         type: 'success',
-        text: 'Photo saved as audit evidence. Details could not be read automatically, so enter them manually.',
+        text: 'Photo saved immediately as audit evidence. Details could not be read automatically, so enter them manually.',
       });
       return;
     }
@@ -1055,8 +1058,8 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     setAuditStatus({
       type: 'success',
       text: details
-        ? `Photo read: ${details}. Front/back photos merge into the same box row. Please verify before saving.`
-        : 'Photo attached. Please verify the extracted details before saving.',
+        ? `Photo saved immediately. Read: ${details}. Please verify the extracted details before completing the stock audit.`
+        : 'Photo saved immediately as audit evidence. Please verify any extracted details before completing the stock audit.',
     });
   };
 
@@ -1119,6 +1122,11 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
   const handleAuditSubmit = async () => {
     if (!currentProduct) return;
 
+    if (!stockEntryMode) {
+      setAuditStatus({ type: 'error', text: 'Choose Pack, Box, or Quantity first.' });
+      return;
+    }
+
     setIsLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -1150,9 +1158,12 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
       productId: currentProduct.id,
       totalStock: totalStock,
       bins: formattedBins,
-      // In blind mode, an empty box section means "not re-audited", not "delete old expiry data".
-      expiryBatches: expiryBatches.length > 0 ? expiryBatches : undefined,
-      unitsPerBox: unitsPerBox ? Math.max(1, parseInt(unitsPerBox, 10) || 1) : null,
+      // In blind mode, photo-only / zero-quantity rows never replace saved expiry stock.
+      expiryBatches: nonZeroExpiryBatches.length > 0 ? expiryBatches : undefined,
+      unitsPerBox:
+        stockEntryMode === 'box' && unitsPerBox
+          ? Math.max(1, parseInt(unitsPerBox, 10) || 1)
+          : undefined,
       notes: notes,
       userId: user?.id,
       gtin: scannedGtin // Update GTIN if it was scanned and assigned
@@ -1193,6 +1204,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     setScannedGtin('');
     voiceProductRef.current = null;
     setCurrentProduct(null);
+    setStockEntryMode(null);
     setBins([]);
     setExpiryBatches([]);
     setSavedExpiryDates([]);
@@ -1603,37 +1615,64 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                       </div>
                     )}
 
-                    {/* Identity only — no system stock/location shown before submission */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-800">
-                        <p className="text-[10px] text-slate-500 uppercase font-bold">Size</p>
-                        <p className="text-sm font-bold text-white">{productSizeLabel(currentProduct) || '—'}</p>
-                      </div>
-                      <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-800">
-                        <p className="text-[10px] text-slate-500 uppercase font-bold">Brand</p>
-                        <p className="text-sm font-medium text-slate-300 truncate">{currentProduct.brand || '—'}</p>
-                      </div>
-                      <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-800">
-                        <p className="text-[10px] text-slate-500 uppercase font-bold">Category</p>
-                        <p className="text-sm font-medium text-slate-300 truncate">{currentProduct.category || '—'}</p>
-                      </div>
+                    {/* Compact identity only */}
+                    <div className="rounded-xl bg-slate-900/50 border border-slate-800 px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span className="text-sm font-black text-white">{currentProduct.name}</span>
+                      <span className="text-xs text-cyan-300">{productSizeLabel(currentProduct) || '—'}</span>
+                      {currentProduct.brand && <span className="text-xs text-slate-500">{currentProduct.brand}</span>}
                     </div>
 
-                    {/* Audit Inputs */}
-                    <div className="space-y-6 pt-4">
+                    {/* Entry mode: nothing else opens until one is selected */}
+                    <div className="grid grid-cols-3 gap-2">
+                      {([
+                        ['pack', '📦 Pack'],
+                        ['box', '🗃️ Box'],
+                        ['quantity', '🔢 Quantity'],
+                      ] as [StockEntryMode, string][]).map(([mode, label]) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => {
+                            setStockEntryMode(mode);
+                            if (mode === 'quantity') {
+                              setExpiryBatches([]);
+                            }
+                          }}
+                          className={`rounded-2xl border px-3 py-4 text-sm font-black transition-all ${
+                            stockEntryMode === mode
+                              ? 'border-cyan-400/50 bg-cyan-500/10 text-cyan-200'
+                              : 'border-slate-800 bg-slate-900/40 text-slate-400'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
 
-                      {/* Expiry Tracking */}
+                    {!stockEntryMode && (
+                      <div className="rounded-2xl border border-dashed border-slate-700 p-5 text-center text-sm text-slate-500">
+                        Select Pack, Box, or Quantity. Only the fields needed for that method will open.
+                      </div>
+                    )}
+
+                    {/* Audit Inputs */}
+                    {stockEntryMode && <div className="space-y-6 pt-2">
+
+                      {/* Pack / Box details only */}
+                      {(stockEntryMode === 'pack' || stockEntryMode === 'box') && (
                       <div className="space-y-4 p-4 rounded-xl bg-amber-500/5 border border-amber-500/10">
                         <div className="flex flex-col gap-3">
                           <div className="flex items-start justify-between gap-3">
                             <div>
-                              <label className={designTokens.typography.label}>Expiry Boxes</label>
+                              <label className={designTokens.typography.label}>{stockEntryMode === 'pack' ? 'Pack Entry' : 'Box Entry'}</label>
                               <p className="text-[10px] text-amber-500 font-medium mt-1">
-                                One row = one physical box. All pieces inside that box share the same expiry date.
+                                {stockEntryMode === 'pack'
+  ? 'Upload the pack photo and keep only the expiry/quantity needed for this physical count.'
+  : 'One row = one physical box. All pieces inside the box share the same expiry date.'}
                               </p>
                             </div>
                             <Button variant="secondary" onClick={addExpiryBatch}>
-                              <Icons.Plus size={14} /> Add Box
+                              <Icons.Plus size={14} /> {stockEntryMode === 'pack' ? 'Add Pack' : 'Add Box'}
                             </Button>
                           </div>
 
@@ -1697,10 +1736,11 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                               </div>
                             </div>
                             <p className="text-[10px] text-amber-300/80 mt-2">
-                              Front + back photos of the same pack merge into one row. AI extraction is only a suggestion; you confirm before saving.
+                              Photo evidence is saved immediately when uploaded. Front + back photos of the same pack merge into one row.
                             </p>
                           </div>
 
+                          {stockEntryMode === 'box' && (
                           <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
                             <div className="rounded-xl bg-slate-900/40 border border-slate-800 p-3">
                               <label className="text-[10px] text-slate-500 uppercase font-bold">Pieces per box</label>
@@ -1712,16 +1752,16 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                                 placeholder="e.g. 25"
                                 className={`w-full mt-1 text-sm font-bold ${getInputClasses()}`}
                               />
-                              <p className="text-[10px] text-slate-500 mt-1">Saved for this SKU and reused next time.</p>
                             </div>
                             <button
                               type="button"
                               onClick={splitStockIntoBoxes}
                               className="rounded-xl bg-amber-500/10 border border-amber-500/30 px-4 py-3 text-xs font-black text-amber-300"
                             >
-                              Split stock into boxes
+                              Split into boxes
                             </button>
                           </div>
+                          )}
                         </div>
 
                         {expiryBatches.length === 0 ? (
@@ -1745,17 +1785,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                                     <span className="text-[10px] font-bold text-slate-500">Partial box</span>
                                   )}
                                 </div>
-                                <div className="col-span-12 sm:col-span-4 space-y-1">
-                                  <label className="text-[10px] text-slate-500 uppercase font-bold">Lot / batch code (optional)</label>
-                                  <input
-                                    type="text"
-                                    value={batch.batch_id || ''}
-                                    onChange={(e) => updateExpiryBatch(index, 'batch_id', e.target.value)}
-                                    placeholder="Supplier lot code"
-                                    className={`w-full text-sm ${getInputClasses()}`}
-                                  />
-                                </div>
-                                <div className="col-span-7 sm:col-span-5 space-y-1">
+                                <div className="col-span-7 sm:col-span-7 space-y-1">
                                   <label className="text-[10px] text-slate-500 uppercase font-bold">Expiry Date</label>
                                   <input
                                     type="date"
@@ -1764,42 +1794,14 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                                     className={`w-full text-sm ${getInputClasses()}`}
                                   />
                                 </div>
-                                <div className="col-span-4 sm:col-span-2 space-y-1">
-                                  <label className="text-[10px] text-slate-500 uppercase font-bold">Pieces in box</label>
+                                <div className="col-span-4 sm:col-span-4 space-y-1">
+                                  <label className="text-[10px] text-slate-500 uppercase font-bold">Pieces</label>
                                   <input
                                     type="number"
                                     min={0}
                                     value={batch.quantity}
                                     onChange={(e) => updateExpiryBatch(index, 'quantity', e.target.value)}
                                     className={`w-full text-sm font-bold ${getInputClasses()}`}
-                                  />
-                                </div>
-                                <div className="col-span-6 sm:col-span-3 space-y-1">
-                                  <label className="text-[10px] text-slate-500 uppercase font-bold">Manufacture date</label>
-                                  <input
-                                    type="date"
-                                    value={batch.manufacture_date || ''}
-                                    onChange={(e) => updateExpiryBatch(index, 'manufacture_date', e.target.value)}
-                                    className={`w-full text-sm ${getInputClasses()}`}
-                                  />
-                                </div>
-                                <div className="col-span-6 sm:col-span-3 space-y-1">
-                                  <label className="text-[10px] text-slate-500 uppercase font-bold">Packed date</label>
-                                  <input
-                                    type="date"
-                                    value={batch.packed_date || ''}
-                                    onChange={(e) => updateExpiryBatch(index, 'packed_date', e.target.value)}
-                                    className={`w-full text-sm ${getInputClasses()}`}
-                                  />
-                                </div>
-                                <div className="col-span-6 sm:col-span-3 space-y-1">
-                                  <label className="text-[10px] text-slate-500 uppercase font-bold">Carton no.</label>
-                                  <input
-                                    type="text"
-                                    value={batch.carton_no || ''}
-                                    onChange={(e) => updateExpiryBatch(index, 'carton_no', e.target.value)}
-                                    placeholder="e.g. 109"
-                                    className={`w-full text-sm ${getInputClasses()}`}
                                   />
                                 </div>
                                 <button
@@ -1817,13 +1819,16 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
 
                         <div className="flex items-center justify-between rounded-xl bg-slate-900/40 border border-slate-800 px-3 py-2">
                           <span className="text-xs text-slate-500">
-                            {expiryBatches.length} box{expiryBatches.length === 1 ? '' : 'es'} · total pieces
+                            {stockEntryMode === 'pack'
+  ? `${expiryBatches.length} pack entry${expiryBatches.length === 1 ? '' : 'ies'} · total pieces`
+  : `${expiryBatches.length} box${expiryBatches.length === 1 ? '' : 'es'} · total pieces`}
                           </span>
                           <span className="font-black text-amber-300">
                             {expiryBatches.reduce((sum, batch) => sum + Math.max(0, Number(batch.quantity) || 0), 0)}
                           </span>
                         </div>
                       </div>
+                      )}
 
                       {/* Multi-Location Bins */}
                       <div className="space-y-4">
@@ -1878,9 +1883,9 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                           </span>
                         </div>
                       </div>
-                    </div>
+                    </div>}
 
-                    <div className="space-y-2">
+                    {stockEntryMode && <div className="space-y-2">
                       <label className={designTokens.typography.label}>Audit Notes (Optional)</label>
                       <textarea
                         value={notes}
@@ -1888,16 +1893,16 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                         className={`w-full h-20 ${getInputClasses()}`}
                         placeholder="Any discrepancies or condition notes..."
                       />
-                    </div>
+                    </div>}
 
-                    <div className="flex flex-col sm:flex-row gap-3 pt-6">
+                    {stockEntryMode && <div className="flex flex-col sm:flex-row gap-3 pt-6">
                       <Button variant="primary" className="flex-1 py-4 text-lg" onClick={handleAuditSubmit} disabled={isLoading}>
-                        {isLoading ? 'Saving...' : 'Save Audit & Complete'}
+                        {isLoading ? 'Saving...' : 'Save Stock Audit'}
                       </Button>
                       <Button variant="secondary" className="px-8" onClick={resetAudit} disabled={isLoading}>
                         Cancel
                       </Button>
-                    </div>
+                    </div>}
                   </CardContent>
                 </Card>
               )}
