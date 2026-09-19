@@ -1775,13 +1775,13 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                                 <div className="col-span-12 flex items-center justify-between">
                                   <div className="flex items-center gap-2">
                                     <span className="text-[10px] uppercase tracking-widest font-black text-amber-300">
-                                      Box {batch.box_number || index + 1}
+                                      {stockEntryMode === 'pack' ? 'Pack' : 'Box'} {batch.box_number || index + 1}
                                     </span>
                                     {batch.label_photo_id && (
                                       <span className="text-[10px] font-black text-violet-300">📷 Photo attached</span>
                                     )}
                                   </div>
-                                  {unitsPerBox && Number(batch.quantity) < Number(unitsPerBox) && (
+                                  {stockEntryMode === 'box' && unitsPerBox && Number(batch.quantity) < Number(unitsPerBox) && (
                                     <span className="text-[10px] font-bold text-slate-500">Partial box</span>
                                   )}
                                 </div>
@@ -1820,7 +1820,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                         <div className="flex items-center justify-between rounded-xl bg-slate-900/40 border border-slate-800 px-3 py-2">
                           <span className="text-xs text-slate-500">
                             {stockEntryMode === 'pack'
-  ? `${expiryBatches.length} pack entry${expiryBatches.length === 1 ? '' : 'ies'} · total pieces`
+  ? `${expiryBatches.length} pack entr${expiryBatches.length === 1 ? 'y' : 'ies'} · total pieces`
   : `${expiryBatches.length} box${expiryBatches.length === 1 ? '' : 'es'} · total pieces`}
                           </span>
                           <span className="font-black text-amber-300">
