@@ -66,33 +66,6 @@ export interface RecentAuditItem {
   created_at: string;
 }
 
-const mapProduct = (product: any): AuditProduct => {
-  const inventory = Array.isArray(product.central_inventory) ? product.central_inventory[0] : product.central_inventory;
-  return {
-    id: product.id,
-    name: product.name,
-    gtin: product.gtin,
-    sku: product.sku,
-    brand: product.brand,
-    category: product.category,
-    unit: product.unit ?? null,
-    weight: product.weight == null ? null : Number(product.weight),
-    weight_kg: product.weight_kg == null ? null : Number(product.weight_kg),
-    weight_grams: product.weight_grams == null ? null : Number(product.weight_grams),
-    pack_size: product.pack_size == null ? null : Number(product.pack_size),
-    pack_unit: product.pack_unit ?? null,
-    units_per_box: product.units_per_box == null ? null : Number(product.units_per_box),
-    variant_group_key: product.variant_group_key ?? null,
-    warehouse_location: product.warehouse_location,
-    is_active: product.is_active,
-    is_published: product.is_published,
-    expiry_date: product.expiry_date,
-    current_stock: Number(inventory?.stock_quantity ?? product.stock ?? 0),
-    last_audited_at: inventory?.last_audited_at ?? product.last_audited_at ?? null,
-  };
-};
-
-
 const mapBlindProduct = (product: any): AuditProduct => {
   const inventory = Array.isArray(product.central_inventory) ? product.central_inventory[0] : product.central_inventory;
   return {
