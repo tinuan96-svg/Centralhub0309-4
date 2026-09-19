@@ -85,7 +85,7 @@ export default function AuditReportClient({ params, searchParams }: { params: an
         <PageHeader
           icon="📊"
           title="Audit Trail Report"
-          subtitle="Stock discrepancies, losses, and gains from physical audits"
+          subtitle="Blind-count comparison: system stock/location vs the physical values entered after each audit is saved"
           action={
             <div className="flex gap-2">
                <select
@@ -255,6 +255,9 @@ export default function AuditReportClient({ params, searchParams }: { params: an
                       <th className="px-4 py-3 text-center text-xs font-bold text-slate-500 uppercase">Prev. System</th>
                       <th className="px-4 py-3 text-center text-xs font-bold text-slate-500 uppercase">Physical Count</th>
                       <th className="px-4 py-3 text-center text-xs font-bold text-slate-500 uppercase">Difference</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">System Location</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Physical Location</th>
+                      <th className="px-4 py-3 text-center text-xs font-bold text-slate-500 uppercase">Location Match</th>
                       <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Notes</th>
                       <th className="px-4 py-3 text-right text-xs font-bold text-slate-500 uppercase">Date</th>
                     </tr>
@@ -273,6 +276,17 @@ export default function AuditReportClient({ params, searchParams }: { params: an
                             {entry.change > 0 ? `+${entry.change}` : entry.change}
                           </Badge>
                         </td>
+                        <td className="px-4 py-4 text-xs text-slate-400 min-w-36">{entry.system_location_text}</td>
+                        <td className="px-4 py-4 text-xs text-slate-200 min-w-36 font-medium">{entry.audited_location_text}</td>
+                        <td className="px-4 py-4 text-center">
+                          {entry.location_match === null ? (
+                            <span className="text-xs text-slate-600">—</span>
+                          ) : (
+                            <Badge variant={entry.location_match ? 'success' : 'warning'}>
+                              {entry.location_match ? 'Match' : 'Changed'}
+                            </Badge>
+                          )}
+                        </td>
                         <td className="px-4 py-4 text-xs text-slate-400 italic max-w-xs truncate">{entry.notes || '—'}</td>
                         <td className="px-4 py-4 text-right">
                           <p className="text-slate-300 font-medium">
@@ -286,7 +300,7 @@ export default function AuditReportClient({ params, searchParams }: { params: an
                     ))}
                     {trail.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="px-4 py-12 text-center text-slate-500 italic">No audit records found for this period.</td>
+                        <td colSpan={9} className="px-4 py-12 text-center text-slate-500 italic">No audit records found for this period.</td>
                       </tr>
                     )}
                   </tbody>
