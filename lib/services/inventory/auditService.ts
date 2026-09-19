@@ -37,6 +37,30 @@ export interface ExpiryBatch {
   quantity: number;
   remaining_quantity?: number;
   box_number?: number | null;
+  manufacture_date?: string | null;
+  carton_no?: string | null;
+  label_photo_id?: string | null;
+}
+
+export interface LabelExtraction {
+  item_name: string | null;
+  batch_code: string | null;
+  manufacture_date: string | null;
+  expiry_date: string | null;
+  weight_each_value: number | null;
+  weight_each_unit: 'g' | 'kg' | 'ml' | 'l' | null;
+  pack_count: number | null;
+  carton_no: string | null;
+  net_quantity_text: string | null;
+  confidence: number;
+  notes: string | null;
+}
+
+export interface AuditLabelPhotoResult {
+  photo_id: string;
+  storage_path: string;
+  extraction: LabelExtraction | null;
+  analysis_error: string | null;
 }
 
 export interface FullAuditSession {
@@ -188,10 +212,77 @@ export class AuditService {
     return data || [];
   }
 
+  static async getSavedExpiryDates(productId: string): Promise<string[]> {
+    const { data, error } = await supabase
+      .from('product_expiry')
+      .select('expiry_date')
+      .eq('product_id', productId)
+      .gt('remaining_quantity', 0)
+      .not('expiry_date', 'is', null)
+      .order('expiry_date', { ascending: true });
+
+    if (error) {
+      console.error('[AuditService] Error loading remembered expiry dates:', error);
+      return [];
+    }
+
+    return [...new Set((data || []).map((row: any) => String(row.expiry_date || '')).filter(Boolean))];
+  }
+
+  static async uploadAndAnalyzeLabelPhoto(productId: string, file: File): Promise<AuditLabelPhotoResult | null> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.error('[AuditService] Label photo upload requires an authenticated user.');
+      return null;
+    }
+
+    const safeName = (file.name || 'label.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const storagePath = `${productId}/${user.id}/${Date.now()}-${safeName}`;
+
+    const upload = await supabase.storage
+      .from('inventory-audit-labels')
+      .upload(storagePath, file, { upsert: false, contentType: file.type || undefined });
+
+    if (upload.error) {
+      console.error('[AuditService] Label photo upload failed:', upload.error);
+      return null;
+    }
+
+    const { data: photo, error: photoError } = await supabase
+      .from('inventory_audit_label_photos')
+      .insert({
+        product_id: productId,
+        storage_path: storagePath,
+        file_name: file.name || safeName,
+        mime_type: file.type || 'image/jpeg',
+        status: 'uploaded',
+        created_by: user.id,
+      })
+      .select('id,storage_path')
+      .single();
+
+    if (photoError || !photo) {
+      console.error('[AuditService] Label photo record failed:', photoError);
+      await supabase.storage.from('inventory-audit-labels').remove([storagePath]);
+      return null;
+    }
+
+    const { data: analysis, error: analysisError } = await supabase.functions.invoke('inventory-label-vision', {
+      body: { photo_id: photo.id },
+    });
+
+    return {
+      photo_id: photo.id,
+      storage_path: photo.storage_path,
+      extraction: analysis?.success && analysis?.result ? analysis.result as LabelExtraction : null,
+      analysis_error: analysisError?.message || (!analysis?.success ? String(analysis?.error || 'Label analysis unavailable') : null),
+    };
+  }
+
   static async getExpiryBatches(productId: string): Promise<ExpiryBatch[]> {
     const { data, error } = await supabase
       .from('product_expiry')
-      .select('id,batch_id,box_number,expiry_date,quantity,remaining_quantity')
+      .select('id,batch_id,box_number,expiry_date,manufacture_date,carton_no,label_photo_id,quantity,remaining_quantity')
       .eq('product_id', productId)
       .gt('remaining_quantity', 0)
       .order('expiry_date', { ascending: true })
@@ -209,6 +300,9 @@ export class AuditService {
       quantity: Number(row.remaining_quantity ?? row.quantity ?? 0),
       remaining_quantity: Number(row.remaining_quantity ?? row.quantity ?? 0),
       box_number: row.box_number == null ? null : Number(row.box_number),
+      manufacture_date: row.manufacture_date || null,
+      carton_no: row.carton_no || null,
+      label_photo_id: row.label_photo_id || null,
     }));
   }
 
@@ -375,6 +469,9 @@ export class AuditService {
             batch_id: batch.batch_id?.trim() || null,
             box_number: batch.box_number || index + 1,
             expiry_date: batch.expiry_date,
+            manufacture_date: batch.manufacture_date || null,
+            carton_no: batch.carton_no?.trim() || null,
+            label_photo_id: batch.label_photo_id || null,
             quantity: Math.max(0, Number(batch.quantity) || 0),
           }))
           .filter(batch => batch.quantity > 0);
