@@ -9,7 +9,6 @@ import {
   CardTitle,
   CardDescription,
   Button,
-  Badge,
   designTokens,
   getInputClasses,
   SectionHeader
@@ -221,44 +220,15 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
 
   const handleProductSelect = async (product: AuditProduct) => {
     setCurrentProduct(product);
-    setIsLoading(true);
-    const [productBins, productExpiryBatches] = await Promise.all([
-      AuditService.getBinLocations(product.id),
-      AuditService.getExpiryBatches(product.id),
-    ]);
-    setIsLoading(false);
 
-    if (productBins.length > 0) {
-      setBins(productBins.map(b => ({
-        location_code: b.location_code,
-        stock_quantity: b.stock_quantity.toString()
-      })));
-    } else {
-      // Default to one bin if none exist
-      setBins([{
-        location_code: product.warehouse_location || '',
-        stock_quantity: product.current_stock.toString()
-      }]);
-    }
+    // Blind audit rule: the counting form must start from a clean physical observation.
+    // Do not prefill the system stock, saved location, saved bin quantities or expiry-box quantities.
+    setBins([{ location_code: '', stock_quantity: '' }]);
+    setExpiryBatches([]);
 
+    // Packaging metadata is not a stock answer, so pieces-per-box may be reused as a convenience.
     setUnitsPerBox(product.units_per_box ? String(product.units_per_box) : '');
-
-    if (productExpiryBatches.length > 0) {
-      setExpiryBatches(productExpiryBatches.map((batch, index) => ({
-        ...batch,
-        box_number: batch.box_number || index + 1,
-      })));
-    } else if (product.expiry_date && product.current_stock > 0) {
-      setExpiryBatches([{
-        batch_id: null,
-        expiry_date: product.expiry_date,
-        quantity: product.current_stock,
-        remaining_quantity: product.current_stock,
-        box_number: 1,
-      }]);
-    } else {
-      setExpiryBatches([]);
-    }
+    setNotes('');
     setStep('audit-form');
   };
 
@@ -275,7 +245,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
   };
 
   const addBin = () => {
-    setBins([...bins, { location_code: '', stock_quantity: '0' }]);
+    setBins([...bins, { location_code: '', stock_quantity: '' }]);
   };
 
   const removeBin = (index: number) => {
@@ -605,7 +575,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                         <Icons.Barcode size={40} />
                       </div>
                       <h3 className="text-xl font-bold text-white mb-2">Scan Product Barcode</h3>
-                      <p className="text-slate-400 mb-8">Scan the physical barcode to identify the product and verify its stock level.</p>
+                      <p className="text-slate-400 mb-8">Scan the barcode to identify the product. Existing system stock and location stay hidden while you count.</p>
 
                       <div className="space-y-4">
                         <button
@@ -734,22 +704,25 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
               {step === 'audit-form' && currentProduct && (
                 <Card>
                   <CardHeader>
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <CardTitle className="text-xl">{productDisplayName(currentProduct)}</CardTitle>
-                        <CardDescription>SKU: {currentProduct.sku || 'N/A'} | GTIN: {scannedGtin || currentProduct.gtin}</CardDescription>
-                      </div>
-                      <Badge variant={currentProduct.is_active ? 'success' : 'danger'}>
-                        {currentProduct.is_active ? 'Active' : 'Inactive'}
-                      </Badge>
+                    <div>
+                      <CardTitle className="text-xl">{productDisplayName(currentProduct)}</CardTitle>
+                      <CardDescription>SKU: {currentProduct.sku || 'N/A'} | GTIN: {scannedGtin || currentProduct.gtin}</CardDescription>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    {/* Stats Grid */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div className="rounded-2xl border border-cyan-500/25 bg-cyan-500/5 p-4">
+                      <p className="text-[10px] uppercase tracking-[0.18em] font-black text-cyan-300">Blind Count Mode</p>
+                      <p className="text-sm text-slate-300 mt-1">
+                        System stock, saved locations and existing expiry-box quantities are hidden. Enter only what you physically see now.
+                        The saved audit report will compare your count with the previous system values afterwards.
+                      </p>
+                    </div>
+
+                    {/* Identity only — no system stock/location shown before submission */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-800">
-                        <p className="text-[10px] text-slate-500 uppercase font-bold">Current Stock</p>
-                        <p className="text-lg font-bold text-white">{currentProduct.current_stock}</p>
+                        <p className="text-[10px] text-slate-500 uppercase font-bold">Size</p>
+                        <p className="text-sm font-bold text-white">{productSizeLabel(currentProduct) || '—'}</p>
                       </div>
                       <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-800">
                         <p className="text-[10px] text-slate-500 uppercase font-bold">Brand</p>
@@ -758,12 +731,6 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                       <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-800">
                         <p className="text-[10px] text-slate-500 uppercase font-bold">Category</p>
                         <p className="text-sm font-medium text-slate-300 truncate">{currentProduct.category || '—'}</p>
-                      </div>
-                      <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-800">
-                        <p className="text-[10px] text-slate-500 uppercase font-bold">Published</p>
-                        <Badge variant={currentProduct.is_published ? 'info' : 'warning'} className="mt-1">
-                          {currentProduct.is_published ? 'Yes' : 'No'}
-                        </Badge>
                       </div>
                     </div>
 
@@ -810,7 +777,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
 
                         {expiryBatches.length === 0 ? (
                           <div className="rounded-xl border border-dashed border-slate-700 p-4 text-xs text-slate-500 text-center">
-                            No expiry batch tracked. Add one only if this stock has an expiry date.
+                            No box entered yet. Add each physical box you actually see if the stock has an expiry date.
                           </div>
                         ) : (
                           <div className="space-y-3">
@@ -880,7 +847,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                       <div className="space-y-4">
                         <SectionHeader
                           title="Stock by Location"
-                          subtitle="Add multiple bins if stock is split"
+                          subtitle="Enter the physical location(s) you actually find — saved locations are intentionally hidden"
                           action={
                             <Button variant="secondary" onClick={addBin}>
                               <Icons.Plus size={14} /> Add Bin
@@ -923,7 +890,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                         </div>
 
                         <div className="flex justify-between items-center p-3 rounded-xl bg-blue-500/5 border border-blue-500/10">
-                          <span className="text-sm text-slate-400 font-medium">Total Calculated Stock:</span>
+                          <span className="text-sm text-slate-400 font-medium">Physical Count Entered:</span>
                           <span className="text-xl font-bold text-blue-400">
                             {bins.reduce((sum, b) => sum + (parseInt(b.stock_quantity) || 0), 0)}
                           </span>
@@ -969,7 +936,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                       <div key={p.id} className="flex items-center justify-between p-4 rounded-xl bg-slate-800/20 border border-slate-700/50">
                         <div>
                           <p className="text-slate-200 font-medium">{productDisplayName(p)}</p>
-                          <p className="text-xs text-slate-500">Stock: {p.current_stock} | Loc: {p.warehouse_location || 'None'}</p>
+                          <p className="text-xs text-slate-500">Blind audit ready · system stock and location hidden</p>
                         </div>
                         <Button variant="secondary" onClick={() => {
                           setActiveTab('audit');
