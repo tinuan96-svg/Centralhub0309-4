@@ -94,8 +94,8 @@ const parseSpokenNumber = (input: string): number | null => {
 const parseSpokenPackSize = (input: string): { value: number; unit: VoicePackUnit } | null => {
   const text = input.toLowerCase();
   const direct = text.match(/(\d+(?:\.\d+)?)\s*(kg|kilograms?|kilos?|g|grams?|ml|millilit(?:er|re)s?|l|lit(?:er|re)s?)\b/);
-  let value = direct ? Number(direct[1]) : parseSpokenNumber(text);
-  if (!Number.isFinite(value) || value === null || value <= 0) return null;
+  const value = direct ? Number(direct[1]) : parseSpokenNumber(text);
+  if (value === null || !Number.isFinite(value) || value <= 0) return null;
 
   let unit: VoicePackUnit | null = null;
   if (/\b(kg|kilograms?|kilos?)\b/.test(text)) unit = 'kg';
@@ -180,6 +180,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
   const voiceStageRef = useRef<VoiceStage>('off');
   const voiceDraftRef = useRef<VoiceDraft>(EMPTY_VOICE_DRAFT);
   const voiceRecognitionRef = useRef<any>(null);
+  const voiceProductRef = useRef<AuditProduct | null>(null);
 
   // Audit Form State
   const [bins, setBins] = useState<{ location_code: string; stock_quantity: string }[]>([]);
@@ -423,7 +424,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
       if (/\b(skip|same|current|unchanged|no change)\b/.test(lower)) {
         const next = { ...base, packSizeValue: null, packSizeUnit: null };
         setVoiceDraftNow(next);
-        if (currentProduct) presentHandsFreeSummary(currentProduct, next);
+        if (voiceProductRef.current) presentHandsFreeSummary(voiceProductRef.current, next);
         return;
       }
 
@@ -440,7 +441,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
 
     if (stage === 'confirm') {
       if (/\b(approve|approved|save|yes|confirm|confirmed|okay|ok)\b/.test(lower)) {
-        if (currentProduct) void saveHandsFreeAudit(currentProduct, base);
+        if (voiceProductRef.current) void saveHandsFreeAudit(voiceProductRef.current, base);
         return;
       }
 
@@ -462,7 +463,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
           const next = { ...base, quantity: Math.round(quantity) };
           setVoiceDraftNow(next);
           setBins([{ location_code: next.location, stock_quantity: String(next.quantity) }]);
-          if (currentProduct) presentHandsFreeSummary(currentProduct, next);
+          if (voiceProductRef.current) presentHandsFreeSummary(voiceProductRef.current, next);
           return;
         }
       }
@@ -473,7 +474,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
           const next = { ...base, location };
           setVoiceDraftNow(next);
           setBins([{ location_code: location, stock_quantity: String(next.quantity ?? 0) }]);
-          if (currentProduct) presentHandsFreeSummary(currentProduct, next);
+          if (voiceProductRef.current) presentHandsFreeSummary(voiceProductRef.current, next);
           return;
         }
       }
@@ -483,7 +484,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
         if (parsed) {
           const next = { ...base, packSizeValue: parsed.value, packSizeUnit: parsed.unit };
           setVoiceDraftNow(next);
-          if (currentProduct) presentHandsFreeSummary(currentProduct, next);
+          if (voiceProductRef.current) presentHandsFreeSummary(voiceProductRef.current, next);
           return;
         }
       }
@@ -648,6 +649,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
   };
 
   const handleProductSelect = async (product: AuditProduct) => {
+    voiceProductRef.current = product;
     setCurrentProduct(product);
 
     // Blind audit rule: never preload system stock/location/box quantities.
@@ -922,6 +924,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
   const resetAudit = () => {
     setStep('scan');
     setScannedGtin('');
+    voiceProductRef.current = null;
     setCurrentProduct(null);
     setBins([]);
     setExpiryBatches([]);
