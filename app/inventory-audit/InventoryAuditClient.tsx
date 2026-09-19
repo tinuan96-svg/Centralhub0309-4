@@ -171,6 +171,7 @@ const buildAutoSplitBoxes = (
   const fallbackExpiry = existing.find(batch => batch.expiry_date)?.expiry_date || '';
   const fallbackLot = existing.find(batch => batch.batch_id)?.batch_id || null;
   const fallbackMfg = existing.find(batch => batch.manufacture_date)?.manufacture_date || null;
+  const fallbackPacked = existing.find(batch => batch.packed_date)?.packed_date || null;
   const fallbackCarton = existing.find(batch => batch.carton_no)?.carton_no || null;
 
   const rows: ExpiryBatch[] = [];
@@ -186,6 +187,7 @@ const buildAutoSplitBoxes = (
       remaining_quantity: qty,
       box_number: boxNo,
       manufacture_date: fallbackMfg,
+      packed_date: fallbackPacked,
       carton_no: fallbackCarton,
       label_photo_id: null,
       entry_source: 'auto_split',
@@ -916,6 +918,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
       remaining_quantity: 0,
       box_number: expiryBatches.length + 1,
       manufacture_date: null,
+      packed_date: null,
       carton_no: null,
       label_photo_id: null,
       entry_source: 'manual',
@@ -948,7 +951,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
   const handleLabelPhoto = async (file: File | null) => {
     if (!currentProduct || !file) return;
     if (!file.type.startsWith('image/')) {
-      setAuditStatus({ type: 'error', text: 'Please choose a box/carton label photo.' });
+      setAuditStatus({ type: 'error', text: 'Please choose a retail-pack, box, or carton photo.' });
       return;
     }
 
@@ -957,7 +960,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     setLabelPhotoBusy(false);
 
     if (!uploaded) {
-      setAuditStatus({ type: 'error', text: 'Could not upload the label photo.' });
+      setAuditStatus({ type: 'error', text: 'Could not upload the pack/carton photo.' });
       return;
     }
 
@@ -965,7 +968,17 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     if (!extracted) {
       setAuditStatus({
         type: 'success',
-        text: 'Photo saved as audit evidence. Label details could not be read automatically, so enter them manually.',
+        text: 'Photo saved as audit evidence. Details could not be read automatically, so enter them manually.',
+      });
+      return;
+    }
+
+    const expectedBarcode = String(scannedGtin || currentProduct.gtin || '').replace(/\D/g, '');
+    const photoBarcode = String(extracted.barcode || '').replace(/\D/g, '');
+    if (expectedBarcode && photoBarcode && expectedBarcode !== photoBarcode) {
+      setAuditStatus({
+        type: 'error',
+        text: `Photo barcode ${photoBarcode} does not match the selected product barcode ${expectedBarcode}. The photo was saved as evidence, but no fields were applied.`,
       });
       return;
     }
@@ -974,21 +987,53 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
       extracted.expiry_date ||
       (savedExpiryDates.length === 1 ? savedExpiryDates[0] : '');
 
-    const nextBox: ExpiryBatch = {
-      batch_id: extracted.batch_code || null,
-      expiry_date: rememberedDate,
-      quantity: extracted.pack_count || 0,
-      remaining_quantity: extracted.pack_count || 0,
-      box_number: expiryBatches.length + 1,
-      manufacture_date: extracted.manufacture_date || null,
-      carton_no: extracted.carton_no || null,
-      label_photo_id: uploaded.photo_id,
-      entry_source: 'photo',
-    };
+    // A front and back photo of the SAME retail pack/box should enrich the same row,
+    // not create two physical boxes. Merge into the latest row unless the user has
+    // explicitly started a new empty box.
+    setExpiryBatches(prev => {
+      const next = [...prev];
+      let target = next.length - 1;
 
-    setExpiryBatches(prev => [...prev, nextBox]);
+      if (target < 0) {
+        next.push({
+          batch_id: null,
+          expiry_date: '',
+          quantity: 0,
+          remaining_quantity: 0,
+          box_number: 1,
+          manufacture_date: null,
+          packed_date: null,
+          carton_no: null,
+          label_photo_id: null,
+          entry_source: 'photo',
+        });
+        target = 0;
+      }
 
-    if (extracted.pack_count && !unitsPerBox) {
+      const current = next[target];
+      const photoCount =
+        extracted.label_type === 'carton' && extracted.pack_count
+          ? extracted.pack_count
+          : current.quantity;
+
+      next[target] = {
+        ...current,
+        batch_id: extracted.batch_code || current.batch_id || null,
+        expiry_date: rememberedDate || current.expiry_date || '',
+        quantity: photoCount || 0,
+        remaining_quantity: photoCount || current.remaining_quantity || 0,
+        manufacture_date: extracted.manufacture_date || current.manufacture_date || null,
+        packed_date: extracted.packed_date || current.packed_date || null,
+        carton_no: extracted.carton_no || current.carton_no || null,
+        label_photo_id: uploaded.photo_id,
+        entry_source: 'photo',
+      };
+
+      return next;
+    });
+
+    // Carton pack-count can safely teach carton capacity. A retail-pack photo must not.
+    if (extracted.label_type === 'carton' && extracted.pack_count && !unitsPerBox) {
       setUnitsPerBox(String(extracted.pack_count));
     }
     if (extracted.expiry_date) {
@@ -996,7 +1041,12 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     }
 
     const details = [
+      extracted.label_type ? extracted.label_type.replace('_', ' ') : null,
+      extracted.brand ? extracted.brand : null,
+      extracted.item_name ? extracted.item_name : null,
+      extracted.barcode ? `barcode ${extracted.barcode}` : null,
       extracted.batch_code ? `batch ${extracted.batch_code}` : null,
+      extracted.packed_date ? `packed ${extracted.packed_date}` : null,
       extracted.expiry_date ? `expiry ${extracted.expiry_date}` : null,
       extracted.pack_count ? `${extracted.pack_count} packs` : null,
       extracted.carton_no ? `carton ${extracted.carton_no}` : null,
@@ -1004,7 +1054,9 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
 
     setAuditStatus({
       type: 'success',
-      text: details ? `Photo read: ${details}. Please verify before saving.` : 'Photo attached. Please verify the box details before saving.',
+      text: details
+        ? `Photo read: ${details}. Front/back photos merge into the same box row. Please verify before saving.`
+        : 'Photo attached. Please verify the extracted details before saving.',
     });
   };
 
@@ -1045,7 +1097,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
 
   const updateExpiryBatch = (
     index: number,
-    field: 'batch_id' | 'expiry_date' | 'quantity' | 'manufacture_date' | 'carton_no',
+    field: 'batch_id' | 'expiry_date' | 'quantity' | 'manufacture_date' | 'packed_date' | 'carton_no',
     value: string,
   ) => {
     const next = [...expiryBatches];
@@ -1607,9 +1659,9 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                           <div className="rounded-xl border border-violet-500/20 bg-violet-500/5 p-3">
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                               <div>
-                                <p className="text-[10px] uppercase font-black tracking-widest text-violet-300">Box / carton label photo</p>
+                                <p className="text-[10px] uppercase font-black tracking-widest text-violet-300">Pack / box / carton photo</p>
                                 <p className="text-[10px] text-slate-500 mt-1">
-                                  Take or upload a label photo. CentralHub can prefill batch, expiry, pack count, manufacture date and carton number.
+                                  Take or upload retail-pack front/back photos or a carton label. CentralHub can prefill brand, barcode, batch, packed/expiry dates, pack size/count and carton number.
                                 </p>
                               </div>
                               <div className="flex flex-wrap gap-2">
@@ -1645,7 +1697,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                               </div>
                             </div>
                             <p className="text-[10px] text-amber-300/80 mt-2">
-                              AI extraction is a suggestion only. You confirm the values before the audit is saved.
+                              Front + back photos of the same pack merge into one row. AI extraction is only a suggestion; you confirm before saving.
                             </p>
                           </div>
 
@@ -1728,6 +1780,15 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                                     type="date"
                                     value={batch.manufacture_date || ''}
                                     onChange={(e) => updateExpiryBatch(index, 'manufacture_date', e.target.value)}
+                                    className={`w-full text-sm ${getInputClasses()}`}
+                                  />
+                                </div>
+                                <div className="col-span-6 sm:col-span-3 space-y-1">
+                                  <label className="text-[10px] text-slate-500 uppercase font-bold">Packed date</label>
+                                  <input
+                                    type="date"
+                                    value={batch.packed_date || ''}
+                                    onChange={(e) => updateExpiryBatch(index, 'packed_date', e.target.value)}
                                     className={`w-full text-sm ${getInputClasses()}`}
                                   />
                                 </div>
