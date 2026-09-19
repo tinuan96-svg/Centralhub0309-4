@@ -331,8 +331,8 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     setVoiceStatus(statusText);
 
     let audioContext: AudioContext | null = null;
-    let monitor: ReturnType<typeof window.setInterval> | null = null;
-    let hardStop: ReturnType<typeof window.setTimeout> | null = null;
+    let monitor: number | null = null;
+    let hardStop: number | null = null;
 
     const stopRecorderSafely = () => {
       try {
