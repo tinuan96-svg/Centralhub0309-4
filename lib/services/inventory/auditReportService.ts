@@ -22,7 +22,104 @@ export interface AuditLogEntry {
   edited_by_name: string | null;
 }
 
+export interface AuditSessionSummary {
+  id: string;
+  status: string;
+  started_at: string;
+  finalized_at: string | null;
+  snapshot_product_count: number;
+  counted_product_count: number;
+  missing_product_count: number;
+}
+
+export interface AuditException {
+  id: string;
+  session_id: string;
+  product_id: string;
+  status: 'missing_pending' | 'confirmed_found' | 'not_found' | 'damaged' | 'expired';
+  system_stock_before: number;
+  system_stock_at_finalize: number | null;
+  physical_count: number | null;
+  quarantined_stock: number | null;
+  resolution_note: string | null;
+  resolved_at: string | null;
+  product_name: string;
+  sku: string | null;
+  brand: string | null;
+  warehouse_location: string | null;
+  expiry_date: string | null;
+}
+
 export class AuditReportService {
+  static async getLatestFullAuditSession(): Promise<AuditSessionSummary | null> {
+    const { data, error } = await supabase
+      .from('inventory_audit_sessions')
+      .select('id,status,started_at,finalized_at,snapshot_product_count,counted_product_count,missing_product_count')
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      console.error('[AuditReportService] Error fetching latest full audit:', error);
+      return null;
+    }
+    return data as AuditSessionSummary | null;
+  }
+
+  static async getAuditExceptions(limit = 200): Promise<AuditException[]> {
+    const { data, error } = await supabase
+      .from('inventory_audit_session_items')
+      .select(`
+        id,session_id,product_id,status,system_stock_before,system_stock_at_finalize,
+        physical_count,quarantined_stock,resolution_note,resolved_at,
+        products(name,sku,brand,warehouse_location,expiry_date)
+      `)
+      .in('status', ['missing_pending','confirmed_found','not_found','damaged','expired'])
+      .order('updated_at', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      console.error('[AuditReportService] Error fetching audit exceptions:', error);
+      return [];
+    }
+
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      session_id: row.session_id,
+      product_id: row.product_id,
+      status: row.status,
+      system_stock_before: Number(row.system_stock_before || 0),
+      system_stock_at_finalize: row.system_stock_at_finalize == null ? null : Number(row.system_stock_at_finalize),
+      physical_count: row.physical_count == null ? null : Number(row.physical_count),
+      quarantined_stock: row.quarantined_stock == null ? null : Number(row.quarantined_stock),
+      resolution_note: row.resolution_note || null,
+      resolved_at: row.resolved_at || null,
+      product_name: row.products?.name || 'Unknown Product',
+      sku: row.products?.sku || null,
+      brand: row.products?.brand || null,
+      warehouse_location: row.products?.warehouse_location || null,
+      expiry_date: row.products?.expiry_date || null,
+    }));
+  }
+
+  static async resolveAuditException(
+    itemId: string,
+    resolution: 'found' | 'not_found' | 'damaged' | 'expired',
+    confirmedStock?: number,
+    note?: string,
+  ): Promise<boolean> {
+    const { error } = await supabase.rpc('resolve_inventory_audit_exception', {
+      p_item_id: itemId,
+      p_resolution: resolution,
+      p_confirmed_stock: confirmedStock ?? null,
+      p_note: note?.trim() || null,
+    });
+    if (error) {
+      console.error('[AuditReportService] Failed to resolve audit exception:', error);
+      return false;
+    }
+    return true;
+  }
+
   static async getAuditSummary(days: number = 30): Promise<AuditSummary> {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
