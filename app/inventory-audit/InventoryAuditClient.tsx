@@ -798,6 +798,20 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
   };
 
   const handleProductSelect = async (product: AuditProduct) => {
+    // If this screen was reached from an unknown physical barcode, choosing an
+    // existing product is the confirmation that the barcode belongs to it.
+    // Remember it immediately instead of waiting until the audit is saved.
+    if (scannedGtin) {
+      const barcodeRemembered = await AuditService.assignProductBarcode(product.id, scannedGtin);
+      if (!barcodeRemembered) {
+        setAuditStatus({
+          type: 'error',
+          text: 'This barcode could not be assigned. It may already belong to another product. Nothing was changed.',
+        });
+        return;
+      }
+    }
+
     voiceProductRef.current = product;
     setCurrentProduct(product);
 
@@ -1343,7 +1357,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                       GTIN Not Found: {scannedGtin}
                     </CardTitle>
                     <CardDescription>
-                      Assign this barcode to an existing product or create a new entry.
+                      Choose the correct existing product once. CentralHub will remember this barcode immediately for future scans, or create a new entry.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
