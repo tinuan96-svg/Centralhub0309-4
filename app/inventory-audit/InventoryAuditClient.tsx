@@ -36,6 +36,90 @@ const Icons = {
 
 type AuditStep = 'scan' | 'select-product' | 'audit-form' | 'create-new' | 'summary';
 type Tab = 'audit' | 'idle' | 'newly-found';
+type VoiceStage = 'off' | 'waiting-product' | 'quantity' | 'location' | 'pack-size' | 'confirm' | 'saving';
+type VoicePackUnit = 'g' | 'kg' | 'ml' | 'l';
+
+type VoiceDraft = {
+  quantity: number | null;
+  location: string;
+  packSizeValue: number | null;
+  packSizeUnit: VoicePackUnit | null;
+  lastTranscript: string;
+};
+
+const EMPTY_VOICE_DRAFT: VoiceDraft = {
+  quantity: null,
+  location: '',
+  packSizeValue: null,
+  packSizeUnit: null,
+  lastTranscript: '',
+};
+
+const NUMBER_WORD_VALUES: Record<string, number> = {
+  zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
+  ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16,
+  seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50,
+  sixty: 60, seventy: 70, eighty: 80, ninety: 90,
+};
+
+const parseSpokenNumber = (input: string): number | null => {
+  const direct = input.match(/-?\d+(?:\.\d+)?/);
+  if (direct) {
+    const value = Number(direct[0]);
+    return Number.isFinite(value) ? value : null;
+  }
+
+  const tokens = input.toLowerCase().replace(/[^a-z\s-]/g, ' ').split(/[\s-]+/).filter(Boolean);
+  let total = 0;
+  let current = 0;
+  let found = false;
+
+  for (const token of tokens) {
+    if (token in NUMBER_WORD_VALUES) {
+      current += NUMBER_WORD_VALUES[token];
+      found = true;
+    } else if (token === 'hundred') {
+      current = (current || 1) * 100;
+      found = true;
+    } else if (token === 'thousand') {
+      total += (current || 1) * 1000;
+      current = 0;
+      found = true;
+    }
+  }
+
+  return found ? total + current : null;
+};
+
+const parseSpokenPackSize = (input: string): { value: number; unit: VoicePackUnit } | null => {
+  const text = input.toLowerCase();
+  const direct = text.match(/(\d+(?:\.\d+)?)\s*(kg|kilograms?|kilos?|g|grams?|ml|millilit(?:er|re)s?|l|lit(?:er|re)s?)\b/);
+  let value = direct ? Number(direct[1]) : parseSpokenNumber(text);
+  if (!Number.isFinite(value) || value === null || value <= 0) return null;
+
+  let unit: VoicePackUnit | null = null;
+  if (/\b(kg|kilograms?|kilos?)\b/.test(text)) unit = 'kg';
+  else if (/\b(g|grams?)\b/.test(text)) unit = 'g';
+  else if (/\b(ml|millilit(?:er|re)s?)\b/.test(text)) unit = 'ml';
+  else if (/\b(l|lit(?:er|re)s?)\b/.test(text)) unit = 'l';
+
+  return unit ? { value, unit } : null;
+};
+
+const parseRackLocation = (input: string) => {
+  const digitWords: Record<string, string> = {
+    zero: '0', one: '1', two: '2', three: '3', four: '4',
+    five: '5', six: '6', seven: '7', eight: '8', nine: '9',
+  };
+  const ignored = new Set(['rack', 'location', 'bin', 'shelf', 'number', 'no', 'is', 'at', 'in', 'the', 'on']);
+  const tokens = input.toLowerCase().replace(/[^a-z0-9-\s]/g, ' ').split(/\s+/).filter(Boolean);
+  return tokens
+    .filter(token => !ignored.has(token))
+    .map(token => digitWords[token] || token)
+    .join(' ')
+    .trim()
+    .toUpperCase();
+};
 
 const formatProductSize = (product: {
   weight?: number | null;
@@ -87,6 +171,16 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
   const [isSearching, setIsSearching] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
 
+  // Hands-free voice audit
+  const [handsFreeVoice, setHandsFreeVoice] = useState(false);
+  const [voiceStage, setVoiceStage] = useState<VoiceStage>('off');
+  const [voiceDraft, setVoiceDraft] = useState<VoiceDraft>(EMPTY_VOICE_DRAFT);
+  const [voiceStatus, setVoiceStatus] = useState('Voice audit is off.');
+  const handsFreeVoiceRef = useRef(false);
+  const voiceStageRef = useRef<VoiceStage>('off');
+  const voiceDraftRef = useRef<VoiceDraft>(EMPTY_VOICE_DRAFT);
+  const voiceRecognitionRef = useRef<any>(null);
+
   // Audit Form State
   const [bins, setBins] = useState<{ location_code: string; stock_quantity: string }[]>([]);
   const [expiryBatches, setExpiryBatches] = useState<ExpiryBatch[]>([]);
@@ -114,6 +208,339 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
   const [auditStatus, setAuditStatus] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   const scanInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    handsFreeVoiceRef.current = handsFreeVoice;
+  }, [handsFreeVoice]);
+
+  useEffect(() => {
+    voiceStageRef.current = voiceStage;
+  }, [voiceStage]);
+
+  useEffect(() => {
+    voiceDraftRef.current = voiceDraft;
+  }, [voiceDraft]);
+
+  useEffect(() => {
+    return () => {
+      try { voiceRecognitionRef.current?.abort?.(); } catch {}
+      if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
+    };
+  }, []);
+
+  function setVoiceDraftNow(next: VoiceDraft) {
+    voiceDraftRef.current = next;
+    setVoiceDraft(next);
+  }
+
+  function stopVoiceRecognition() {
+    try { voiceRecognitionRef.current?.abort?.(); } catch {}
+    voiceRecognitionRef.current = null;
+  }
+
+  function speakVoice(text: string, onEnd?: () => void) {
+    if (typeof window === 'undefined' || !window.speechSynthesis) {
+      onEnd?.();
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'en-GB';
+    utterance.rate = 1.02;
+    utterance.onend = () => onEnd?.();
+    utterance.onerror = () => onEnd?.();
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function listenForVoiceStage(stage: VoiceStage) {
+    if (!handsFreeVoiceRef.current || stage === 'off' || stage === 'waiting-product' || stage === 'saving') return;
+    const Recognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!Recognition) {
+      setVoiceStatus('Speech recognition is not supported on this browser.');
+      setAuditStatus({ type: 'error', text: 'Hands-free voice recognition is not supported on this browser.' });
+      return;
+    }
+
+    stopVoiceRecognition();
+    const recognition = new Recognition();
+    voiceRecognitionRef.current = recognition;
+    recognition.lang = 'en-GB';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    let heard = false;
+    recognition.onresult = (event: any) => {
+      heard = true;
+      const transcript = String(event.results?.[0]?.[0]?.transcript || '').trim();
+      handleHandsFreeTranscript(stage, transcript);
+    };
+    recognition.onerror = (event: any) => {
+      const error = String(event?.error || '');
+      if (['aborted', 'no-speech'].includes(error)) return;
+      setVoiceStatus(`Voice error: ${error || 'unknown'}`);
+    };
+    recognition.onend = () => {
+      if (
+        !heard &&
+        handsFreeVoiceRef.current &&
+        voiceStageRef.current === stage &&
+        !['off', 'waiting-product', 'saving'].includes(stage)
+      ) {
+        window.setTimeout(() => listenForVoiceStage(stage), 650);
+      }
+    };
+
+    try {
+      recognition.start();
+      setVoiceStatus(stage === 'quantity'
+        ? 'Listening only for the quantity number…'
+        : stage === 'location'
+          ? 'Listening for rack / location…'
+          : stage === 'pack-size'
+            ? 'Listening for pack size, or say skip…'
+            : 'Waiting for approve, save, yes, cancel, or a correction…');
+    } catch {
+      window.setTimeout(() => listenForVoiceStage(stage), 600);
+    }
+  }
+
+  function promptHandsFree(stage: VoiceStage, prompt: string) {
+    if (!handsFreeVoiceRef.current) return;
+    voiceStageRef.current = stage;
+    setVoiceStage(stage);
+    setVoiceStatus(prompt);
+    stopVoiceRecognition();
+    speakVoice(prompt, () => {
+      if (handsFreeVoiceRef.current && voiceStageRef.current === stage) {
+        window.setTimeout(() => listenForVoiceStage(stage), 180);
+      }
+    });
+  }
+
+  function voicePackLabel(draft: VoiceDraft, product: AuditProduct) {
+    if (draft.packSizeValue && draft.packSizeUnit) return `${draft.packSizeValue} ${draft.packSizeUnit}`;
+    return productSizeLabel(product) || 'not changed';
+  }
+
+  function presentHandsFreeSummary(product: AuditProduct, draft: VoiceDraft) {
+    const summary = `${product.name}. Brand ${product.brand || 'not set'}. Quantity ${draft.quantity ?? 0}. Rack ${draft.location || 'not set'}. Pack size ${voicePackLabel(draft, product)}. Say approve or save to save this audit. Say cancel to discard.`;
+    promptHandsFree('confirm', summary);
+  }
+
+  async function saveHandsFreeAudit(product: AuditProduct, draft: VoiceDraft) {
+    if (draft.quantity === null || draft.quantity < 0 || !draft.location) {
+      promptHandsFree('quantity', 'The voice draft is incomplete. Say the quantity number.');
+      return;
+    }
+
+    voiceStageRef.current = 'saving';
+    setVoiceStage('saving');
+    setVoiceStatus('Saving the confirmed voice audit…');
+    stopVoiceRecognition();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    let packSizeSaved = true;
+    if (draft.packSizeValue && draft.packSizeUnit) {
+      packSizeSaved = await AuditService.updateProductPackSize(
+        product.id,
+        draft.packSizeValue,
+        draft.packSizeUnit,
+      );
+    }
+
+    const success = await AuditService.performAudit({
+      productId: product.id,
+      totalStock: draft.quantity,
+      bins: [{ location_code: draft.location, stock_quantity: draft.quantity }],
+      notes: 'Hands-free voice stock audit',
+      userId: user?.id,
+      gtin: scannedGtin || product.gtin || undefined,
+    });
+
+    if (!success) {
+      setAuditStatus({ type: 'error', text: 'Hands-free audit could not be saved. Nothing was auto-approved.' });
+      promptHandsFree('confirm', 'Save failed. Say approve to retry, or cancel.');
+      return;
+    }
+
+    setAuditStatus({
+      type: 'success',
+      text: packSizeSaved
+        ? `Voice audit saved for ${productDisplayName(product)}.`
+        : `Stock audit saved for ${productDisplayName(product)}, but the spoken pack size could not be updated.`,
+    });
+
+    loadUnaudited();
+    loadFullAuditSession();
+    loadRecentAudits();
+
+    resetAudit();
+    const empty = { ...EMPTY_VOICE_DRAFT };
+    setVoiceDraftNow(empty);
+    voiceStageRef.current = 'waiting-product';
+    setVoiceStage('waiting-product');
+    setVoiceStatus('Saved. Ready for the next barcode / QR.');
+
+    speakVoice('Saved. Scan the next barcode or QR code.', () => {
+      if (handsFreeVoiceRef.current) setShowScanner(true);
+    });
+  }
+
+  function handleHandsFreeTranscript(stage: VoiceStage, transcript: string) {
+    if (!handsFreeVoiceRef.current) return;
+    const text = transcript.trim();
+    const lower = text.toLowerCase();
+    const base = { ...voiceDraftRef.current, lastTranscript: text };
+
+    if (stage === 'quantity') {
+      const quantity = parseSpokenNumber(text);
+      if (quantity === null || quantity < 0) {
+        promptHandsFree('quantity', 'I only need the quantity number. For example, say twenty five.');
+        return;
+      }
+      const next = { ...base, quantity: Math.round(quantity) };
+      setVoiceDraftNow(next);
+      setBins([{ location_code: '', stock_quantity: String(Math.round(quantity)) }]);
+      promptHandsFree('location', `Quantity ${Math.round(quantity)}. Now say the rack or location, for example B 2 3.`);
+      return;
+    }
+
+    if (stage === 'location') {
+      const location = parseRackLocation(text);
+      if (!location) {
+        promptHandsFree('location', 'I only need the rack or location. For example, say B 2 3.');
+        return;
+      }
+      const next = { ...base, location };
+      setVoiceDraftNow(next);
+      setBins([{ location_code: location, stock_quantity: String(next.quantity ?? 0) }]);
+      promptHandsFree('pack-size', `Rack ${location}. Say the product pack size, for example 250 grams, or say skip.`);
+      return;
+    }
+
+    if (stage === 'pack-size') {
+      if (/\b(skip|same|current|unchanged|no change)\b/.test(lower)) {
+        const next = { ...base, packSizeValue: null, packSizeUnit: null };
+        setVoiceDraftNow(next);
+        if (currentProduct) presentHandsFreeSummary(currentProduct, next);
+        return;
+      }
+
+      const parsed = parseSpokenPackSize(text);
+      if (!parsed) {
+        promptHandsFree('pack-size', 'Say the pack size with a unit, like 250 grams or 1 litre, or say skip.');
+        return;
+      }
+      const next = { ...base, packSizeValue: parsed.value, packSizeUnit: parsed.unit };
+      setVoiceDraftNow(next);
+      if (currentProduct) presentHandsFreeSummary(currentProduct, next);
+      return;
+    }
+
+    if (stage === 'confirm') {
+      if (/\b(approve|approved|save|yes|confirm|confirmed|okay|ok)\b/.test(lower)) {
+        if (currentProduct) void saveHandsFreeAudit(currentProduct, base);
+        return;
+      }
+
+      if (/\b(cancel|discard|skip product|next product)\b/.test(lower)) {
+        resetAudit();
+        setVoiceDraftNow({ ...EMPTY_VOICE_DRAFT });
+        voiceStageRef.current = 'waiting-product';
+        setVoiceStage('waiting-product');
+        setVoiceStatus('Cancelled. Ready for the next barcode / QR.');
+        speakVoice('Cancelled. Scan the next barcode or QR code.', () => {
+          if (handsFreeVoiceRef.current) setShowScanner(true);
+        });
+        return;
+      }
+
+      if (/\b(quantity|qty|count)\b/.test(lower)) {
+        const quantity = parseSpokenNumber(text);
+        if (quantity !== null && quantity >= 0) {
+          const next = { ...base, quantity: Math.round(quantity) };
+          setVoiceDraftNow(next);
+          setBins([{ location_code: next.location, stock_quantity: String(next.quantity) }]);
+          if (currentProduct) presentHandsFreeSummary(currentProduct, next);
+          return;
+        }
+      }
+
+      if (/\b(rack|location|bin|shelf)\b/.test(lower)) {
+        const location = parseRackLocation(text);
+        if (location) {
+          const next = { ...base, location };
+          setVoiceDraftNow(next);
+          setBins([{ location_code: location, stock_quantity: String(next.quantity ?? 0) }]);
+          if (currentProduct) presentHandsFreeSummary(currentProduct, next);
+          return;
+        }
+      }
+
+      if (/\b(pack|size|gram|kilogram|kilo|litre|liter|ml)\b/.test(lower)) {
+        const parsed = parseSpokenPackSize(text);
+        if (parsed) {
+          const next = { ...base, packSizeValue: parsed.value, packSizeUnit: parsed.unit };
+          setVoiceDraftNow(next);
+          if (currentProduct) presentHandsFreeSummary(currentProduct, next);
+          return;
+        }
+      }
+
+      promptHandsFree('confirm', 'Say approve or save to save. Say cancel, or say change quantity, rack, or pack size.');
+    }
+  }
+
+  async function enableHandsFreeVoice() {
+    const Recognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!Recognition) {
+      setAuditStatus({ type: 'error', text: 'Hands-free voice recognition is not supported on this browser.' });
+      return;
+    }
+
+    try {
+      if (navigator.mediaDevices?.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(track => track.stop());
+      }
+    } catch {
+      setAuditStatus({ type: 'error', text: 'Microphone permission is required for hands-free stock audit.' });
+      return;
+    }
+
+    handsFreeVoiceRef.current = true;
+    setHandsFreeVoice(true);
+    const empty = { ...EMPTY_VOICE_DRAFT };
+    setVoiceDraftNow(empty);
+    voiceStageRef.current = 'waiting-product';
+    setVoiceStage('waiting-product');
+    setVoiceStatus('Hands-free mode active. Scan a barcode / QR first.');
+    speakVoice('Hands free stock audit started. Scan the first barcode or QR code.', () => setShowScanner(true));
+  }
+
+  function disableHandsFreeVoice() {
+    handsFreeVoiceRef.current = false;
+    setHandsFreeVoice(false);
+    voiceStageRef.current = 'off';
+    setVoiceStage('off');
+    setVoiceDraftNow({ ...EMPTY_VOICE_DRAFT });
+    setVoiceStatus('Voice audit is off.');
+    stopVoiceRecognition();
+    if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
+  }
+
+  function startGuidedVoiceForProduct(product: AuditProduct) {
+    if (!handsFreeVoiceRef.current) return;
+    const empty = { ...EMPTY_VOICE_DRAFT };
+    setVoiceDraftNow(empty);
+    const productIntro = [
+      `Found ${product.name}`,
+      product.brand ? `brand ${product.brand}` : null,
+      productSizeLabel(product) ? `size ${productSizeLabel(product)}` : null,
+    ].filter(Boolean).join(', ');
+    promptHandsFree('quantity', `${productIntro}. Say the physical quantity number.`);
+  }
 
   // Voice Search Handler
   const startVoiceSearch = () => {
@@ -234,6 +661,10 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
 
     const dates = await AuditService.getSavedExpiryDates(product.id);
     setSavedExpiryDates(dates);
+
+    if (handsFreeVoiceRef.current) {
+      startGuidedVoiceForProduct(product);
+    }
   };
 
   const performSearch = async (query: string) => {
@@ -499,6 +930,12 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     setLabelPhotoBusy(false);
     setNotes('');
     setSearchResults([]);
+    if (!handsFreeVoiceRef.current) {
+      setVoiceDraftNow({ ...EMPTY_VOICE_DRAFT });
+      voiceStageRef.current = 'off';
+      setVoiceStage('off');
+      setVoiceStatus('Voice audit is off.');
+    }
   };
 
   return (
@@ -680,6 +1117,33 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                       <p className="text-slate-400 mb-8">Scan the barcode to identify the product. Existing system stock and location stay hidden while you count.</p>
 
                       <div className="space-y-4">
+                        {!handsFreeVoice ? (
+                          <button
+                            type="button"
+                            onClick={() => void enableHandsFreeVoice()}
+                            className="w-full py-4 rounded-2xl border border-violet-500/30 bg-violet-500/10 text-violet-100 font-black text-sm uppercase tracking-wider"
+                          >
+                            🎙️ Start Hands-Free Voice Audit
+                          </button>
+                        ) : (
+                          <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/5 p-4 text-left">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-[10px] uppercase tracking-[0.18em] font-black text-emerald-300">Hands-Free Active</p>
+                                <p className="text-sm text-slate-200 mt-1">{voiceStatus}</p>
+                                <p className="text-[10px] text-slate-500 mt-2">Barcode/QR identifies the product first. Voice cannot switch products by name.</p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={disableHandsFreeVoice}
+                                className="px-3 py-2 rounded-xl border border-slate-700 text-xs font-black text-slate-300"
+                              >
+                                Stop Voice
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
                         <button
                           onClick={() => setShowScanner(true)}
                           className="w-full py-6 bg-gradient-to-br from-cyan-600 to-blue-600 text-white rounded-3xl font-black text-lg uppercase tracking-widest shadow-xl shadow-cyan-900/20 active:scale-[0.98] transition-all flex flex-col items-center gap-2"
@@ -819,6 +1283,55 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                         The saved audit report will compare your count with the previous system values afterwards.
                       </p>
                     </div>
+
+                    {handsFreeVoice && (
+                      <div className="rounded-2xl border border-violet-500/25 bg-violet-500/5 overflow-hidden">
+                        <div className="px-4 py-3 border-b border-violet-500/15 flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-[10px] uppercase tracking-[0.18em] font-black text-violet-300">Voice Capture Table</p>
+                            <p className="text-xs text-slate-400 mt-1">{voiceStatus}</p>
+                          </div>
+                          <span className="px-2.5 py-1 rounded-full bg-slate-950/50 text-[10px] font-black uppercase text-violet-200">
+                            {voiceStage.replace('-', ' ')}
+                          </span>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <tbody className="divide-y divide-slate-800/70">
+                              <tr>
+                                <td className="px-4 py-3 text-slate-500 text-xs font-black uppercase">Product</td>
+                                <td className="px-4 py-3 text-slate-100 font-bold">{currentProduct.name}</td>
+                              </tr>
+                              <tr>
+                                <td className="px-4 py-3 text-slate-500 text-xs font-black uppercase">Brand</td>
+                                <td className="px-4 py-3 text-slate-200">{currentProduct.brand || '—'}</td>
+                              </tr>
+                              <tr>
+                                <td className="px-4 py-3 text-slate-500 text-xs font-black uppercase">Pack size</td>
+                                <td className="px-4 py-3 text-slate-200">
+                                  {voiceDraft.packSizeValue && voiceDraft.packSizeUnit
+                                    ? `${voiceDraft.packSizeValue} ${voiceDraft.packSizeUnit}`
+                                    : productSizeLabel(currentProduct) || '—'}
+                                </td>
+                              </tr>
+                              <tr>
+                                <td className="px-4 py-3 text-slate-500 text-xs font-black uppercase">Quantity</td>
+                                <td className="px-4 py-3 text-slate-100 font-black">{voiceDraft.quantity ?? 'Waiting…'}</td>
+                              </tr>
+                              <tr>
+                                <td className="px-4 py-3 text-slate-500 text-xs font-black uppercase">Rack / Location</td>
+                                <td className="px-4 py-3 text-slate-100 font-black">{voiceDraft.location || 'Waiting…'}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                        {voiceDraft.lastTranscript && (
+                          <div className="px-4 py-2.5 border-t border-slate-800/70 text-[10px] text-slate-500">
+                            Heard: “{voiceDraft.lastTranscript}”
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* Identity only — no system stock/location shown before submission */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
