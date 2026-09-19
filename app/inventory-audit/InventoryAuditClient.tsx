@@ -227,6 +227,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
   // Audit Form State
   const [bins, setBins] = useState<{ location_code: string; stock_quantity: string }[]>([]);
   const [stockEntryMode, setStockEntryMode] = useState<StockEntryMode | null>(null);
+  const [quantityExpiryDate, setQuantityExpiryDate] = useState('');
   const [expiryBatches, setExpiryBatches] = useState<ExpiryBatch[]>([]);
   const [savedExpiryDates, setSavedExpiryDates] = useState<string[]>([]);
   const [unitsPerBox, setUnitsPerBox] = useState<string>('');
@@ -858,6 +859,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     // Blind audit rule: never preload system stock/location/box quantities.
     // Expiry DATE values are safe to remember because they do not reveal the stock count.
     setStockEntryMode(null);
+    setQuantityExpiryDate('');
     setBins([{ location_code: '', stock_quantity: '' }]);
     setExpiryBatches([]);
     setSavedExpiryDates([]);
@@ -867,6 +869,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
 
     const dates = await AuditService.getSavedExpiryDates(product.id);
     setSavedExpiryDates(dates);
+    setQuantityExpiryDate(dates.length === 1 ? dates[0] : '');
 
     if (handsFreeVoiceRef.current) {
       startGuidedVoiceForProduct(product);
@@ -1136,8 +1139,33 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     }));
 
     const totalStock = formattedBins.reduce((sum, b) => sum + b.stock_quantity, 0);
-    const expiryTotal = expiryBatches.reduce((sum, batch) => sum + Math.max(0, Number(batch.quantity) || 0), 0);
-    const nonZeroExpiryBatches = expiryBatches.filter(batch => Math.max(0, Number(batch.quantity) || 0) > 0);
+
+    const quantityExpiryBatch: ExpiryBatch[] =
+      stockEntryMode === 'quantity' && quantityExpiryDate && totalStock > 0
+        ? [{
+            batch_id: null,
+            expiry_date: quantityExpiryDate,
+            quantity: totalStock,
+            remaining_quantity: totalStock,
+            box_number: 1,
+            manufacture_date: null,
+            packed_date: null,
+            carton_no: null,
+            label_photo_id: null,
+            entry_source: 'manual',
+          }]
+        : [];
+
+    const expiryRowsForSave =
+      stockEntryMode === 'quantity' ? quantityExpiryBatch : expiryBatches;
+
+    const expiryTotal = expiryRowsForSave.reduce(
+      (sum, batch) => sum + Math.max(0, Number(batch.quantity) || 0),
+      0,
+    );
+    const nonZeroExpiryBatches = expiryRowsForSave.filter(
+      batch => Math.max(0, Number(batch.quantity) || 0) > 0,
+    );
 
     if (nonZeroExpiryBatches.some(batch => !batch.expiry_date)) {
       setAuditStatus({ type: 'error', text: 'Every expiry batch with stock needs an expiry date.' });
@@ -1159,7 +1187,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
       totalStock: totalStock,
       bins: formattedBins,
       // In blind mode, photo-only / zero-quantity rows never replace saved expiry stock.
-      expiryBatches: nonZeroExpiryBatches.length > 0 ? expiryBatches : undefined,
+      expiryBatches: nonZeroExpiryBatches.length > 0 ? expiryRowsForSave : undefined,
       unitsPerBox:
         stockEntryMode === 'box' && unitsPerBox
           ? Math.max(1, parseInt(unitsPerBox, 10) || 1)
@@ -1205,6 +1233,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     voiceProductRef.current = null;
     setCurrentProduct(null);
     setStockEntryMode(null);
+    setQuantityExpiryDate('');
     setBins([]);
     setExpiryBatches([]);
     setSavedExpiryDates([]);
@@ -1828,6 +1857,57 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                           </span>
                         </div>
                       </div>
+                      )}
+
+                      {/* Quantity mode keeps expiry as one lightweight field */}
+                      {stockEntryMode === 'quantity' && (
+                        <div className="rounded-xl border border-emerald-500/15 bg-emerald-500/5 p-4 space-y-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <label className="text-xs font-black uppercase tracking-wider text-emerald-300">
+                              Expiry Date
+                            </label>
+                            {quantityExpiryDate && (
+                              <button
+                                type="button"
+                                onClick={() => setQuantityExpiryDate('')}
+                                className="text-[10px] font-bold text-slate-500"
+                              >
+                                Clear
+                              </button>
+                            )}
+                          </div>
+
+                          <input
+                            type="date"
+                            value={quantityExpiryDate}
+                            onChange={(e) => setQuantityExpiryDate(e.target.value)}
+                            className={`w-full text-sm ${getInputClasses()}`}
+                          />
+
+                          {savedExpiryDates.length > 0 && (
+                            <div>
+                              <p className="text-[10px] text-slate-500 mb-2">
+                                Remembered expiry — tap to reuse
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                {savedExpiryDates.map(date => (
+                                  <button
+                                    key={date}
+                                    type="button"
+                                    onClick={() => setQuantityExpiryDate(date)}
+                                    className={`px-3 py-2 rounded-xl border text-xs font-black ${
+                                      quantityExpiryDate === date
+                                        ? 'border-emerald-400/50 bg-emerald-500/15 text-emerald-200'
+                                        : 'border-slate-700 bg-slate-950/30 text-slate-400'
+                                    }`}
+                                  >
+                                    {new Date(`${date}T00:00:00`).toLocaleDateString('en-GB')}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       )}
 
                       {/* Multi-Location Bins */}
