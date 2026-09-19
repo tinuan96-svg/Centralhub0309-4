@@ -2185,12 +2185,20 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
 
       {showScanner && (
         <BarcodeScanner
+          mode="retail-product"
           onScan={(decodedText) => {
-            setScannedGtin(decodedText);
+            const code = String(decodedText || '').trim();
+            if (!looksLikePhysicalBarcode(code) || /^https?:\/\//i.test(code)) {
+              return false;
+            }
+
+            setScannedGtin(code);
             setShowScanner(false);
+            setAuditStatus(null);
+
             // Manually trigger lookup logic
             setIsLoading(true);
-            AuditService.findProductByGTIN(decodedText).then(product => {
+            AuditService.findProductByGTIN(code).then(product => {
               setIsLoading(false);
               if (product) {
                 handleProductSelect(product);
@@ -2199,6 +2207,7 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                 setSearchQuery('');
               }
             });
+            return true;
           }}
           onClose={() => setShowScanner(false)}
         />
