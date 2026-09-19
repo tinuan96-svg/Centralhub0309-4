@@ -112,6 +112,20 @@ const looksLikePhysicalBarcode = (value: string) => {
   return /^(?=.*\d)[A-Za-z0-9._:/-]{4,128}$/.test(code);
 };
 
+const getExpiryAuditState = (date: string) => {
+  if (!date) return { kind: 'none' as const, daysRemaining: null as number | null };
+  const expiry = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(expiry.getTime())) return { kind: 'none' as const, daysRemaining: null as number | null };
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diffDays = Math.floor((expiry.getTime() - today.getTime()) / 86400000);
+
+  if (diffDays < 0) return { kind: 'expired' as const, daysRemaining: diffDays };
+  if (diffDays <= 20) return { kind: 'blocked' as const, daysRemaining: diffDays };
+  return { kind: 'sellable' as const, daysRemaining: diffDays };
+};
+
 const parseRackLocation = (input: string) => {
   const digitWords: Record<string, string> = {
     zero: '0', one: '1', two: '2', three: '3', four: '4',
@@ -245,6 +259,8 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     if (!product) return '';
     return formatProductSize(product) || product.unit || '';
   };
+
+  const quantityExpiryState = getExpiryAuditState(quantityExpiryDate);
 
   // Lists
   const [unauditedProducts, setUnauditedProducts] = useState<AuditProduct[]>([]);
@@ -1921,9 +1937,30 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                           <input
                             type="date"
                             value={quantityExpiryDate}
-                            onChange={(e) => setQuantityExpiryDate(e.target.value)}
+                            onChange={(e) => {
+                              setQuantityExpiryDate(e.target.value);
+                              setAuditStatus(null);
+                            }}
                             className={`w-full text-sm ${getInputClasses()}`}
                           />
+
+                          {quantityExpiryState.kind === 'expired' && (
+                            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-3">
+                              <p className="text-xs font-black text-rose-300 uppercase tracking-wider">Expired</p>
+                              <p className="text-xs text-rose-200/80 mt-1">
+                                This stock is physically present but not sellable. Saving the audit will keep it in warehouse records and sync sellable website stock as 0.
+                              </p>
+                            </div>
+                          )}
+
+                          {quantityExpiryState.kind === 'blocked' && (
+                            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-3">
+                              <p className="text-xs font-black text-amber-300 uppercase tracking-wider">Within 20-day block window</p>
+                              <p className="text-xs text-amber-200/80 mt-1">
+                                This stock is not sellable under the 20-day expiry rule. It will remain in the physical audit but website sellable stock will be 0.
+                              </p>
+                            </div>
+                          )}
 
                           {savedExpiryDates.length > 0 && (
                             <div>
@@ -2056,7 +2093,11 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
                                 ? 'Enter Physical Quantity'
                                 : physicalTotal > 0 && missingLocation
                                   ? 'Enter Location / Bin to Save'
-                                  : 'Save Stock Audit'}
+                                  : stockEntryMode === 'quantity' && quantityExpiryState.kind === 'expired'
+                                    ? 'Save as Expired Stock'
+                                    : stockEntryMode === 'quantity' && quantityExpiryState.kind === 'blocked'
+                                      ? 'Save as Blocked Stock'
+                                      : 'Save Stock Audit'}
                           </Button>
                           <Button variant="secondary" className="px-8" onClick={resetAudit} disabled={isLoading}>
                             Cancel
