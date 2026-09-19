@@ -92,12 +92,40 @@ const mapProduct = (product: any): AuditProduct => {
   };
 };
 
+
+const mapBlindProduct = (product: any): AuditProduct => {
+  const inventory = Array.isArray(product.central_inventory) ? product.central_inventory[0] : product.central_inventory;
+  return {
+    id: product.id,
+    name: product.name,
+    gtin: product.gtin ?? null,
+    sku: product.sku ?? null,
+    brand: product.brand ?? null,
+    category: product.category ?? null,
+    unit: product.unit ?? null,
+    weight: product.weight == null ? null : Number(product.weight),
+    weight_kg: product.weight_kg == null ? null : Number(product.weight_kg),
+    weight_grams: product.weight_grams == null ? null : Number(product.weight_grams),
+    pack_size: product.pack_size == null ? null : Number(product.pack_size),
+    pack_unit: product.pack_unit ?? null,
+    units_per_box: product.units_per_box == null ? null : Number(product.units_per_box),
+    variant_group_key: product.variant_group_key ?? null,
+    // Blind count mode: do not send current system stock/location/expiry to the audit form.
+    warehouse_location: null,
+    is_active: product.is_active ?? true,
+    is_published: product.is_published ?? false,
+    expiry_date: null,
+    current_stock: 0,
+    last_audited_at: inventory?.last_audited_at ?? product.last_audited_at ?? null,
+  };
+};
+
 export class AuditService {
   static async getRecentAuditItems(limit = 2): Promise<RecentAuditItem[]> {
     const { data, error } = await supabase
       .from('inventory_logs')
       .select(`
-        id,product_id,new_quantity,created_at,
+        id,product_id,new_quantity,created_at,audited_locations,
         products(id,name,sku,brand,unit,weight,weight_kg,weight_grams,pack_size,pack_unit,warehouse_location)
       `)
       .eq('type', 'AUDIT')
@@ -123,7 +151,10 @@ export class AuditService {
       pack_size: row.products?.pack_size == null ? null : Number(row.products.pack_size),
       pack_unit: row.products?.pack_unit || null,
       quantity: Number(row.new_quantity || 0),
-      warehouse_location: row.products?.warehouse_location || null,
+      warehouse_location:
+        Array.isArray(row.audited_locations) && row.audited_locations.length > 0
+          ? row.audited_locations.map((loc: any) => loc?.location_code).filter(Boolean).join(', ')
+          : row.products?.warehouse_location || null,
       created_at: row.created_at,
     }));
   }
@@ -168,14 +199,14 @@ export class AuditService {
   static async findProductByGTIN(gtin: string): Promise<AuditProduct | null> {
     const { data, error } = await supabase
       .from('products')
-      .select(`id, name, gtin, sku, brand, category, unit, weight, weight_kg, weight_grams, pack_size, pack_unit, units_per_box, variant_group_key, warehouse_location, is_active, is_published, expiry_date, central_inventory(stock_quantity, last_audited_at)`)
+      .select(`id, name, gtin, sku, brand, category, unit, weight, weight_kg, weight_grams, pack_size, pack_unit, units_per_box, variant_group_key, is_active, is_published`)
       .eq('gtin', gtin)
       .maybeSingle();
     if (error) {
       console.error('[AuditService] Error finding product by GTIN:', error);
       return null;
     }
-    return data ? mapProduct(data) : null;
+    return data ? mapBlindProduct(data) : null;
   }
 
   static async getBinLocations(productId: string): Promise<BinLocation[]> {
@@ -228,17 +259,49 @@ export class AuditService {
         throw new Error('Audit stock total must be a non-negative number.');
       }
 
-      const { data: currentInventory, error: currentInventoryError } = await supabase
-        .from('central_inventory')
-        .select('stock_quantity')
-        .eq('product_id', productId)
-        .maybeSingle();
-      if (currentInventoryError) throw currentInventoryError;
-      if (!currentInventory) throw new Error('Product is not registered in the inventory master.');
+      const [inventoryResult, productResult, binResult] = await Promise.all([
+        supabase
+          .from('central_inventory')
+          .select('stock_quantity')
+          .eq('product_id', productId)
+          .maybeSingle(),
+        supabase
+          .from('products')
+          .select('warehouse_location')
+          .eq('id', productId)
+          .maybeSingle(),
+        supabase
+          .from('product_bin_locations')
+          .select('location_code,stock_quantity')
+          .eq('product_id', productId)
+          .order('location_code', { ascending: true }),
+      ]);
 
-      const oldStock = Number(currentInventory.stock_quantity ?? 0);
+      if (inventoryResult.error) throw inventoryResult.error;
+      if (productResult.error) throw productResult.error;
+      if (binResult.error) throw binResult.error;
+      if (!inventoryResult.data) throw new Error('Product is not registered in the inventory master.');
+
+      const oldStock = Number(inventoryResult.data.stock_quantity ?? 0);
       const change = totalStock - oldStock;
       const primaryLocation = bins[0]?.location_code?.trim() || '';
+
+      const systemLocations = (binResult.data || []).length > 0
+        ? (binResult.data || []).map((bin: any) => ({
+            location_code: String(bin.location_code || '').trim(),
+            stock_quantity: Number(bin.stock_quantity || 0),
+          }))
+        : productResult.data?.warehouse_location
+          ? [{
+              location_code: String(productResult.data.warehouse_location).trim(),
+              stock_quantity: oldStock,
+            }]
+          : [];
+
+      const auditedLocations = bins.map(bin => ({
+        location_code: String(bin.location_code || '').trim(),
+        stock_quantity: Number(bin.stock_quantity || 0),
+      }));
 
       const productUpdate: any = {
         warehouse_location: primaryLocation,
@@ -326,6 +389,8 @@ export class AuditService {
         movement_type: 'AUDIT',
         reason: 'Physical Stock Audit (Multi-Location)',
         notes: auditNote,
+        system_locations: systemLocations,
+        audited_locations: auditedLocations,
         edited_by: userId || null,
         created_at: auditedAt
       }]);
@@ -377,13 +442,13 @@ export class AuditService {
     const pattern = `%${query}%`;
     const { data, error } = await supabase
       .from('products')
-      .select(`id, name, gtin, sku, brand, category, unit, weight, weight_kg, weight_grams, pack_size, pack_unit, units_per_box, variant_group_key, warehouse_location, is_active, is_published, expiry_date, central_inventory(stock_quantity, last_audited_at)`)
+      .select(`id, name, gtin, sku, brand, category, unit, weight, weight_kg, weight_grams, pack_size, pack_unit, units_per_box, variant_group_key, is_active, is_published`)
       .eq('is_active', true)
       .or('is_deleted.is.null,is_deleted.eq.false')
       .or(`name.ilike.${pattern},brand.ilike.${pattern},category.ilike.${pattern},gtin.ilike.${pattern},sku.ilike.${pattern}`)
       .limit(25);
     if (error) return [];
-    return (data || []).map(mapProduct);
+    return (data || []).map(mapBlindProduct);
   }
 
   static async getUnauditedProducts(daysAgo = 30): Promise<AuditProduct[]> {
@@ -391,7 +456,7 @@ export class AuditService {
     date.setDate(date.getDate() - daysAgo);
     const { data, error } = await supabase
       .from('products')
-      .select(`id, name, gtin, sku, brand, category, unit, weight, weight_kg, weight_grams, pack_size, pack_unit, units_per_box, variant_group_key, warehouse_location, is_active, is_published, expiry_date, central_inventory(stock_quantity, last_audited_at)`)
+      .select(`id, name, gtin, sku, brand, category, unit, weight, weight_kg, weight_grams, pack_size, pack_unit, units_per_box, variant_group_key, is_active, is_published, central_inventory(last_audited_at)`)
       .eq('is_active', true)
       .or('is_deleted.is.null,is_deleted.eq.false')
       .or(`central_inventory.last_audited_at.is.null,central_inventory.last_audited_at.lt.${date.toISOString()}`)
@@ -400,7 +465,7 @@ export class AuditService {
       console.error('[AuditService] Error fetching unaudited products:', error);
       return [];
     }
-    return (data || []).map(mapProduct);
+    return (data || []).map(mapBlindProduct);
   }
 
   static async quickCreateProduct(name: string, gtin: string): Promise<AuditProduct | null> {
