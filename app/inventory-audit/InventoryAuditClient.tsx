@@ -351,7 +351,8 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
       productId: currentProduct.id,
       totalStock: totalStock,
       bins: formattedBins,
-      expiryBatches,
+      // In blind mode, an empty box section means "not re-audited", not "delete old expiry data".
+      expiryBatches: expiryBatches.length > 0 ? expiryBatches : undefined,
       unitsPerBox: unitsPerBox ? Math.max(1, parseInt(unitsPerBox, 10) || 1) : null,
       notes: notes,
       userId: user?.id,
