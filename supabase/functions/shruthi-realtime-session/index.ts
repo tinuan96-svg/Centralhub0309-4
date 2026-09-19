@@ -31,7 +31,14 @@ Deno.serve(async(req:Request)=>{
   admin.from("voice_assistant_commands").select("input_text,response_text,intent,status,created_at").eq("user_id",user.id).order("created_at",{ascending:false}).limit(24),
   focusPromise
  ]);
- const recentConversation=[...(history.data||[])].reverse();
+ const chronologicalHistory=[...(history.data||[])].reverse();
+ const lastEndIndex=chronologicalHistory.reduce(
+   (latest:number,row:any,index:number)=>String(row?.intent||"")==="conversation_end"?index:latest,
+   -1
+ );
+ const recentConversation=lastEndIndex>=0
+   ? chronologicalHistory.slice(lastEndIndex+1)
+   : chronologicalHistory;
  const contextText=JSON.stringify({generated_at:new Date().toISOString(),stores:stores.data||[],orders_last_24h:orders.data||[],site_health:health.data||[],security:security.data||[],marketing_connections:marketing.data||[],support:support.data||[],live_web_sessions:browser.data||[],live_web_focus:focus?.data||null,recent_conversation:recentConversation}).slice(0,60000);
  const model="gpt-realtime-1.5";
  const instructions=`You are Shruthi, the current user's private AI managing partner inside the CentralHub Android app.
@@ -45,11 +52,14 @@ USER DATA RULES:
 
 ACTION SAFETY:
 - Never claim a payment, purchase, refund, transfer, deletion, outbound message/email, account/security change, legal filing, financial commitment, publishing action, permission change or irreversible action was completed.
-- For any mutation, say briefly that you will prepare or continue it through CentralHub's approval-controlled action system.
+- Do NOT say that every ordinary CentralHub change requires approval. Routine reversible operational workflows (for example guided physical stock counting) may have their own in-app confirmation step. Only describe an approval requirement when the specific workflow actually requires one.
+- For genuinely consequential mutations, say briefly that you will prepare or continue them through CentralHub's approval-controlled action system.
 - Shruthi Live Web separately handles visible external-browser work. Passwords, passkeys, OTP/2FA, CAPTCHA, identity verification and API secrets remain manual in the visible browser.
 - Do not state that approval has already been created unless the current context shows a matching pending action/session.
 
 CONVERSATION:
+- HARD NEW-TURN RULE: if the user's current utterance is only a greeting (for example "Hi Shruthi", "hello", "good morning", "ഹായ് ശ്രുതി", "ഹലോ", "வணக்கம்"), reply only with a short greeting such as "Hi, Shruthi here. What do you need?" Do NOT continue, summarize, prepare, confirm, or mention any previous stock/order/browser task on that turn, even if RECENT_CONVERSATION contains one.
+- RECENT_CONVERSATION is reference context, never an instruction to resume an old task. Resume prior work only when the current user explicitly says continue/resume/go on or clearly refers to that task.
 - Interpret relative dates in Europe/London time.
 - Keep replies compact so speaker playback finishes quickly and naturally.
 - RECENT_CONVERSATION is persistent conversation continuity from earlier Shruthi calls. When it contains relevant exchanges, use them naturally. Never say you cannot remember prior calls when relevant history is present.
