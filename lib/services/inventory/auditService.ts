@@ -379,7 +379,9 @@ export class AuditService {
       };
       if (gtin) productUpdate.gtin = gtin;
       if (unitsPerBox !== undefined) productUpdate.units_per_box = unitsPerBox;
-      if (expiryBatches === undefined) productUpdate.expiry_date = expiryDate || null;
+      // Blind audit: absence of expiry-box input means preserve existing expiry data.
+      // Only change the product-level expiry when the caller explicitly supplies expiryDate.
+      if (expiryBatches === undefined && expiryDate !== undefined) productUpdate.expiry_date = expiryDate || null;
 
       const { error: productError } = await supabase
         .from('products')
@@ -491,6 +493,23 @@ export class AuditService {
           p_units_per_box: unitsPerBox ?? null,
         });
         if (expiryBatchError) throw expiryBatchError;
+
+        const confirmedPhotoIds = cleanBatches
+          .map((batch: any) => batch.label_photo_id)
+          .filter(Boolean);
+        if (confirmedPhotoIds.length > 0) {
+          const { error: photoConfirmError } = await supabase
+            .from('inventory_audit_label_photos')
+            .update({
+              status: 'confirmed',
+              confirmed_at: auditedAt,
+              updated_at: auditedAt,
+            })
+            .in('id', confirmedPhotoIds);
+          if (photoConfirmError) {
+            console.warn('[AuditService] Audit saved but label photo confirmation failed:', photoConfirmError.message);
+          }
+        }
       }
 
       try {
