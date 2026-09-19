@@ -585,38 +585,62 @@ export class AuditService {
     return (data || []).map(mapBlindProduct);
   }
 
-  static async quickCreateProduct(name: string, gtin: string): Promise<AuditProduct | null> {
+  static async quickCreateProduct(
+    name: string,
+    gtin: string,
+  ): Promise<{ product: AuditProduct | null; error?: string }> {
+    const cleanName = String(name || '').trim();
+    const cleanGtin = String(gtin || '').trim();
+
+    if (!cleanName) {
+      return { product: null, error: 'Product name is required.' };
+    }
+
     const { data, error } = await supabase
       .from('products')
-      .insert([{ name, gtin, is_active: true, is_published: false, created_at: new Date().toISOString() }])
+      .insert([{
+        name: cleanName,
+        gtin: cleanGtin || null,
+        // Quick-create is an inventory draft, not a storefront approval.
+        is_active: false,
+        is_published: false,
+        approval_status: 'pending',
+        created_at: new Date().toISOString(),
+      }])
       .select()
       .single();
+
     if (error) {
       console.error('[AuditService] Quick create failed:', error);
-      return null;
+      return {
+        product: null,
+        error: error.message || 'Could not create the inventory draft product.',
+      };
     }
 
     return {
-      id: data.id,
-      name: data.name,
-      gtin: data.gtin,
-      sku: data.sku,
-      brand: data.brand,
-      category: data.category,
-      unit: data.unit ?? null,
-      weight: data.weight == null ? null : Number(data.weight),
-      weight_kg: data.weight_kg == null ? null : Number(data.weight_kg),
-      weight_grams: data.weight_grams == null ? null : Number(data.weight_grams),
-      pack_size: data.pack_size == null ? null : Number(data.pack_size),
-      pack_unit: data.pack_unit ?? null,
-      units_per_box: data.units_per_box == null ? null : Number(data.units_per_box),
-      variant_group_key: data.variant_group_key ?? null,
-      warehouse_location: data.warehouse_location,
-      is_active: data.is_active,
-      is_published: data.is_published,
-      expiry_date: data.expiry_date || null,
-      current_stock: Number(data.stock || 0),
-      last_audited_at: data.last_audited_at || null,
+      product: {
+        id: data.id,
+        name: data.name,
+        gtin: data.gtin,
+        sku: data.sku,
+        brand: data.brand,
+        category: data.category,
+        unit: data.unit ?? null,
+        weight: data.weight == null ? null : Number(data.weight),
+        weight_kg: data.weight_kg == null ? null : Number(data.weight_kg),
+        weight_grams: data.weight_grams == null ? null : Number(data.weight_grams),
+        pack_size: data.pack_size == null ? null : Number(data.pack_size),
+        pack_unit: data.pack_unit ?? null,
+        units_per_box: data.units_per_box == null ? null : Number(data.units_per_box),
+        variant_group_key: data.variant_group_key ?? null,
+        warehouse_location: data.warehouse_location,
+        is_active: data.is_active,
+        is_published: data.is_published,
+        expiry_date: data.expiry_date || null,
+        current_stock: Number(data.stock || 0),
+        last_audited_at: data.last_audited_at || null,
+      },
     };
   }
 }
