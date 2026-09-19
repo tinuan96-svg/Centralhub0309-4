@@ -1269,17 +1269,21 @@ export default function InventoryAuditPage({ params, searchParams }: { params: a
     if (!name) return;
 
     setIsLoading(true);
-    const product = await AuditService.quickCreateProduct(
+    const result = await AuditService.quickCreateProduct(
       name,
       looksLikePhysicalBarcode(scannedGtin) ? scannedGtin : '',
     );
     setIsLoading(false);
 
-    if (product) {
-      setNewlyAddedProducts(prev => [product, ...prev]);
-      handleProductSelect(product);
+    if (result.product) {
+      setAuditStatus(null);
+      setNewlyAddedProducts(prev => [result.product!, ...prev]);
+      handleProductSelect(result.product);
     } else {
-      setAuditStatus({ type: 'error', text: 'Failed to create product.' });
+      setAuditStatus({
+        type: 'error',
+        text: result.error || 'Failed to create product.',
+      });
     }
   };
 
