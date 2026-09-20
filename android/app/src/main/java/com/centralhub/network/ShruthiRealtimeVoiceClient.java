@@ -218,8 +218,11 @@ final class ShruthiRealtimeVoiceClient {
         AudioRecord r=createRecorder(rate,inputMin);recorder=r;
         if(AcousticEchoCanceler.isAvailable())try{echoCanceler=AcousticEchoCanceler.create(r.getAudioSessionId());if(echoCanceler!=null){echoCanceler.setEnabled(true);echoCancellationReady=echoCanceler.getEnabled();}}catch(Exception ignored){}
         if(NoiseSuppressor.isAvailable())try{noiseSuppressor=NoiseSuppressor.create(r.getAudioSessionId());if(noiseSuppressor!=null)noiseSuppressor.setEnabled(true);}catch(Exception ignored){}
-        AudioTrack p=new AudioTrack.Builder().setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()).setAudioFormat(new AudioFormat.Builder().setSampleRate(rate).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build()).setTransferMode(AudioTrack.MODE_STREAM).setBufferSizeInBytes(Math.max(outputMin*2,8192)).build();
-        if(p.getState()!=AudioTrack.STATE_INITIALIZED){p.release();cleanupAudio();throw new IllegalStateException("Unable to initialize voice playback");}player=p;p.play();r.startRecording();
+        // Voice remains an interactive AEC-enabled mic session, but the speech
+        // output uses the normal MEDIA volume route rather than the often-quiet
+        // call/earpiece volume route on Samsung foldable devices.
+        AudioTrack p=new AudioTrack.Builder().setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()).setAudioFormat(new AudioFormat.Builder().setSampleRate(rate).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build()).setTransferMode(AudioTrack.MODE_STREAM).setBufferSizeInBytes(Math.max(outputMin*2,8192)).build();
+        if(p.getState()!=AudioTrack.STATE_INITIALIZED){p.release();cleanupAudio();throw new IllegalStateException("Unable to initialize voice playback");}player=p;p.setVolume(1.0f);p.play();r.startRecording();
         captureThread=new Thread(()->{
             byte[] b=new byte[2400]; // 50 ms of 24 kHz mono PCM16
             java.util.ArrayDeque<byte[]> recentFrames=new java.util.ArrayDeque<>();

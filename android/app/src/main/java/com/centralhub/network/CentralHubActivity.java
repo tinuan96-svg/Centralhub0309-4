@@ -182,7 +182,12 @@ public final class CentralHubActivity extends MainActivity {
     public boolean startShruthiRealtime(String accessToken,String supabaseUrl,String publishableKey) {
         realtimeVoiceStarting=true;
         realtimeVoiceActive=true;
-        runOnUiThread(this::stopContinuousPipeline);
+        // Let the hardware volume keys control Shruthi's MEDIA speech output.
+        // Never set the user's system volume automatically.
+        runOnUiThread(() -> {
+            setVolumeControlStream(AudioManager.STREAM_MUSIC);
+            stopContinuousPipeline();
+        });
         boolean started;
         try{started=super.startShruthiRealtime(accessToken,supabaseUrl,publishableKey);}
         finally{realtimeVoiceStarting=false;}
@@ -516,12 +521,12 @@ public final class CentralHubActivity extends MainActivity {
             audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
             if (audioManager == null) return;
             oldAudioMode = audioManager.getMode();
-            oldMusicVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
+            // Do not quietly cap the user's media volume while Shruthi speaks.
+            // Realtime's output is mapped to STREAM_MUSIC and Android owns the
+            // volume level, including changes made by the user's volume keys.
+            oldMusicVolume = -1;
             audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
             audioManager.setMicrophoneMute(false);
-            int max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
-            int ceiling = Math.max(1, Math.round(max * 0.78f));
-            if (oldMusicVolume > ceiling) audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, ceiling, 0);
             communicationProfile = true;
         } catch (Exception ignored) { }
     }
@@ -530,10 +535,8 @@ public final class CentralHubActivity extends MainActivity {
         if (!communicationProfile) return;
         try {
             if (audioManager != null) {
-                if (oldMusicVolume >= 0) {
-                    int max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
-                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, Math.max(0, Math.min(max, oldMusicVolume)), 0);
-                }
+                // A user may have adjusted the hardware volume during the
+                // conversation; never revert their choice at session end.
                 audioManager.setMode(oldAudioMode);
             }
         } catch (Exception ignored) { }
