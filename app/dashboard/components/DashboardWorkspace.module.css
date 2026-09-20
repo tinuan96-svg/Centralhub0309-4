@@ -44,3 +44,12 @@
   .workspace[data-editing='false'] .widgetBody > :first-child { height:auto; }
   .workspace .toolbar { gap:.3rem; padding:.4rem .55rem; }
 }
+
+/* On Fold inner-screen widths a restored half-width KPI widget creates an
+   almost empty right-hand column. Give the dashboard figures the full row
+   in view mode without changing the administrator's saved custom layout. */
+@media (min-width:720px) and (max-width:1199px) {
+  .workspace[data-editing='false'] .widget[data-widget-id='kpi-indexes'] {
+    grid-column:1 / -1 !important;
+  }
+}

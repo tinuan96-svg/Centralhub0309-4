@@ -685,3 +685,39 @@
   .ch-dashboard-workspace .ch-visual-console .ch-panel { min-width:0; }
   .ch-dashboard-workspace .ch-visual-console .ch-kpi-value { overflow-wrap:anywhere; }
 }
+
+/* Responsive KPI strip: seven figures fill their row on Fold inner and cover
+   displays. Flex growth prevents the final paid-order tile from leaving a
+   half-empty dashboard row; comparison and value remain legible. */
+.ch-dashboard-workspace .ch-visual-console .ch-visual-comparisons .ch-kpi-grid {
+  display:flex;
+  flex-wrap:wrap;
+  gap:clamp(.3rem,.65vw,.65rem);
+}
+.ch-dashboard-workspace .ch-visual-console .ch-visual-comparisons .ch-kpi-grid > .ch-kpi {
+  flex:1 1 138px;
+  min-width:0;
+}
+.ch-dashboard-workspace .ch-visual-console .ch-visual-comparisons .ch-kpi-value {
+  font-size:clamp(.9rem,1.65vw,1.35rem);
+  line-height:1.25;
+  overflow-wrap:anywhere;
+  font-variant-numeric:tabular-nums;
+}
+.ch-dashboard-workspace .ch-visual-console .ch-visual-comparisons .ch-kpi-label {
+  font-size:clamp(.69rem,1.05vw,.8rem);
+  line-height:1.4;
+}
+@media(max-width:699px) {
+  .ch-dashboard-workspace .ch-visual-console .ch-visual-comparisons .ch-kpi-grid > .ch-kpi {
+    flex-basis:calc(50% - .3rem);
+  }
+}
+@media(min-width:700px) and (max-width:1199px) {
+  .ch-dashboard-workspace .ch-visual-console .ch-visual-comparisons .ch-kpi-grid > .ch-kpi {
+    flex-basis:clamp(125px,20%,180px);
+  }
+  .ch-dashboard-workspace .ch-business-action strong {font-size:clamp(.75rem,1.3vw,.86rem);}
+  .ch-dashboard-workspace .ch-business-action small {font-size:clamp(.69rem,1.15vw,.76rem);}
+  .ch-dashboard-workspace .ch-business-chart-head {font-size:.75rem;}
+}

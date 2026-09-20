@@ -301,6 +301,7 @@ export default function DashboardWorkspace({ widgets }: { widgets: WidgetDefinit
         if (!definition || !item.visible) return null;
         return <section
           key={item.id}
+          data-widget-id={item.id}
           className={`${styles.widget} ${draggingId === item.id ? styles.dragging : ''}`}
           style={{ gridColumn: `span ${breakpoint === 'mobile' ? 12 : item.colSpan}`, minHeight: editing ? item.minHeight : undefined }}
           draggable={editing}
