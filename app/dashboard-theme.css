@@ -777,3 +777,33 @@
  .ch-dashboard-workspace .ch-business-pulse .ch-business-brief strong {font-size:1rem;}
 }
 @media(prefers-reduced-motion:reduce){.ch-dashboard-workspace .ch-command-led{box-shadow:none;}}
+
+/* First-screen radar in a ~320px Z Fold tablet column: prevent three
+   internal columns from squeezing labels and counts into overlapping text. */
+.ch-dashboard-workspace .ch-security-pulse-compact .ch-security-layout {
+  grid-template-columns: minmax(84px, 105px) minmax(0, 1fr);
+  gap: .6rem;
+  align-items: center;
+}
+.ch-dashboard-workspace .ch-security-pulse-compact .ch-security-summary {
+  min-width: 0;
+}
+.ch-dashboard-workspace .ch-security-pulse-compact .ch-security-summary .ch-visual-metrics {
+  grid-template-columns: minmax(0, 1fr);
+  gap: .35rem;
+}
+.ch-dashboard-workspace .ch-security-pulse-compact .ch-security-summary .ch-visual-metric > span {
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+  font-size: .73rem;
+  line-height: 1.3;
+}
+.ch-dashboard-workspace .ch-security-pulse-compact .ch-security-stores {
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (max-width: 420px) {
+  .ch-dashboard-workspace .ch-security-pulse-compact .ch-security-stores {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
