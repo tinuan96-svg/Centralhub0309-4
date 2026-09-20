@@ -96,6 +96,8 @@ public final class CentralHubActivity extends MainActivity {
     private int oldAudioMode = AudioManager.MODE_NORMAL;
     private int oldMusicVolume = -1;
     private boolean communicationProfile;
+    private volatile boolean realtimeVoiceActive;
+    private volatile boolean realtimeVoiceStarting;
 
     @Override
     public void onCreate(Bundle state) {
@@ -176,8 +178,32 @@ public final class CentralHubActivity extends MainActivity {
         if (!speaking) restoreCommunicationProfile();
     }
 
+    @Override
+    public boolean startShruthiRealtime(String accessToken,String supabaseUrl,String publishableKey) {
+        realtimeVoiceStarting=true;
+        realtimeVoiceActive=true;
+        runOnUiThread(this::stopContinuousPipeline);
+        boolean started;
+        try{started=super.startShruthiRealtime(accessToken,supabaseUrl,publishableKey);}
+        finally{realtimeVoiceStarting=false;}
+        realtimeVoiceActive=started;
+        if(!started)runOnUiThread(this::startContinuousPipeline);
+        return started;
+    }
+
+    @Override
+    public void stopShruthiRealtime() {
+        super.stopShruthiRealtime();
+        if(!realtimeVoiceStarting){
+            realtimeVoiceActive=false;
+            if(continuousEnabled&&continuousResumed)runOnUiThread(this::startContinuousPipeline);
+        }
+    }
+
     private void startContinuousPipeline() {
-        if (legacyMode || !continuousEnabled || !continuousResumed) return;
+        // A second SpeechRecognizer/AudioRecord competes with the Realtime stream
+        // and can transcribe Shruthi's own output instead of the user's speech.
+        if (legacyMode || !continuousEnabled || !continuousResumed || realtimeVoiceActive || realtimeVoiceStarting) return;
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
         if (audioRecord == null) startAudioRecord();
         if (audioRecord != null && !recognizerListening) startRecognizerSession();

@@ -46,7 +46,7 @@ final class ShruthiRealtimeVoiceClient {
         void onError(String message);
     }
     private static final AtomicReference<ShruthiRealtimeVoiceClient> ACTIVE=new AtomicReference<>();
-    private static final long SPEAKER_TAIL_GUARD_MS=1400L, MANUAL_INTERRUPT_GUARD_MS=250L;
+    private static final long SPEAKER_TAIL_GUARD_MS=320L, MANUAL_INTERRUPT_GUARD_MS=250L, BARGE_IN_CONFIRM_MS=160L;
     private static final int MAX_EVENT_IDS=512;
     private static final class PlaybackItem {
         final byte[] pcm; final String responseId; final boolean end;
@@ -76,6 +76,8 @@ final class ShruthiRealtimeVoiceClient {
     private volatile boolean explicitlyClosed=false;
     private volatile int reconnectAttempt=0,previousAudioMode=AudioManager.MODE_NORMAL;
     private volatile long suppressMicUntilMs=0L;
+    private volatile double playbackRms=0d;
+    private volatile boolean echoCancellationReady=false, responseGenerating=false;
     private volatile String activeResponseId="",audioEventType="",transcriptEventType="";
 
     ShruthiRealtimeVoiceClient(Context c,String token,String url,String key,Listener l){
@@ -89,10 +91,10 @@ final class ShruthiRealtimeVoiceClient {
     void connect(){
         ShruthiRealtimeVoiceClient previous=ACTIVE.getAndSet(this); if(previous!=null&&previous!=this)previous.disconnect();
         if(running.getAndSet(true))return;
-        explicitlyClosed=false;reconnectAttempt=0;reconnectScheduled.set(false);assistantAudioActive.set(false);captureEnabled.set(true);suppressMicUntilMs=0;resetResponseState();state("connecting");io.execute(this::openSession);
+        explicitlyClosed=false;reconnectAttempt=0;reconnectScheduled.set(false);assistantAudioActive.set(false);captureEnabled.set(true);suppressMicUntilMs=0;playbackRms=0;echoCancellationReady=false;responseGenerating=false;resetResponseState();state("connecting");io.execute(this::openSession);
     }
     void disconnect(){
-        explicitlyClosed=true;running.set(false);reconnectScheduled.set(false);generation.incrementAndGet();resetResponseState();assistantAudioActive.set(false);captureEnabled.set(false);suppressMicUntilMs=0;playbackQueue.clear();cleanupAudio();
+        explicitlyClosed=true;running.set(false);reconnectScheduled.set(false);generation.incrementAndGet();resetResponseState();assistantAudioActive.set(false);captureEnabled.set(false);suppressMicUntilMs=0;playbackRms=0;playbackQueue.clear();cleanupAudio();
         WebSocket s=socket;socket=null;if(s!=null)s.close(1000,"Shruthi voice closed");ACTIVE.compareAndSet(this,null);state("idle");
     }
     void interrupt(){
@@ -150,7 +152,8 @@ final class ShruthiRealtimeVoiceClient {
                     case "response.output_audio_transcript.done":case "response.audio_transcript.done":handleAssistantTranscript(t,e);break;
                     case "response.done":
                         String id=e.optJSONObject("response")==null?"":e.optJSONObject("response").optString("id");
-                        synchronized(blockedResponses){if(!id.isEmpty()&&blockedResponses.remove(id))return;}
+                        synchronized(blockedResponses){responseGenerating=false;
+                         if(!id.isEmpty()&&blockedResponses.contains(id))return;}
                         if(!activeResponseId.isEmpty()&&!id.isEmpty()&&!id.equals(activeResponseId))return;
                         playbackQueue.offer(PlaybackItem.end(id.isEmpty()?activeResponseId:id));break;
                     case "error":JSONObject er=e.optJSONObject("error");listener.onError(er==null?"Shruthi Realtime reported an error.":er.optString("message","Shruthi Realtime reported an error."));break;
@@ -165,7 +168,10 @@ final class ShruthiRealtimeVoiceClient {
         if(activeResponseId.isEmpty()&&!id.isEmpty())activeResponseId=id;else if(!activeResponseId.isEmpty()&&!id.isEmpty()&&!id.equals(activeResponseId)){synchronized(blockedResponses){blockedResponses.add(id);}return;}
         if(audioEventType.isEmpty())audioEventType=type;else if(!audioEventType.equals(type))return;
         String delta=e.optString("delta");if(delta.isEmpty())return;byte[] pcm;try{pcm=Base64.decode(delta,Base64.DEFAULT);}catch(Exception ex){return;}
-        if(assistantAudioActive.compareAndSet(false,true))hardPauseMicrophone(true);state("speaking");playbackQueue.offer(PlaybackItem.audio(pcm));
+        responseGenerating=true;
+        // Keep AudioRecord running: AEC removes speaker playback, while near-end gating
+        // prevents speaker leakage from reaching the model until a real interruption.
+        assistantAudioActive.set(true);state("speaking");playbackQueue.offer(PlaybackItem.audio(pcm));
     }
     private void handleAssistantTranscript(String type,JSONObject e){
         String id=e.optString("response_id");synchronized(blockedResponses){if(!id.isEmpty()&&blockedResponses.contains(id))return;}
@@ -176,23 +182,88 @@ final class ShruthiRealtimeVoiceClient {
     private void startAudio(int current){
         ensureMicPermission();int rate=24000,inputMin=AudioRecord.getMinBufferSize(rate,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT),outputMin=AudioTrack.getMinBufferSize(rate,AudioFormat.CHANNEL_OUT_MONO,AudioFormat.ENCODING_PCM_16BIT);
         if(inputMin<=0||outputMin<=0)throw new IllegalStateException("24 kHz voice audio is not supported on this device");
-        previousAudioMode=audioManager==null?AudioManager.MODE_NORMAL:audioManager.getMode();if(audioManager!=null)try{audioManager.setMode(AudioManager.MODE_NORMAL);}catch(Exception ignored){}
+        previousAudioMode=audioManager==null?AudioManager.MODE_NORMAL:audioManager.getMode();if(audioManager!=null)try{audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);}catch(Exception ignored){}
         AudioRecord r=createRecorder(rate,inputMin);recorder=r;
-        if(AcousticEchoCanceler.isAvailable())try{echoCanceler=AcousticEchoCanceler.create(r.getAudioSessionId());if(echoCanceler!=null)echoCanceler.setEnabled(true);}catch(Exception ignored){}
+        if(AcousticEchoCanceler.isAvailable())try{echoCanceler=AcousticEchoCanceler.create(r.getAudioSessionId());if(echoCanceler!=null){echoCanceler.setEnabled(true);echoCancellationReady=echoCanceler.getEnabled();}}catch(Exception ignored){}
         if(NoiseSuppressor.isAvailable())try{noiseSuppressor=NoiseSuppressor.create(r.getAudioSessionId());if(noiseSuppressor!=null)noiseSuppressor.setEnabled(true);}catch(Exception ignored){}
-        AudioTrack p=new AudioTrack.Builder().setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()).setAudioFormat(new AudioFormat.Builder().setSampleRate(rate).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build()).setTransferMode(AudioTrack.MODE_STREAM).setBufferSizeInBytes(Math.max(outputMin*2,8192)).build();
+        AudioTrack p=new AudioTrack.Builder().setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()).setAudioFormat(new AudioFormat.Builder().setSampleRate(rate).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build()).setTransferMode(AudioTrack.MODE_STREAM).setBufferSizeInBytes(Math.max(outputMin*2,8192)).build();
         if(p.getState()!=AudioTrack.STATE_INITIALIZED){p.release();cleanupAudio();throw new IllegalStateException("Unable to initialize voice playback");}player=p;p.play();r.startRecording();
-        captureThread=new Thread(()->{byte[] b=new byte[2400];while(isCurrent(current)&&!Thread.currentThread().isInterrupted()){if(!captureEnabled.get()||micSuppressed()){sleep(20);continue;}AudioRecord a=recorder;if(a==null)break;if(a.getRecordingState()!=AudioRecord.RECORDSTATE_RECORDING){sleep(20);continue;}int n=a.read(b,0,b.length);if(n>0&&captureEnabled.get()&&!micSuppressed()){String audio=Base64.encodeToString(b,0,n,Base64.NO_WRAP);WebSocket s=socket;if(s!=null)s.send("{\"type\":\"input_audio_buffer.append\",\"audio\":\""+audio+"\"}");}}},"shruthi-realtime-capture");captureThread.setDaemon(true);captureThread.start();
-        playbackThread=new Thread(()->{while(isCurrent(current)&&!Thread.currentThread().isInterrupted()){try{PlaybackItem item=playbackQueue.poll(150,TimeUnit.MILLISECONDS);if(item==null)continue;if(!item.end){AudioTrack a=player;if(a==null)break;a.write(item.pcm,0,item.pcm.length,AudioTrack.WRITE_BLOCKING);}else finishPlaybackAfterDrain(current,item.responseId);}catch(InterruptedException x){Thread.currentThread().interrupt();break;}}},"shruthi-realtime-playback");playbackThread.setDaemon(true);playbackThread.start();
+        captureThread=new Thread(()->{
+            byte[] b=new byte[2400]; // 50 ms of 24 kHz mono PCM16
+            java.util.ArrayDeque<byte[]> recentFrames=new java.util.ArrayDeque<>();
+            long nearEndMs=0L;
+            double ambientRms=0.009d;
+            while(isCurrent(current)&&!Thread.currentThread().isInterrupted()){
+                if(!captureEnabled.get()||SystemClock.elapsedRealtime()<suppressMicUntilMs){sleep(20);continue;}
+                AudioRecord a=recorder;if(a==null)break;
+                if(a.getRecordingState()!=AudioRecord.RECORDSTATE_RECORDING){sleep(20);continue;}
+                int n=a.read(b,0,b.length);
+                if(n<=0||!captureEnabled.get()||SystemClock.elapsedRealtime()<suppressMicUntilMs)continue;
+                double level=pcmRms(b,n);
+                if(assistantAudioActive.get()){
+                    // Never forward unverified speaker leakage to server VAD. The on-device
+                    // communication-mode AEC must be active for automatic barge-in.
+                    // Keep 200 ms of pre-roll so the beginning of a user correction survives.
+                    recentFrames.addLast(java.util.Arrays.copyOf(b,n));
+                    while(recentFrames.size()>4)recentFrames.removeFirst();
+                    boolean nearEnd=echoCancellationReady
+                        && level>Math.max(0.017d,playbackRms*0.30d)
+                        && level>ambientRms*2.4d;
+                    nearEndMs=nearEnd?nearEndMs+(n*1000L/48000L):0L;
+                    if(nearEndMs<BARGE_IN_CONFIRM_MS)continue;
+                    interruptForBargeIn();
+                    for(byte[] frame:recentFrames)sendAudio(frame,frame.length);
+                    recentFrames.clear();nearEndMs=0L;
+                    continue;
+                }
+                recentFrames.clear();nearEndMs=0L;
+                // Update ambient noise only with quiet frames, not the user's voice.
+                ambientRms=ambientRms*0.98d+Math.min(level,0.015d)*0.02d;
+                sendAudio(b,n);
+            }
+        },"shruthi-realtime-capture");captureThread.setDaemon(true);captureThread.start();
+        playbackThread=new Thread(()->{while(isCurrent(current)&&!Thread.currentThread().isInterrupted()){try{PlaybackItem item=playbackQueue.poll(150,TimeUnit.MILLISECONDS);if(item==null)continue;if(!item.end){AudioTrack a=player;if(a==null)break;playbackRms=pcmRms(item.pcm,item.pcm.length);a.write(item.pcm,0,item.pcm.length,AudioTrack.WRITE_BLOCKING);}else finishPlaybackAfterDrain(current,item.responseId);}catch(InterruptedException x){Thread.currentThread().interrupt();break;}}},"shruthi-realtime-playback");playbackThread.setDaemon(true);playbackThread.start();
     }
-    private void finishPlaybackAfterDrain(int current,String id){suppressMicUntilMs=SystemClock.elapsedRealtime()+SPEAKER_TAIL_GUARD_MS;sleep(SPEAKER_TAIL_GUARD_MS);if(!isCurrent(current))return;if(id==null||activeResponseId.isEmpty()||id.equals(activeResponseId)){activeResponseId="";audioEventType="";transcriptEventType="";}assistantAudioActive.set(false);resumeMicrophoneAfterPlayback();state("listening");}
+    private void finishPlaybackAfterDrain(int current,String id){
+        // Tail guard preserves AEC's reference for residual output without stopping capture.
+        sleep(SPEAKER_TAIL_GUARD_MS);
+        if(!isCurrent(current)||!assistantAudioActive.get())return;
+        if(id!=null&&!id.isEmpty()&&!id.equals(activeResponseId))return;
+        activeResponseId="";audioEventType="";transcriptEventType="";
+        playbackRms=0d;assistantAudioActive.set(false);state("listening");
+    }
+    private void sendAudio(byte[] pcm,int n){
+        WebSocket s=socket;
+        if(s!=null&&n>0)s.send("{\"type\":\"input_audio_buffer.append\",\"audio\":\""+Base64.encodeToString(pcm,0,n,Base64.NO_WRAP)+"\"}");
+    }
+    private static double pcmRms(byte[] pcm,int n){
+        if(pcm==null||n<2)return 0d;
+        double sum=0d;int count=n/2;
+        for(int i=0;i+1<n;i+=2){int sample=(short)(((pcm[i+1]&255)<<8)|(pcm[i]&255));sum+=(double)sample*sample;}
+        return Math.sqrt(sum/count)/32768d;
+    }
+    private void interruptForBargeIn(){
+        if(!assistantAudioActive.compareAndSet(true,false))return;
+        String interruptedId=activeResponseId;
+        synchronized(blockedResponses){
+            if(!interruptedId.isEmpty())blockedResponses.add(interruptedId);
+            while(blockedResponses.size()>128)blockedResponses.remove(blockedResponses.iterator().next());
+        }
+        activeResponseId="";audioEventType="";transcriptEventType="";
+        playbackQueue.clear();playbackRms=0d;
+        try{AudioTrack a=player;if(a!=null){a.pause();a.flush();a.play();}}catch(Exception ignored){}
+        WebSocket s=socket;
+        if(s!=null&&responseGenerating)s.send("{\"type\":\"response.cancel\"}");
+        responseGenerating=false;
+        state("listening");
+    }
     private void hardPauseMicrophone(boolean clear){captureEnabled.set(false);try{if(recorder!=null&&recorder.getRecordingState()==AudioRecord.RECORDSTATE_RECORDING)recorder.stop();}catch(Exception ignored){}if(clear){WebSocket s=socket;if(s!=null)s.send("{\"type\":\"input_audio_buffer.clear\"}");}}
     private void resumeMicrophoneAfterPlayback(){if(!running.get()||explicitlyClosed)return;AudioRecord a=recorder;if(a==null)return;try{if(a.getRecordingState()!=AudioRecord.RECORDSTATE_RECORDING)a.startRecording();}catch(Exception e){failOrReconnect(message(e,"Unable to resume microphone audio"));return;}WebSocket s=socket;if(s!=null)s.send("{\"type\":\"input_audio_buffer.clear\"}");suppressMicUntilMs=0;captureEnabled.set(true);}
-    private AudioRecord createRecorder(int rate,int min){AudioRecord r=new AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION,rate,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,Math.max(min*2,4096));if(r.getState()==AudioRecord.STATE_INITIALIZED)return r;r.release();AudioRecord f=new AudioRecord(MediaRecorder.AudioSource.MIC,rate,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,Math.max(min*2,4096));if(f.getState()!=AudioRecord.STATE_INITIALIZED){f.release();throw new IllegalStateException("Unable to initialize microphone audio");}return f;}
+    private AudioRecord createRecorder(int rate,int min){AudioRecord r=new AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION,rate,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,Math.max(min*2,4096));if(r.getState()==AudioRecord.STATE_INITIALIZED)return r;r.release();AudioRecord f=new AudioRecord(MediaRecorder.AudioSource.MIC,rate,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,Math.max(min*2,4096));if(f.getState()!=AudioRecord.STATE_INITIALIZED){f.release();throw new IllegalStateException("Unable to initialize microphone audio");}return f;}
     private boolean micSuppressed(){return assistantAudioActive.get()||!captureEnabled.get()||SystemClock.elapsedRealtime()<suppressMicUntilMs;}
     private boolean rememberEvent(String id){if(id==null||id.isEmpty())return true;synchronized(seenEvents){if(!seenEvents.add(id))return false;if(seenEvents.size()>MAX_EVENT_IDS)seenEvents.remove(seenEvents.iterator().next());}return true;}
     private void resetResponseState(){activeResponseId="";audioEventType="";transcriptEventType="";synchronized(blockedResponses){blockedResponses.clear();}synchronized(seenEvents){seenEvents.clear();}}
-    private void cleanupAudio(){Thread c=captureThread;captureThread=null;if(c!=null)c.interrupt();Thread p=playbackThread;playbackThread=null;if(p!=null)p.interrupt();playbackQueue.clear();try{if(echoCanceler!=null)echoCanceler.release();}catch(Exception ignored){}echoCanceler=null;try{if(noiseSuppressor!=null)noiseSuppressor.release();}catch(Exception ignored){}noiseSuppressor=null;try{if(recorder!=null)recorder.stop();}catch(Exception ignored){}try{if(recorder!=null)recorder.release();}catch(Exception ignored){}recorder=null;try{if(player!=null)player.pause();}catch(Exception ignored){}try{if(player!=null)player.flush();}catch(Exception ignored){}try{if(player!=null)player.release();}catch(Exception ignored){}player=null;if(audioManager!=null)try{audioManager.setMode(previousAudioMode);}catch(Exception ignored){}}
+    private void cleanupAudio(){Thread c=captureThread;captureThread=null;if(c!=null)c.interrupt();Thread p=playbackThread;playbackThread=null;if(p!=null)p.interrupt();playbackQueue.clear();try{if(echoCanceler!=null)echoCanceler.release();}catch(Exception ignored){}echoCanceler=null;echoCancellationReady=false;try{if(noiseSuppressor!=null)noiseSuppressor.release();}catch(Exception ignored){}noiseSuppressor=null;try{if(recorder!=null)recorder.stop();}catch(Exception ignored){}try{if(recorder!=null)recorder.release();}catch(Exception ignored){}recorder=null;try{if(player!=null)player.pause();}catch(Exception ignored){}try{if(player!=null)player.flush();}catch(Exception ignored){}try{if(player!=null)player.release();}catch(Exception ignored){}player=null;if(audioManager!=null)try{audioManager.setMode(previousAudioMode);}catch(Exception ignored){}}
     private void failOrReconnect(String msg){if(explicitlyClosed||!running.get()||!reconnectScheduled.compareAndSet(false,true))return;generation.incrementAndGet();resetResponseState();assistantAudioActive.set(false);captureEnabled.set(false);cleanupAudio();WebSocket failed=socket;socket=null;if(failed!=null)failed.cancel();reconnectAttempt++;if(reconnectAttempt>4){running.set(false);reconnectScheduled.set(false);ACTIVE.compareAndSet(this,null);state("error");listener.onError(msg+". Tap the microphone to reconnect.");return;}state("reconnecting");long delay=Math.min(2800L,350L<<(reconnectAttempt-1));scheduler.schedule(()->{reconnectScheduled.set(false);captureEnabled.set(true);if(running.get()&&!explicitlyClosed)openSession();},delay,TimeUnit.MILLISECONDS);}
     private void state(String v){try{listener.onState(v);}catch(Exception ignored){}}
     private static void sleep(long ms){try{Thread.sleep(ms);}catch(InterruptedException e){Thread.currentThread().interrupt();}}
