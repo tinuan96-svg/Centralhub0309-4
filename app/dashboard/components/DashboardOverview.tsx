@@ -14,6 +14,7 @@ import { ChannelVisualsProvider } from './ChannelVisuals';
 import { getOperationsMonitorWidgets, OperationsMonitorProvider } from './OperationsMonitor';
 import DashboardFilterBar from './DashboardFilterBar';
 import DashboardKpiGrid from './DashboardKpiGrid';
+import BusinessPulse from './BusinessPulse';
 import ActionRequired from './ActionRequired';
 import AIInsights from './AIInsights';
 import AuditLogWidget from './AuditLogWidget';
@@ -31,6 +32,7 @@ type DashboardWidget = {
 };
 
 const EXECUTIVE_WIDGET_IDS = new Set([
+  'growth-pulse',
   'kpi-indexes',
   'security-pulse',
   'operations-command-centre',
@@ -136,6 +138,7 @@ export default function DashboardOverview({ refreshKey, appearance = 'dark', con
   };
 
   const dashboardWidgets: DashboardWidget[] = report ? [
+    { id: 'growth-pulse', title: 'Business pulse & growth signals', description: 'Measured paid-order rhythm and grounded business actions', desktop: 12, tablet: 12, mobile: 12, minHeight: 350, content: <BusinessPulse report={report} connection={connection} refreshError={!!error} selectedStoreId={selectedStoreId} /> },
     ...getOperationsMonitorWidgets(),
     ...getReferenceDashboardWidgets({ report, selectedStoreId, timeRange }),
     { id: 'security-pulse', title: 'Security pulse', description: 'Realtime security and site-risk monitoring', desktop: 4, tablet: 6, mobile: 12, minHeight: 250, content: <SecurityPulse selectedStoreId={selectedStoreId} compact /> },
@@ -146,7 +149,8 @@ export default function DashboardOverview({ refreshKey, appearance = 'dark', con
     { id: 'audit-log', title: 'Audit log', description: 'Recent CentralHub system activity', desktop: 12, tablet: 12, mobile: 12, minHeight: 240, content: <AuditLogWidget key={report.loadedAt.toISOString()} /> },
   ] : [];
 
-  const executiveWidgets = dashboardWidgets.filter(widget => EXECUTIVE_WIDGET_IDS.has(widget.id));
+  const executiveOrder = ['growth-pulse', 'kpi-indexes', 'security-pulse', 'operations-command-centre', 'live-commerce', 'sync-mesh', 'inventory-radar', 'action-required', 'ai-insights'];
+  const executiveWidgets = dashboardWidgets.filter(widget => EXECUTIVE_WIDGET_IDS.has(widget.id)).sort((a, b) => executiveOrder.indexOf(a.id) - executiveOrder.indexOf(b.id));
   const detailWidgets = dashboardWidgets.filter(widget => !EXECUTIVE_WIDGET_IDS.has(widget.id));
   const financeWidgets = detailWidgets.filter(widget => FINANCE_WIDGET_IDS.has(widget.id));
   const growthWidgets = detailWidgets.filter(widget => GROWTH_WIDGET_IDS.has(widget.id));

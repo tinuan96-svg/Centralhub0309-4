@@ -601,3 +601,51 @@
   .ch-rich-console .ch-model-financial-band > .ch-model-ring { grid-column:span 2; }
   .ch-rich-console .ch-model-ring svg { width:70px; }
 }
+
+/* CentralHub measured pulse: only the sweep animates, never the plotted business values. */
+.ch-business-pulse { overflow:hidden; position:relative; color:var(--model-text,#e2e8f0); background:linear-gradient(125deg,rgba(8,30,53,.96),rgba(7,17,35,.95) 55%,rgba(25,15,43,.94)); border:1px solid rgba(34,211,238,.21); box-shadow:inset 0 1px 0 rgba(165,243,252,.13),0 16px 35px rgba(0,0,0,.16); }
+.ch-business-pulse::before { content:"";position:absolute;pointer-events:none;inset:0;background:radial-gradient(circle at 82% 0%,rgba(34,211,238,.1),transparent 35%); }
+.ch-business-pulse-head,.ch-business-chart-head,.ch-business-decisions-title { display:flex;align-items:flex-start;justify-content:space-between;gap:.8rem; }
+.ch-business-pulse-head { position:relative;align-items:center;flex-wrap:wrap;margin-bottom:1rem; }
+.ch-business-eyebrow { display:flex;align-items:center;gap:.5rem;color:#67e8f9;font-size:.67rem;font-weight:750;letter-spacing:.16em; }
+.ch-business-pulse h2 { margin:.35rem 0;font-size:clamp(1.16rem,2.2vw,1.75rem);font-weight:750;letter-spacing:-.035em;color:#f1f5f9;line-height:1.25; }
+.ch-business-secondary { font-size:.72rem;color:#b4c5d6;line-height:1.5; }
+.ch-business-source { min-width:190px;display:grid;grid-template-columns:8px auto;align-items:center;gap:.35rem .5rem;border:1px solid rgba(148,163,184,.23);border-radius:1rem;padding:.55rem .7rem;font-size:.68rem;color:#cbd5e1;background:rgba(15,23,42,.66); }
+.ch-business-source small { grid-column:2;color:#94a3b8;font-size:.62rem; }
+.ch-business-source-dot { width:8px;height:8px;border-radius:50%;background:#f59e0b; }
+.ch-business-source[data-live="true"] .ch-business-source-dot { background:#34d399;box-shadow:0 0 10px #34d39999; }
+.ch-business-grid { position:relative;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:1rem; }
+.ch-business-chart,.ch-business-decisions { min-width:0;background:rgba(2,12,29,.48);border:1px solid rgba(148,163,184,.16);border-radius:1rem;padding:clamp(.65rem,1.5vw,1rem); }
+.ch-business-chart-head { align-items:center;font-size:.68rem;color:#b9c9df;flex-wrap:wrap; }
+.ch-business-chart-head span:first-child { display:flex;gap:.4rem;align-items:center;font-weight:700;color:#e0f2fe; }
+.ch-business-wave { height:clamp(90px,12vw,135px);position:relative;overflow:hidden;isolation:isolate;margin:.5rem 0;border-radius:.5rem;background:repeating-linear-gradient(90deg,transparent 0,transparent calc(12.5% - 1px),rgba(148,163,184,.075) 12.5%); }
+.ch-business-wave svg { width:100%;height:100%;display:block;color:#94a3b8; }
+.ch-business-sweep { position:absolute;inset:0 auto 0 0;width:14%;opacity:0;pointer-events:none;background:linear-gradient(90deg,transparent,rgba(34,211,238,.08),rgba(165,243,252,.26),transparent); }
+.ch-business-wave[data-active="true"] .ch-business-sweep { opacity:1;animation:ch-business-scan 5s linear infinite; }
+@keyframes ch-business-scan { from { transform:translateX(-120%); } to { transform:translateX(840%); } }
+.ch-business-chart-foot { display:flex;flex-wrap:wrap;justify-content:space-between;gap:.35rem;font-size:.59rem;color:#95a9c0; }
+.ch-business-brief { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5rem;margin-top:.8rem; }
+.ch-business-brief>div { min-width:0;border-top:1px solid rgba(148,163,184,.18);padding-top:.5rem; }
+.ch-business-brief span,.ch-business-brief strong { display:block;overflow-wrap:anywhere; }
+.ch-business-brief span { color:#b0c1d5;font-size:.61rem; }
+.ch-business-brief strong { color:#f0f9ff;font-size:clamp(.85rem,1.5vw,1.18rem);margin-top:.2rem;font-variant-numeric:tabular-nums; }
+.ch-business-decisions-title { align-items:center;justify-content:flex-start;color:#a5f3fc;font-size:.76rem;margin-bottom:.65rem;flex-wrap:wrap; }
+.ch-business-decisions-title small { font-size:.6rem;color:#94a3b8;margin-left:auto; }
+.ch-business-action { display:flex;align-items:flex-start;gap:.55rem;border:1px solid rgba(148,163,184,.18);padding:.64rem;border-radius:.7rem;background:rgba(15,23,42,.7);margin:.43rem 0;color:#dbeafe;transition:background .16s,border-color .16s; }
+.ch-business-action:hover { border-color:rgba(34,211,238,.55);background:rgba(8,47,73,.5); }
+.ch-business-action>svg:first-child { flex-shrink:0;color:#67e8f9;margin-top:2px; }
+.ch-business-action>svg:last-child { flex-shrink:0;margin-left:auto;color:#7dd3fc; }
+.ch-business-action span { min-width:0;display:grid;gap:.2rem; }
+.ch-business-action strong { color:#f0f9ff;font-size:.72rem;font-weight:650;overflow-wrap:anywhere; }
+.ch-business-action small,.ch-business-note { color:#b3c6da;font-size:.64rem;line-height:1.45; }
+.ch-business-note { display:flex;gap:.4rem;align-items:flex-start;margin-top:.7rem; }
+.ch-business-note svg { flex-shrink:0; }
+.ch-live-console .ch-radar[data-active="false"] .ch-radar-sweep { animation-play-state:paused;opacity:.08; }
+.ch-model-shell[data-appearance="light"] .ch-business-pulse { background:linear-gradient(130deg,#eaf6ff,#f6f7ff);border-color:#8bb8ce; }
+.ch-model-shell[data-appearance="light"] .ch-business-pulse :is(h2,.ch-business-action strong,.ch-business-chart-head span:first-child,.ch-business-brief strong) { color:#172a43; }
+.ch-model-shell[data-appearance="light"] .ch-business-pulse :is(.ch-business-secondary,.ch-business-chart-head,.ch-business-chart-foot,.ch-business-brief span,.ch-business-note,.ch-business-action small) { color:#475569; }
+.ch-model-shell[data-appearance="light"] .ch-business-pulse :is(.ch-business-chart,.ch-business-decisions,.ch-business-action,.ch-business-source) { background:rgba(255,255,255,.76);border-color:#b8cadc;color:#334155; }
+.ch-model-shell[data-appearance="light"] .ch-business-pulse .ch-business-eyebrow { color:#0369a1; }
+@media (max-width:850px) { .ch-business-grid { grid-template-columns:minmax(0,1fr); } }
+@media (max-width:420px) { .ch-business-brief { grid-template-columns:repeat(2,minmax(0,1fr)); } .ch-business-chart-head { align-items:flex-start; } }
+@media (prefers-reduced-motion:reduce) { .ch-business-wave .ch-business-sweep { animation:none!important;opacity:0!important; } }

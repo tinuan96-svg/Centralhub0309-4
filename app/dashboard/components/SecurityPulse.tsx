@@ -87,25 +87,25 @@ export default function SecurityPulse({ selectedStoreId = 'all', compact = false
       const status = stale ? 'unknown' : heartbeat.status;
       const open = events.filter(event => event.store_id === store.id);
       const penalty = open.reduce((total, event) => total + severityWeight[event.severity], 0);
-      const score = Math.max(0, Math.min(100, (heartbeat?.security_score ?? 0) - penalty));
+      const score = stale || heartbeat?.security_score == null || error ? null : Math.max(0, Math.min(100, heartbeat.security_score - penalty));
       return { store, heartbeat, status, open, score };
     });
-    const score = rows.length ? Math.round(rows.reduce((sum, row) => sum + row.score, 0) / rows.length) : 0;
-    return { rows, score, active: rows.reduce((sum, row) => sum + row.open.length, 0), protected: rows.filter(row => row.status === 'online').length };
-  }, [events, heartbeats, now, visibleStores]);
+    const score = rows.length && rows.every(row => row.score !== null) ? Math.round(rows.reduce((sum, row) => sum + (row.score ?? 0), 0) / rows.length) : null;
+    return { rows, score, active: rows.reduce((sum, row) => sum + row.open.length, 0), observedOnline: rows.filter(row => row.status === 'online').length };
+  }, [events, heartbeats, now, visibleStores, error]);
 
-  const overall = summary.rows.some(row => row.status === 'offline' || row.open.some(event => event.severity === 'critical')) ? 'offline' : summary.rows.some(row => row.status !== 'online' || row.open.some(event => ['high', 'medium'].includes(event.severity))) ? 'degraded' : summary.rows.length ? 'online' : 'unknown';
+  const overall = error ? 'unknown' : summary.rows.some(row => row.status === 'offline' || row.open.some(event => event.severity === 'critical')) ? 'offline' : summary.rows.some(row => row.status !== 'online' || row.open.some(event => ['high', 'medium'].includes(event.severity))) ? 'degraded' : summary.rows.length ? 'online' : 'unknown';
   const noUsableRows = !initialLoading && stores.length === 0 && heartbeats.length === 0;
   const liveClass = connection === 'live' ? 'live' : connection === 'offline' ? 'offline' : 'connecting';
 
   return <section className={`ch-panel ch-security-pulse ${compact ? 'ch-security-pulse-compact' : ''}`} aria-label="Live security pulse">
-    <div className="ch-panel-heading"><div><h2 className="ch-panel-title flex items-center gap-2"><Radar size={18} /> Security Pulse</h2><p className="ch-muted">24×7 independent availability, TLS and browser-security checks</p></div><span className={`ch-live-state ch-live-${liveClass}`}><span />{connection}</span></div>
+    <div className="ch-panel-heading"><div><h2 className="ch-panel-title flex items-center gap-2"><Radar size={18} /> Security Radar</h2><p className="ch-muted">Monitored availability, TLS and browser-security checks · not a guarantee of protection</p></div><span className={`ch-live-state ch-live-${liveClass}`}><span />{connection}</span></div>
     {noUsableRows && error ? <div className="ch-metric-state" role="alert"><WifiOff size={24} /><span>Security telemetry unavailable</span></div> : <div className="ch-security-layout">
-      <div className="ch-radar" style={{ '--radar-tone': tone[overall] } as React.CSSProperties} data-status={overall} aria-busy={initialLoading}>
-        <div className="ch-radar-grid" /><div className="ch-radar-sweep" /><div className="ch-radar-core"><strong>{initialLoading && !summary.rows.length ? '…' : summary.score}</strong><span>{initialLoading ? 'loading' : 'security'}</span></div>
+      <div className="ch-radar" style={{ '--radar-tone': tone[overall] } as React.CSSProperties} data-status={overall} data-active={connection === 'live' && !error && summary.score !== null} aria-busy={initialLoading}>
+        <div className="ch-radar-grid" /><div className="ch-radar-sweep" /><div className="ch-radar-core"><strong>{initialLoading && !summary.rows.length ? '…' : summary.score === null ? '—' : summary.score}</strong><span>{initialLoading ? 'loading' : summary.score === null ? 'stale / unknown' : 'observed index'}</span></div>
         {summary.rows.map((row, index) => <i key={row.store.id} style={{ transform: `rotate(${index * (360 / Math.max(summary.rows.length, 1))}deg) translateY(-42%)`, background: tone[row.status] }} title={`${row.store.name}: ${row.status}`} />)}
       </div>
-      <div className="ch-security-summary"><div className="ch-visual-metrics ch-visual-metrics-column"><div className="ch-visual-metric"><span><ShieldCheck size={15} /> Protected now</span><strong>{summary.protected}/{summary.rows.length}</strong></div><div className="ch-visual-metric"><span><ShieldAlert size={15} /> Active signals</span><strong>{summary.active}</strong><small>Open or acknowledged · last 24h</small></div></div></div>
+      <div className="ch-security-summary"><div className="ch-visual-metrics ch-visual-metrics-column"><div className="ch-visual-metric"><span><ShieldCheck size={15} /> Observed online</span><strong>{summary.observedOnline}/{summary.rows.length}</strong></div><div className="ch-visual-metric"><span><ShieldAlert size={15} /> Active signals</span><strong>{summary.active}{events.length >= 100 ? '+' : ''}</strong><small>Open or acknowledged · last 24h{events.length >= 100 ? ' · first 100 events' : ''}</small></div></div></div>
       <div className="ch-security-stores">{summary.rows.length ? summary.rows.map(row => <div key={row.store.id}><span className="ch-status-dot" style={{ background: tone[row.status] }} /><span><b>{row.store.name}</b><small>{row.status} · {row.heartbeat?.latency_ms != null ? `${row.heartbeat.latency_ms}ms` : 'latency —'}</small></span><time><Clock3 size={12} />{age(row.heartbeat?.checked_at)}</time></div>) : <div><span className="ch-status-dot" style={{ background: tone.unknown }} /><span><b>Loading store telemetry</b><small>The radar remains active while the first secured read completes.</small></span></div>}</div>
     </div>}
     {error && !noUsableRows && <div className="ch-note ch-error mt-3" role="status">Live security refresh is delayed; showing the last successful telemetry.</div>}

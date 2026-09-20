@@ -37,7 +37,7 @@ const STORAGE_KEY = 'centralhub-dashboard-layout-v2';
 const LAYOUT_VERSION = 2;
 const SCOPE = 'super_admin';
 const NEW_LIVE_WIDGET_IDS = new Set([
-  'operations-command-centre', 'live-commerce', 'traffic-pulse', 'sync-mesh', 'inventory-radar',
+  'growth-pulse', 'operations-command-centre', 'live-commerce', 'traffic-pulse', 'sync-mesh', 'inventory-radar',
   'fulfilment-control', 'customer-ops-live', 'shipping-control-live', 'site-health-matrix',
   'store-scoreboard-live', 'live-signal-stream',
   'operational-indicators', 'paid-order-total', 'order-gross-profit', 'delivery-completion',
