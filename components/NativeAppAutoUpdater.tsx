@@ -16,6 +16,7 @@ type NativeUpdateBridge = {
   cancelAppUpdateDownload?: (id: number) => boolean;
   canInstallAppUpdatesAutomatically?: () => boolean;
   installAppUpdate?: (id: number) => boolean;
+  getAppUpdateInstallStatus?: () => string;
 };
 type Latest = { versionCode: number; versionName: string; downloadUrl: string };
 const EVENT = 'centralhub:native-update-status';
@@ -36,6 +37,7 @@ export default function NativeAppAutoUpdater() {
   useEffect(() => {
     let closed = false, checking = false, pollTimer: number | null = null, checkTimer: number | null = null;
     let loggedState = '', loggedProgress = -10;
+    let installPoll: number | null = null, installStartedAt = 0, installFailed = false;
     const bridge = getBridge();
     if (bridge?.getAppId?.() !== 'com.centralhub.network' || !bridge.getVersionCode || !bridge.startAppUpdateDownload || !bridge.getAppUpdateDownloadStatus) return;
 
@@ -55,9 +57,42 @@ export default function NativeAppAutoUpdater() {
       window.dispatchEvent(new CustomEvent<NativeUpdateStatus>(EVENT, { detail }));
     };
     const clearPoll = () => { if (pollTimer !== null) window.clearInterval(pollTimer); pollTimer = null; };
+    const clearInstallPoll = () => { if (installPoll !== null) window.clearInterval(installPoll); installPoll = null; };
+    const watchInstall = () => {
+      if (closed || !installingRef.current) return;
+      if (bridge.getAppUpdateInstallStatus) {
+        try {
+          const installation = JSON.parse(bridge.getAppUpdateInstallStatus() || '{}') as {state?:string;message?:string;androidStatus?:number};
+          if (installation.state === 'success') {
+            clearInstallPoll();
+            installingRef.current = false;
+            emit({ state:'installing', progress:100, message:'Android confirmed installation. Reopen CentralHub to verify the installed version.' });
+            return;
+          }
+          if (installation.state === 'failed') {
+            clearInstallPoll();
+            installingRef.current = false;
+            installFailed = true;
+            emit({ state:'failed', progress:100, message:'Android installation failed (code ' + (installation.androidStatus ?? 'unknown') + '): ' + (installation.message || 'No reason reported') + '. Tap Retry or use Direct APK.' });
+            return;
+          }
+          if (installation.state === 'confirmation') {
+            emit({ state:'installing', progress:100, message:'Android is waiting for your installation confirmation.' });
+          }
+        } catch { /* Native status may be temporarily unavailable while Android replaces the app. */ }
+      }
+      if (Date.now() - installStartedAt > 180_000) {
+        clearInstallPoll();
+        installingRef.current = false;
+        installFailed = true;
+        emit({ state:'failed', progress:100, message:'Android has not confirmed installation. Check the installer notification, then tap Retry or use Direct APK.' });
+      }
+    };
     const release = (cancel = false) => {
       const old = activeRef.current;
       clearPoll();
+      clearInstallPoll();
+      installFailed = false;
       if (cancel && old) bridge.cancelAppUpdateDownload?.(old.id);
       activeRef.current = null;
       readyRef.current = null;
@@ -77,10 +112,15 @@ export default function NativeAppAutoUpdater() {
         return;
       }
       installingRef.current = true;
+      installFailed = false;
+      installStartedAt = Date.now();
       console.info('[CentralHub Android update] Install requested', { downloadId:readyRef.current });
       const opened = bridge.installAppUpdate(readyRef.current);
       if (!opened) { installingRef.current = false; emit({ state:'failed', downloadId:readyRef.current, message:'Android could not open the installer. Tap Install to retry, or use the release download link.' }); return; }
       emit({ state:'installing', downloadId:readyRef.current, progress:100, message:'Update downloaded. Confirm installation if Android asks.' });
+      clearInstallPoll();
+      if (bridge.getAppUpdateInstallStatus) installPoll = window.setInterval(watchInstall, 1000);
+      else installPoll = window.setInterval(watchInstall, 2000);
     };
     const watch = () => {
       if (closed || !activeRef.current) return;
@@ -168,8 +208,8 @@ export default function NativeAppAutoUpdater() {
     };
     const onVisible = () => {
       if (document.visibilityState !== 'visible') return;
-      if (readyRef.current !== null) { installingRef.current = false; tryInstall(); }
-      else if (!activeRef.current) void check();
+      if (readyRef.current !== null && !installingRef.current && !installFailed) tryInstall();
+      else if (!activeRef.current && readyRef.current === null) void check();
     };
     window.addEventListener(COMMAND, onCommand);
     document.addEventListener('visibilitychange', onVisible);
@@ -178,6 +218,7 @@ export default function NativeAppAutoUpdater() {
     return () => {
       closed = true;
       clearPoll();
+      clearInstallPoll();
       if (checkTimer !== null) window.clearInterval(checkTimer);
       window.removeEventListener(COMMAND, onCommand);
       document.removeEventListener('visibilitychange', onVisible);

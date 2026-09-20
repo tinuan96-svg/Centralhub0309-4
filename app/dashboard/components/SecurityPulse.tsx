@@ -109,6 +109,13 @@ export default function SecurityPulse({ selectedStoreId = 'all', compact = false
       <div className="ch-security-stores">{summary.rows.length ? summary.rows.map(row => <div key={row.store.id}><span className="ch-status-dot" style={{ background: tone[row.status] }} /><span><b>{row.store.name}</b><small>{row.status} · {row.heartbeat?.latency_ms != null ? `${row.heartbeat.latency_ms}ms` : 'latency —'} · {row.heartbeat?.http_status != null ? `HTTP ${row.heartbeat.http_status}` : 'HTTP —'}</small></span><time><Clock3 size={12} />{age(row.heartbeat?.checked_at)}</time></div>) : <div><span className="ch-status-dot" style={{ background: tone.unknown }} /><span><b>Loading store telemetry</b><small>The radar remains active while the first secured read completes.</small></span></div>}</div>
     </div>}
     {error && !noUsableRows && <div className="ch-note ch-error mt-3" role="status">Live security refresh is delayed; showing the last successful telemetry.</div>}
+    <div className="mt-2 rounded-lg border border-slate-700/60 bg-slate-900/60 p-2" aria-label="Threat telemetry availability">
+      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-300">Threat detection · feed not connected</p>
+      <div className="grid grid-cols-3 gap-1.5 text-[10px]">
+        {['Suspicious logins', 'Blocked requests', 'Threat scans/min'].map(label => <div key={label} className="min-w-0 rounded-md bg-slate-800/70 p-1.5"><span className="block break-words text-slate-400">{label}</span><strong className="text-amber-200">Unavailable</strong></div>)}
+      </div>
+      <p className="mt-1 text-[10px] leading-4 text-slate-400">Current source observes uptime, TLS, headers and recorded alerts only. Unavailable is not zero threats.</p>
+    </div>
     <div className="ch-security-footer"><span><Activity size={13} /> {connection === 'live' ? 'Realtime events + 30s verification' : connection === 'offline' ? 'Offline · last values retained' : '30s safety checks'} · {summary.rows.some(row => row.score === null) ? 'Some checks stale or unavailable' : 'Sample-based index, not a full threat scan'}</span><Link href="/site-health">Open Security Centre →</Link></div>
   </section>;
 }

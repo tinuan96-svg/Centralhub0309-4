@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageInstaller;
 import android.database.Cursor;
+import org.json.JSONObject;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -275,7 +276,7 @@ public final class CentralHubNativeBridge {
             if (!allowed) return -1L;
             String safeVersion = versionName == null ? "latest" : versionName.replaceAll("[^A-Za-z0-9._-]", "-");
             DownloadManager.Request request = new DownloadManager.Request(uri).setTitle("CentralHub " + safeVersion).setDescription("Downloading Android update").setMimeType("application/vnd.android.package-archive").setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED).setAllowedOverMetered(true).setAllowedOverRoaming(false);
-            request.setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, "centralhub-" + safeVersion + ".apk");
+            request.setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, "centralhub-" + safeVersion + "-" + UUID.randomUUID() + ".apk");
             DownloadManager manager = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
             return manager == null ? -1L : manager.enqueue(request);
         } catch (Exception ignored) { return -1L; }
@@ -320,9 +321,21 @@ public final class CentralHubNativeBridge {
 
     @JavascriptInterface
     public boolean canInstallAppUpdatesAutomatically() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return false;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.getPackageManager().canRequestPackageInstalls()) return false;
-        return true;
+        // Capability to launch the installer, not a guarantee of silent installation.
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.getPackageManager().canRequestPackageInstalls();
+    }
+
+    @JavascriptInterface
+    public String getAppUpdateInstallStatus() {
+        android.content.SharedPreferences prefs = context.getSharedPreferences(AppUpdateInstallReceiver.PREFS, Context.MODE_PRIVATE);
+        JSONObject result = new JSONObject();
+        try {
+            result.put("state", prefs.getString("state", "idle"));
+            result.put("message", prefs.getString("message", ""));
+            result.put("updatedAt", prefs.getLong("updated_at", 0L));
+            result.put("androidStatus", prefs.getInt("android_status", 0));
+        } catch (Exception ignored) { return "{\"state\":\"unknown\"}"; }
+        return result.toString();
     }
 
     @JavascriptInterface
@@ -358,6 +371,9 @@ public final class CentralHubNativeBridge {
             PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
             params.setAppPackageName(context.getPackageName());
             params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED);
+            context.getSharedPreferences(AppUpdateInstallReceiver.PREFS, Context.MODE_PRIVATE).edit()
+                    .putString("state", "installing").putString("message", "Installer session started")
+                    .putLong("updated_at", System.currentTimeMillis()).apply();
             sessionId = installer.createSession(params);
 
             try (PackageInstaller.Session session = installer.openSession(sessionId);
@@ -378,7 +394,10 @@ public final class CentralHubNativeBridge {
                 session.commit(status.getIntentSender());
             }
             return true;
-        } catch (Exception ignored) {
+        } catch (Exception error) {
+            context.getSharedPreferences(AppUpdateInstallReceiver.PREFS, Context.MODE_PRIVATE).edit()
+                    .putString("state", "failed").putString("message", error.getClass().getSimpleName())
+                    .putLong("updated_at", System.currentTimeMillis()).apply();
             if (sessionId >= 0) {
                 try { installer.abandonSession(sessionId); } catch (Exception ignoredAgain) { }
             }
