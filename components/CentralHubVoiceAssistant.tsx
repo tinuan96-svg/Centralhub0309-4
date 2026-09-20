@@ -557,6 +557,9 @@ export default function CentralHubVoiceAssistant() {
       const state = String((event as CustomEvent<{ state?: string }>).detail?.state || 'idle') as 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 'reconnecting' | 'error';
       setRealtimeState(state);
       realtimeActiveRef.current = !['idle','error'].includes(state);
+      // A reconnect can succeed after the original failed request. Clear
+      // obsolete 502 banners only after the native audio channel is usable.
+      if (state === 'listening' || state === 'speaking') setError('');
       setRecording(state === 'listening');
       recordingRef.current = state === 'listening';
       setSpeaking(state === 'speaking');
@@ -778,7 +781,7 @@ export default function CentralHubVoiceAssistant() {
 
   const voiceState: VoiceState = realtimeState === 'error' ? 'waiting' : realtimeState === 'speaking' ? 'speaking' : (realtimeState === 'connecting' || realtimeState === 'thinking' || realtimeState === 'reconnecting') ? 'processing' : realtimeState === 'listening' ? 'listening' : processing ? 'processing' : speaking ? 'speaking' : recording ? 'listening' : (noraSession && !error ? 'listening' : 'waiting');
   const statusLabel =
-    realtimeState === 'error' ? 'Voice unavailable · tap mic to retry' :
+    realtimeState === 'error' ? 'Voice connection failed · tap mic to retry or use text' :
     voiceState === 'processing' ? 'Processing…' :
     voiceState === 'speaking' ? 'Speaking…' :
     voiceState === 'listening' ? 'Listening…' :

@@ -48,6 +48,10 @@ final class ShruthiRealtimeVoiceClient {
     private static final AtomicReference<ShruthiRealtimeVoiceClient> ACTIVE=new AtomicReference<>();
     private static final long SPEAKER_TAIL_GUARD_MS=320L, MANUAL_INTERRUPT_GUARD_MS=250L, BARGE_IN_CONFIRM_MS=160L;
     private static final int MAX_EVENT_IDS=512;
+    private static final class VoiceSecret {
+        final String value,model;
+        VoiceSecret(String token,String chosenModel){value=token;model=chosenModel;}
+    }
     private static final class PlaybackItem {
         final byte[] pcm; final String responseId; final boolean end;
         PlaybackItem(byte[] p,String r,boolean e){pcm=p;responseId=r;end=e;}
@@ -109,16 +113,16 @@ final class ShruthiRealtimeVoiceClient {
     private void openSession(){
         int current=generation.incrementAndGet();
         try{
-            ensureMicPermission();String ephemeral=requestClientSecret();if(!isCurrent(current))return;
-            Request req=new Request.Builder().url("wss://api.openai.com/v1/realtime?model=gpt-realtime-1.5").header("Authorization","Bearer "+ephemeral).build();
+            ensureMicPermission();VoiceSecret secret=requestClientSecret();if(!isCurrent(current))return;
+            Request req=new Request.Builder().url("wss://api.openai.com/v1/realtime?model="+secret.model).header("Authorization","Bearer "+secret.value).build();
             WebSocket ws=http.newWebSocket(req,new SocketListener(current));if(!isCurrent(current)){ws.close(1000,"Stale Shruthi session");return;}socket=ws;
         }catch(Exception e){if(isCurrent(current))failOrReconnect(message(e,"Unable to start Shruthi voice"));}
     }
     private boolean isCurrent(int current){return running.get()&&!explicitlyClosed&&current==generation.get();}
     private void ensureMicPermission(){if(ContextCompat.checkSelfPermission(context,Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED)throw new SecurityException("Microphone permission is required for Shruthi voice.");}
-    private String requestClientSecret() throws Exception{
+    private VoiceSecret requestClientSecret() throws Exception{
         HttpURLConnection c=(HttpURLConnection)new URL(supabaseUrl+"/functions/v1/shruthi-realtime-session").openConnection();
-        c.setRequestMethod("POST");c.setConnectTimeout(10000);c.setReadTimeout(15000);c.setDoOutput(true);
+        c.setRequestMethod("POST");c.setConnectTimeout(10000);c.setReadTimeout(30000);c.setDoOutput(true);
         if(!publishableKey.isEmpty())c.setRequestProperty("apikey",publishableKey);
         c.setRequestProperty("Authorization","Bearer "+accessToken);c.setRequestProperty("Content-Type","application/json");
         try(OutputStream out=c.getOutputStream()){
@@ -139,20 +143,29 @@ final class ShruthiRealtimeVoiceClient {
                         case "upstream_credentials_rejected": reason="Voice service credentials rejected. Check the server API key";break;
                         case "upstream_quota_unavailable": reason="Voice service quota or billing unavailable";break;
                         case "upstream_rate_limited": reason="Voice service rate limited. Try again shortly";break;
-                        case "upstream_session_configuration_rejected": reason="Voice session configuration rejected by the service";break;
+                        case "upstream_session_configuration_rejected": reason="Voice session settings rejected. Check the Realtime session configuration";break;
+                        case "upstream_model_unavailable": reason="Realtime voice model is not available for the configured account";break;
+                        case "invalid_realtime_response": reason="Voice server returned an invalid session token response";break;
+                        case "upstream_request_rejected": reason="Voice service rejected the session request";break;
                         case "upstream_temporarily_unavailable":case "upstream_network_failure":reason="Voice service temporarily unavailable";break;
                         case "realtime_not_configured":case "service_not_configured":reason="Voice service is not configured on the server";break;
                         case "unauthorized":reason="CentralHub sign-in expired. Sign in again";break;
                         case "admin_required":reason="CentralHub administrator access required";break;
                         default:if(upstream>0)reason="Voice session rejected upstream (HTTP "+upstream+")";break;
                     }
+                    String upstreamCode=err.optString("upstream_code","").replaceAll("[^a-zA-Z0-9_.-]","");
+                    if(!upstreamCode.isEmpty()&&upstreamCode.length()<70)reason+=" ["+upstreamCode+"]";
                 }catch(Exception ignored){}
                 throw new IllegalStateException(reason+" (HTTP "+code+")");
             }
             JSONObject p=new JSONObject(raw.toString());String value=p.optString("value");
             if(value.isEmpty()&&p.optJSONObject("client_secret")!=null)value=p.optJSONObject("client_secret").optString("value");
             if(value.isEmpty())throw new IllegalStateException("Realtime session did not return a client secret");
-            return value;
+            String candidate=p.optString("model","gpt-realtime-1.5");
+            // A server-provided model is not a URL: allow only known Realtime
+            // identifiers so no backend response can redirect the socket.
+            String chosenModel="gpt-realtime".equals(candidate)?"gpt-realtime":"gpt-realtime-1.5";
+            return new VoiceSecret(value,chosenModel);
         }finally{c.disconnect();}
     }
 
@@ -288,7 +301,9 @@ final class ShruthiRealtimeVoiceClient {
         generation.incrementAndGet();resetResponseState();assistantAudioActive.set(false);captureEnabled.set(false);cleanupAudio();
         WebSocket failed=socket;socket=null;if(failed!=null)failed.cancel();
         boolean requiresAction=msg.contains("credentials rejected")||msg.contains("quota or billing")
-            ||msg.contains("configuration rejected")||msg.contains("not configured")
+            ||msg.contains("settings rejected")||msg.contains("not configured")
+            ||msg.contains("model is not available")||msg.contains("invalid session token")
+            ||msg.contains("rejected the session request")
             ||msg.contains("sign-in expired")||msg.contains("administrator access required");
         reconnectAttempt++;
         if(requiresAction||reconnectAttempt>3){

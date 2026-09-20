@@ -14,8 +14,12 @@ Deno.serve(async(req:Request)=>{
  if(authError||!user)return json({error:"unauthorized"},401);
  const metadataRole=String(user.app_metadata?.role||"").toLowerCase(),{data:profile}=await admin.from("user_profiles").select("profile_role,is_active").eq("id",user.id).maybeSingle(),role=String(profile?.profile_role||metadataRole).toLowerCase();
  if(profile?.is_active===false||!["admin","superadmin","administrator"].includes(role))return json({error:"admin_required"},403);
- const apiKey=(Deno.env.get("OPENAI_REALTIME_API_KEY")||Deno.env.get("OPENAI_API_KEY")||"").trim();
- if(!apiKey)return json({error:"realtime_not_configured"},503);
+ // A dedicated Realtime key takes priority; only try the general server key
+ // if the dedicated key is rejected. Neither key is ever returned to the app.
+ const realtimeKey=(Deno.env.get("OPENAI_REALTIME_API_KEY")||"").trim();
+ const sharedKey=(Deno.env.get("OPENAI_API_KEY")||"").trim();
+ const serverKeys=[...new Set([realtimeKey,sharedKey].filter(Boolean))];
+ if(!serverKeys.length)return json({error:"realtime_not_configured",retryable:false},503);
  const since24h=new Date(Date.now()-86400000).toISOString();
  const focusPromise=liveWebSessionId
   ? admin.from("nora_action_sessions").select("id,title,goal,target_system,target_url,status,current_step,awaiting_input,requires_approval,approval_reason,metadata,updated_at").eq("id",liveWebSessionId).eq("user_id",user.id).maybeSingle()
@@ -126,47 +130,72 @@ CONVERSATION:
 - For Live Web/browser work, never claim a page is loading, a session is spinning up, or that you clicked/created/submitted something unless LIVE_WEB_FOCUS or LIVE_WEB_SESSIONS shows that real state. When the browser worker is still running, acknowledge briefly without inventing completion.
 - When the user gives a browser correction such as "not that one", "go back", "continue", or a new detail, respond briefly and let the browser worker apply it.
 - If a transcript appears to repeat Shruthi's own immediately preceding spoken words, treat it as playback leakage and do not start a new conversational thread from it.
-- The Android client uses the same strict half-duplex echo-safe playback guard as Nivo.
+- The Android client keeps capture open with an echo-aware barge-in guard while speaking. Do not misinterpret your own audio playback as a new user request.
 - Avoid repetitive greetings and filler.
 - There is one Shruthi behaviour/persona only. Do not switch between professional, friendly, executive, board, developer or other personality modes.
 
 CENTRALHUB CONTEXT:
 ${contextText}`
- const session={type:"realtime",model,output_modalities:["audio"],instructions,max_output_tokens:600,audio:{input:{format:{type:"audio/pcm",rate:24000},noise_reduction:{type:"near_field"},transcription:{model:"gpt-4o-mini-transcribe",prompt:"Natural executive-assistant speech. Malayalam and English code-switching; UK business, grocery, Meta, Facebook, Instagram, Supabase, Netlify and CentralHub terms."},turn_detection:{type:"server_vad",threshold:.62,prefix_padding_ms:240,silence_duration_ms:520,create_response:true,interrupt_response:false}},output:{format:{type:"audio/pcm",rate:24000},voice:"marin",speed:1.04}}};
- // Realtime credentials never leave this server. Surface only safe failure categories.
- let upstream:Response;
- try{
-  upstream=await fetch("https://api.openai.com/v1/realtime/client_secrets",{
-   method:"POST",headers:{Authorization:`Bearer ${apiKey}`,"Content-Type":"application/json"},
-   body:JSON.stringify({session}),signal:AbortSignal.timeout(18000)
-  });
- }catch(e){
-  console.error("Shruthi Realtime token network failure",e instanceof Error?e.name:"unknown");
-  return json({error:"upstream_network_failure",retryable:true},503);
- }
- const raw=await upstream.text();
- if(!upstream.ok){
-  let detail:any={};try{detail=JSON.parse(raw)?.error||{};}catch{}
-  const code=String(detail.code||"").slice(0,80),param=String(detail.param||"").slice(0,100);
-  const requestId=String(upstream.headers.get("x-request-id")||"").slice(0,100);
-  console.error("Shruthi Realtime token rejected",JSON.stringify({
-   status:upstream.status,code,param,request_id:requestId,instructions_chars:instructions.length,inventory_rows:inventory.rows_included
-  }));
-  const limited=upstream.status===429,unavailable=upstream.status>=500;
-  const category=upstream.status===401||upstream.status===403?"upstream_credentials_rejected":
-   limited?(["insufficient_quota","credit_balance_exhausted","organization_usage_limit_exceeded"].includes(code)?"upstream_quota_unavailable":"upstream_rate_limited"):
-   upstream.status===400||upstream.status===422?"upstream_session_configuration_rejected":
-   unavailable?"upstream_temporarily_unavailable":"upstream_request_rejected";
-  return json({error:category,upstream_status:upstream.status,
-   retryable:unavailable||category==="upstream_rate_limited",request_id:requestId||undefined},
-   limited?429:unavailable?503:502);
- }
- try{
-  const value=JSON.parse(raw);
-  if(typeof value?.value!=="string"||!value.value.trim()){
-   console.error("Shruthi Realtime token response missing client secret");
-   return json({error:"invalid_realtime_response",retryable:false},502);
+ const configuredSession={type:"realtime",model,output_modalities:["audio"],instructions,max_output_tokens:600,audio:{input:{format:{type:"audio/pcm",rate:24000},noise_reduction:{type:"near_field"},transcription:{model:"gpt-4o-mini-transcribe",prompt:"Natural executive-assistant speech. Malayalam and English code-switching; UK business, grocery, Meta, Facebook, Instagram, Supabase, Netlify and CentralHub terms."},turn_detection:{type:"server_vad",threshold:.62,prefix_padding_ms:240,silence_duration_ms:520,create_response:true,interrupt_response:false}},output:{format:{type:"audio/pcm",rate:24000},voice:"marin",speed:1.04}}};
+ // The session endpoint is distinct from the websocket connection: expose a
+ // model name alongside a short-lived secret so Android uses the SAME model.
+ // Never downgrade credentials/billing failures into a different model error.
+ type Failure={error:string;upstream_status:number;retryable:boolean;request_id?:string;upstream_code?:string};
+ let lastFailure:Failure|null=null;
+ let actualModel=model;
+ outer:for(let keyIndex=0;keyIndex<serverKeys.length;keyIndex++){
+  for(let modelIndex=0;modelIndex<2;modelIndex++){
+   actualModel=modelIndex===0?model:"gpt-realtime";
+   const session={...configuredSession,model:actualModel};
+   let upstream:Response;
+   try{
+    upstream=await fetch("https://api.openai.com/v1/realtime/client_secrets",{
+     method:"POST",headers:{Authorization:`Bearer ${serverKeys[keyIndex]}`,"Content-Type":"application/json"},
+     body:JSON.stringify({session}),signal:AbortSignal.timeout(18000)
+    });
+   }catch(e){
+    console.error("Shruthi Realtime token network failure",e instanceof Error?e.name:"unknown");
+    return json({error:"upstream_network_failure",retryable:true},503);
+   }
+   const raw=await upstream.text();
+   if(upstream.ok){
+    try{
+     const value=JSON.parse(raw);
+     if(typeof value?.value!=="string"||!value.value.trim()){
+      console.error("Shruthi Realtime token response missing client secret");
+      return json({error:"invalid_realtime_response",retryable:false},502);
+     }
+     // The extra top-level model is NOT a secret; ephemeral token stays scoped
+     // to this authenticated admin response and is never written to logs.
+     return json({...value,model:actualModel});
+    }catch{return json({error:"invalid_realtime_response",retryable:false},502);}
+   }
+   let detail:any={};try{detail=JSON.parse(raw)?.error||{};}catch{}
+   const code=String(detail.code||"").slice(0,80),param=String(detail.param||"").slice(0,100);
+   const requestId=String(upstream.headers.get("x-request-id")||"").slice(0,100);
+   console.error("Shruthi Realtime token rejected",JSON.stringify({
+    status:upstream.status,code,param,request_id:requestId,model:actualModel,
+    credential_slot:keyIndex===0?"realtime_primary":"general_fallback",
+    instructions_chars:instructions.length,inventory_rows:inventory.rows_included
+   }));
+   const modelUnavailable=(upstream.status===404||[400,422].includes(upstream.status)&&param==="model")
+     && (code==="model_not_found"||code==="invalid_model"||param==="model");
+   const limited=upstream.status===429,unavailable=upstream.status>=500;
+   const category=upstream.status===401||upstream.status===403?"upstream_credentials_rejected":
+     limited?(["insufficient_quota","credit_balance_exhausted","organization_usage_limit_exceeded"].includes(code)?"upstream_quota_unavailable":"upstream_rate_limited"):
+     modelUnavailable?"upstream_model_unavailable":
+     upstream.status===400||upstream.status===422?"upstream_session_configuration_rejected":
+     unavailable?"upstream_temporarily_unavailable":"upstream_request_rejected";
+   lastFailure={error:category,upstream_status:upstream.status,
+    retryable:unavailable||category==="upstream_rate_limited",
+    request_id:requestId||undefined,upstream_code:code||undefined};
+   // A rejected dedicated key can fall back to the existing general server
+   // key, but a misconfigured request should not consume extra retries.
+   if(category==="upstream_credentials_rejected"&&keyIndex+1<serverKeys.length)break;
+   if(modelUnavailable&&modelIndex===0)continue;
+   break outer;
   }
-  return json(value);
- }catch{return json({error:"invalid_realtime_response",retryable:false},502);}
+ }
+ const failure=lastFailure||{error:"upstream_request_rejected",upstream_status:502,retryable:false};
+ return json(failure,failure.error==="upstream_rate_limited"||failure.error==="upstream_quota_unavailable"?429:failure.retryable?503:502);
 });
