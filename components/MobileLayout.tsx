@@ -151,7 +151,7 @@ export default function MobileLayout({ children }: MobileLayoutProps) {
                 ? 'h-full min-h-0 min-w-0 w-full max-w-[1920px] mx-auto overflow-hidden'
                 : 'max-w-[1920px] min-w-0 mx-auto w-full'}
               style={!isSupportInbox && isDashboard
-                ? { paddingRight: '5.75rem', paddingBottom: '6rem' }
+                ? { paddingBottom: '6rem' }
                 : undefined}
             >
               {children}

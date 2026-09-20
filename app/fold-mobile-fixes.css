@@ -35,3 +35,49 @@
     max-width: none;
   }
 }
+
+/* The Fold inner display is a small desktop, not a phone. The old dashboard
+   reserved a 5.75rem right gutter for floating buttons even though they sit
+   outside the scroll pane. Let the report use all remaining width. */
+@media (min-width: 700px) and (max-width: 1199px) {
+  .centralhub-desktop-shell.ch-dashboard-route { width: 100%; max-width: 100vw; min-width: 0; }
+  .centralhub-desktop-shell.ch-dashboard-route > .flex-1 { min-width: 0; width: 0; }
+  .centralhub-desktop-shell.ch-dashboard-route main > div {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding-inline: clamp(.25rem, .85vw, .75rem);
+  }
+  .centralhub-desktop-shell.ch-dashboard-route .ch-dashboard-workspace {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding: clamp(.35rem, .7vw, .65rem);
+  }
+  .centralhub-desktop-shell.ch-dashboard-route .ch-visual-console {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .centralhub-desktop-shell .centralhub-sidebar[data-collapsed="true"] {
+    flex: 0 0 60px;
+    width: 60px;
+    min-width: 60px;
+  }
+  .centralhub-desktop-shell .centralhub-sidebar[data-collapsed="true"] nav {
+    padding-inline: .3rem;
+  }
+  .centralhub-desktop-shell .centralhub-sidebar[data-collapsed="true"] nav > div > button {
+    padding-inline: .25rem;
+  }
+}
+
+@media (min-width:700px) and (max-width:1199px) {
+  .centralhub-desktop-shell .centralhub-sidebar[data-collapsed="true"] > div:first-child {
+    flex-direction:column;
+    padding:.35rem;
+    justify-content:center;
+    gap:.15rem;
+  }
+}

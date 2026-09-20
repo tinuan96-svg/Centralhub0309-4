@@ -667,3 +667,21 @@
   .ch-dashboard-workspace .ch-security-pulse-compact .ch-security-stores { gap:.35rem; }
   .ch-dashboard-workspace .ch-visual-surface { gap:.4rem; }
 }
+
+/* Fold inner-display: use the available report width, not the phone card
+   dimensions or the large-monitor 6-column KPI treatment. */
+@media (min-width:700px) and (max-width: 899px) {
+  .ch-dashboard-workspace .ch-business-grid { grid-template-columns:minmax(0,1fr); }
+  .ch-dashboard-workspace .ch-visual-console .ch-kpi-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .ch-dashboard-workspace .ch-business-wave { height:120px; }
+  .ch-dashboard-workspace .ch-business-source { min-width:0; }
+}
+@media (min-width:700px) and (max-width: 1199px) {
+  .ch-dashboard-workspace .ch-visual-surface,
+  .ch-dashboard-workspace .ch-business-pulse,
+  .ch-dashboard-workspace .ch-workspace-navigation { width:100%;min-width:0;max-width:100%; }
+  .ch-dashboard-workspace .ch-business-grid > *,
+  .ch-dashboard-workspace .ch-kpi-grid > *,
+  .ch-dashboard-workspace .ch-visual-console .ch-panel { min-width:0; }
+  .ch-dashboard-workspace .ch-visual-console .ch-kpi-value { overflow-wrap:anywhere; }
+}
