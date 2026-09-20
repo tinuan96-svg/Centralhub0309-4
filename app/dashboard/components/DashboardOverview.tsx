@@ -138,19 +138,19 @@ export default function DashboardOverview({ refreshKey, appearance = 'dark', con
   };
 
   const dashboardWidgets: DashboardWidget[] = report ? [
-    { id: 'growth-pulse', title: 'Business pulse', description: 'Measured paid-order rhythm', desktop: 8, tablet: 8, mobile: 12, minHeight: 280, content: <BusinessPulse report={report} connection={connection} refreshError={!!error} selectedStoreId={selectedStoreId} /> },
+    { id: 'growth-pulse', title: 'Business pulse', description: 'Measured paid-order rhythm', desktop: 8, tablet: 8, mobile: 12, minHeight: 205, content: <BusinessPulse report={report} connection={connection} refreshError={!!error} selectedStoreId={selectedStoreId} /> },
     { id: 'growth-signals', title: 'Growth and attention', description: 'Measured sales and stock actions', desktop: 12, tablet: 12, mobile: 12, minHeight: 220, content: <BusinessPulse mode="signals" report={report} connection={connection} refreshError={!!error} selectedStoreId={selectedStoreId} /> },
     ...getOperationsMonitorWidgets(),
     ...getReferenceDashboardWidgets({ report, selectedStoreId, timeRange }),
-    { id: 'security-pulse', title: 'Security pulse', description: 'Realtime security and site-risk monitoring', desktop: 4, tablet: 4, mobile: 12, minHeight: 280, content: <SecurityPulse selectedStoreId={selectedStoreId} compact /> },
-    { id: 'kpi-indexes', title: 'KPI indexes', description: 'Revenue, profit, orders and inventory indexes', desktop: 12, tablet: 12, mobile: 12, minHeight: 160, content: <div className="ch-visual-comparisons"><DashboardKpiGrid compact current={report.current} previous={report.previous} /></div> },
+    { id: 'security-pulse', title: 'Security pulse', description: 'Realtime security and site-risk monitoring', desktop: 4, tablet: 4, mobile: 12, minHeight: 205, content: <SecurityPulse selectedStoreId={selectedStoreId} compact /> },
+    { id: 'kpi-indexes', title: 'KPI indexes', description: 'Revenue, profit, orders and inventory indexes', desktop: 12, tablet: 12, mobile: 12, minHeight: 120, content: <div className="ch-visual-comparisons"><DashboardKpiGrid compact current={report.current} previous={report.previous} /></div> },
     ...getSectionVisualWidgets({ report, selectedStoreId, refreshKey: report.loadedAt.getTime() }),
     { id: 'action-required', title: 'Action required', description: 'Items needing admin attention', desktop: 6, tablet: 12, mobile: 12, minHeight: 140, content: <ActionRequired key={selectedStoreId + report.loadedAt.toISOString()} /> },
     { id: 'ai-insights', title: 'AI insights', description: 'Decision support and system observations', desktop: 6, tablet: 12, mobile: 12, minHeight: 240, content: <AIInsights key={selectedStoreId + report.loadedAt.toISOString()} /> },
     { id: 'audit-log', title: 'Audit log', description: 'Recent CentralHub system activity', desktop: 12, tablet: 12, mobile: 12, minHeight: 240, content: <AuditLogWidget key={report.loadedAt.toISOString()} /> },
   ] : [];
 
-  const executiveOrder = ['growth-pulse', 'security-pulse', 'kpi-indexes', 'live-commerce', 'inventory-radar', 'sync-mesh', 'growth-signals', 'action-required', 'ai-insights'];
+  const executiveOrder = ['kpi-indexes', 'growth-pulse', 'security-pulse', 'live-commerce', 'inventory-radar', 'sync-mesh', 'growth-signals', 'action-required', 'ai-insights'];
   const executiveWidgets = dashboardWidgets.filter(widget => EXECUTIVE_WIDGET_IDS.has(widget.id)).sort((a, b) => executiveOrder.indexOf(a.id) - executiveOrder.indexOf(b.id));
   const detailWidgets = dashboardWidgets.filter(widget => !EXECUTIVE_WIDGET_IDS.has(widget.id));
   const financeWidgets = detailWidgets.filter(widget => FINANCE_WIDGET_IDS.has(widget.id));
@@ -171,9 +171,9 @@ export default function DashboardOverview({ refreshKey, appearance = 'dark', con
         <p className="ch-console-scope">{report.start.toLocaleDateString('en-GB')} – {report.end.toLocaleDateString('en-GB')} · {selectedStoreId === 'all' ? 'All stores' : stores[0]?.name || 'Selected store'}</p>
         <OperationsMonitorProvider>
           <ChannelVisualsProvider start={report.start.toISOString().slice(0, 10)} end={report.end.toISOString().slice(0, 10)} selectedStoreId={selectedStoreId} refreshKey={report.loadedAt.getTime()}>
-            <div className="space-y-5">
+            <div className="space-y-3">
               <section aria-label="Executive overview">
-                <div className="mb-3 flex items-end justify-between gap-4">
+                <div className="mb-2 flex items-end justify-between gap-4">
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-400">Executive overview</p>
                     <p className="mt-1 text-xs text-slate-500">Live KPIs, security, core operations and actions that need attention.</p>

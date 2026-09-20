@@ -77,13 +77,12 @@ export default function BusinessPulse({ report, connection, refreshError, select
   return <section className="ch-business-pulse ch-panel" aria-label="Measured business pulse">
     <div className="ch-business-pulse-head">
       <div><p className="ch-business-eyebrow"><Activity size={15} /> CENTRALHUB · BUSINESS PULSE</p>
-        <h2>Business pulse</h2>
-        <p className="ch-business-secondary">Paid-order revenue rhythm · selected reporting period</p>
+        <h2>Business pulse <span className="ch-business-inline-scope">· selected period</span></h2>
       </div>
-      <div className="ch-business-source" data-live={live || polled}>
+      <div className="ch-business-source" data-live={live || polled} title={'Report sampled ' + report.loadedAt.toLocaleTimeString('en-GB')}>
         <span className="ch-business-source-dot" />
-        <span>{live ? 'Live events + 30s verification' : polled ? '30s verification' : connection === 'offline' ? 'Offline · retained data' : connection === 'paused' ? 'Paused · retained data' : 'Report refresh delayed'}</span>
-        <small>Report sampled {report.loadedAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</small>
+        <span>{live ? 'Live · 30s checks' : polled ? '30s checks' : connection === 'offline' ? 'Offline · cached' : connection === 'paused' ? 'Paused · cached' : 'Refresh delayed'}</span>
+        <small>Sampled {report.loadedAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</small>
       </div>
     </div>
 

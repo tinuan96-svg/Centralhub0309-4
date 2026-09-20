@@ -807,3 +807,52 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Executive first-screen density: measured selected-period KPIs precede the
+   cosmetic pulse/radar; all deeper details remain accessible when expanded. */
+.ch-dashboard-workspace .ch-live-console .ch-visual-surface {gap:.3rem;}
+.ch-dashboard-workspace .ch-live-console .ch-console-scope {margin:.1rem 0;}
+.ch-dashboard-workspace .ch-live-console .ch-business-pulse {min-height:0;justify-content:flex-start;gap:.4rem;padding:.7rem;}
+.ch-dashboard-workspace .ch-business-pulse-head {margin-bottom:.1rem;align-items:center;gap:.45rem;}
+.ch-dashboard-workspace .ch-business-pulse h2 {margin:.15rem 0;font-size:clamp(1rem,1.6vw,1.28rem);}
+.ch-dashboard-workspace .ch-business-inline-scope {font-size:.67rem;font-weight:500;color:#91a9c1;letter-spacing:0;}
+.ch-dashboard-workspace .ch-business-pulse .ch-business-source {padding:.35rem .5rem;margin:0;min-width:0;}
+.ch-dashboard-workspace .ch-business-pulse .ch-business-source small {display:none;}
+.ch-dashboard-workspace .ch-business-pulse .ch-business-chart {padding:.5rem .65rem;}
+.ch-dashboard-workspace .ch-business-pulse .ch-business-wave {height:clamp(70px,7vw,100px);margin:.25rem 0;}
+.ch-dashboard-workspace .ch-business-pulse .ch-business-brief {margin-top:.3rem;gap:.35rem;}
+.ch-dashboard-workspace .ch-business-pulse .ch-business-brief > div {padding-top:.3rem;}
+.ch-dashboard-workspace .ch-business-pulse .ch-business-chart-head {font-size:.67rem;gap:.35rem;}
+.ch-dashboard-workspace .ch-security-pulse-compact {min-height:0;padding:.7rem;}
+.ch-dashboard-workspace .ch-security-pulse-compact .ch-panel-heading {gap:.4rem;margin-bottom:.45rem;}
+.ch-dashboard-workspace .ch-security-pulse-compact .ch-panel-heading .ch-muted {font-size:.68rem;line-height:1.3;}
+.ch-dashboard-workspace .ch-security-pulse-compact .ch-radar {width:min(88px,100%);}
+.ch-dashboard-workspace .ch-security-pulse-compact .ch-radar i {transform-origin:3px 36px;}
+.ch-dashboard-workspace .ch-security-pulse-compact .ch-security-layout {grid-template-columns:minmax(74px,88px) minmax(0,1fr);gap:.5rem;}
+.ch-dashboard-workspace .ch-security-pulse-compact .ch-security-store-details {grid-column:1/-1;min-width:0;}
+.ch-dashboard-workspace .ch-security-pulse-compact .ch-security-store-details > summary,
+.ch-dashboard-workspace .ch-security-pulse-compact .ch-security-threat-details > summary {
+  cursor:pointer;list-style:revert;font-size:.68rem;line-height:1.35;color:#a5f3fc;overflow-wrap:anywhere;
+}
+.ch-dashboard-workspace .ch-security-pulse-compact .ch-security-store-details[open] > summary,
+.ch-dashboard-workspace .ch-security-pulse-compact .ch-security-threat-details[open] > summary {margin-bottom:.4rem;}
+.ch-dashboard-workspace .ch-security-pulse-compact .ch-security-footer {margin-top:.3rem;font-size:.62rem;}
+.ch-dashboard-workspace .ch-visual-comparisons .ch-kpi {min-height:88px;padding:.45rem .65rem;}
+.ch-dashboard-workspace .ch-visual-comparisons .ch-kpi .mb-3 {margin-bottom:.3rem;}
+.ch-dashboard-workspace .ch-visual-comparisons .ch-kpi .ch-comparison {font-size:.61rem;line-height:1.3;}
+@media(min-width:700px) and (max-width:899px) {
+  .ch-dashboard-workspace .ch-command-strip {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.4rem;padding:.45rem;}
+  .ch-dashboard-workspace .ch-command-strip-primary,.ch-dashboard-workspace .ch-command-strip-item {min-width:0;flex:none;padding:.3rem;border-right:0;}
+  .ch-dashboard-workspace .ch-command-strip strong {font-size:.68rem;}
+  .ch-dashboard-workspace .ch-visual-console .ch-visual-comparisons .ch-kpi-grid > .ch-kpi {flex:1 1 calc(25% - .45rem);}
+}
+@media(max-width:699px) {
+  .ch-dashboard-workspace .ch-business-inline-scope {display:none;}
+  .ch-dashboard-workspace .ch-business-pulse .ch-business-wave {height:76px;}
+  .ch-dashboard-workspace .ch-security-pulse-compact .ch-security-layout {grid-template-columns:minmax(76px,88px) minmax(0,1fr);}
+  .ch-dashboard-workspace .ch-command-strip {gap:.35rem;padding:.45rem;}
+}
+@media(prefers-reduced-motion:reduce) {
+  .ch-dashboard-workspace .ch-business-pulse .ch-business-sweep,
+  .ch-dashboard-workspace .ch-security-pulse-compact .ch-radar-sweep {animation:none!important;}
+}

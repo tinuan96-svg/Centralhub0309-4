@@ -34,10 +34,10 @@ type StoredLayout = {
 };
 
 const STORAGE_KEY = 'centralhub-dashboard-layout-v2';
-const LAYOUT_VERSION = 4;
+const LAYOUT_VERSION = 5;
 const SCOPE = 'super_admin';
 const NEW_LIVE_WIDGET_IDS = new Set([
-  'growth-pulse', 'operations-command-centre', 'live-commerce', 'traffic-pulse', 'sync-mesh', 'inventory-radar',
+  'kpi-indexes', 'growth-pulse', 'operations-command-centre', 'live-commerce', 'traffic-pulse', 'sync-mesh', 'inventory-radar',
   'fulfilment-control', 'customer-ops-live', 'shipping-control-live', 'site-health-matrix',
   'store-scoreboard-live', 'live-signal-stream',
   'operational-indicators', 'paid-order-total', 'order-gross-profit', 'delivery-completion',
@@ -94,7 +94,7 @@ function mergeStoredLayout(stored: StoredLayout | null, defaults: StoredLayout):
     });
     // Version 2 retained oversized heights and placed new high-priority widgets
     // at the end of a saved mobile layout. Migrate once without deleting choices.
-    const commandPriority = ['growth-pulse', 'security-pulse', 'kpi-indexes', 'live-commerce', 'inventory-radar', 'sync-mesh', 'growth-signals', 'action-required', 'ai-insights'];
+    const commandPriority = ['kpi-indexes', 'growth-pulse', 'security-pulse', 'live-commerce', 'inventory-radar', 'sync-mesh', 'growth-signals', 'action-required', 'ai-insights'];
     const ordered = (stored.version || 0) < LAYOUT_VERSION
       ? [...merged].sort((a, b) => {
           const ia = commandPriority.indexOf(a.id), ib = commandPriority.indexOf(b.id);
