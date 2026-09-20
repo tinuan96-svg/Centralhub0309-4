@@ -53,6 +53,7 @@ export default function ShruthiLearningPulse() {
   return (
     <Link
       href="/shruthi-learning"
+      data-dashboard-dock-control="learning"
       aria-label={title}
       title={title}
       className="fixed right-2 top-1/2 z-[68] grid h-12 w-12 -translate-y-1/2 place-items-center rounded-2xl border border-cyan-300/20 bg-slate-950/90 text-white shadow-xl shadow-black/25 backdrop-blur-xl transition hover:border-cyan-300/40 hover:bg-slate-900/95 active:scale-95 sm:right-3 sm:h-13 sm:w-13"

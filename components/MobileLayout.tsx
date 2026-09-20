@@ -63,10 +63,25 @@ export default function MobileLayout({ children }: MobileLayoutProps) {
       }
 
       @media (min-width: 700px) {
+        /* Reserve a real bottom control dock on Z Fold inner screens, tablets and desktop.
+           The scrollable dashboard ends above the dock, so controls cannot cover KPI/radar data. */
+        .ch-dashboard-route.centralhub-desktop-shell > .flex-1 > main {
+          margin-bottom: 4.75rem;
+        }
+        .ch-dashboard-route [data-dashboard-dock-control="learning"] {
+          top: auto !important;
+          right: 10rem !important;
+          bottom: 0.9rem !important;
+          transform: none !important;
+        }
+        .ch-dashboard-route [data-dashboard-dock-control="quick-actions"] {
+          right: 5.25rem !important;
+          bottom: 1rem !important;
+        }
         .ch-dashboard-route div:has(> button[aria-label="Open quick actions"]),
         .ch-dashboard-route div:has(> button[aria-label="Close quick actions"]) {
-          right: 1rem !important;
-          bottom: 5.25rem !important;
+          right: 5.25rem !important;
+          bottom: 1rem !important;
         }
 
         .ch-dashboard-route [role="menu"][aria-label="Quick actions"] {

@@ -2,6 +2,7 @@ package com.centralhub.network;
 
 import android.app.DownloadManager;
 import android.app.PendingIntent;
+import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
@@ -344,7 +345,7 @@ public final class CentralHubNativeBridge {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.getPackageManager().canRequestPackageInstalls()) {
                 Intent permission = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + context.getPackageName()));
-                activity.startActivity(permission);
+                activity.runOnUiThread(() -> activity.startActivity(permission));
                 return false;
             }
             DownloadManager manager = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
@@ -352,16 +353,47 @@ public final class CentralHubNativeBridge {
             Uri apk = manager.getUriForDownloadedFile(downloadId);
             if (apk == null) return false;
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                return installSelfUpdateWithPackageInstaller(apk);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && installSelfUpdateWithPackageInstaller(apk)) {
+                return true;
             }
+            // Some Samsung/Android builds reject self-installer sessions. Open the stock
+            // package installer using the same DownloadManager content URI instead.
+            return launchAndroidPackageInstaller(apk);
+        } catch (Exception error) {
+            context.getSharedPreferences(AppUpdateInstallReceiver.PREFS, Context.MODE_PRIVATE).edit()
+                    .putString("state", "failed").putString("message", error.getClass().getSimpleName())
+                    .putLong("updated_at", System.currentTimeMillis()).apply();
+            return false;
+        }
+    }
 
+    private boolean launchAndroidPackageInstaller(Uri apk) {
+        try {
             Intent install = new Intent(Intent.ACTION_VIEW)
                     .setDataAndType(apk, "application/vnd.android.package-archive")
+                    .setClipData(ClipData.newUri(context.getContentResolver(), "CentralHub Android update", apk))
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            activity.startActivity(install);
-            return true;
-        } catch (Exception ignored) { return false; }
+            context.getSharedPreferences(AppUpdateInstallReceiver.PREFS, Context.MODE_PRIVATE).edit()
+                    .putString("state", "confirmation")
+                    .putString("message", "Opening Android package installer")
+                    .putLong("updated_at", System.currentTimeMillis()).apply();
+            activity.runOnUiThread(() -> {
+                try {
+                    activity.startActivity(install);
+                } catch (Exception error) {
+                    context.getSharedPreferences(AppUpdateInstallReceiver.PREFS, Context.MODE_PRIVATE).edit()
+                            .putString("state", "failed")
+                            .putString("message", "Could not open Android installer: " + error.getClass().getSimpleName())
+                            .putLong("updated_at", System.currentTimeMillis()).apply();
+                }
+            });
+            return true; // Installer requested; installation success is verified after app relaunch.
+        } catch (Exception error) {
+            context.getSharedPreferences(AppUpdateInstallReceiver.PREFS, Context.MODE_PRIVATE).edit()
+                    .putString("state", "failed").putString("message", "Installer fallback: " + error.getClass().getSimpleName())
+                    .putLong("updated_at", System.currentTimeMillis()).apply();
+            return false;
+        }
     }
 
     private boolean installSelfUpdateWithPackageInstaller(Uri apk) {

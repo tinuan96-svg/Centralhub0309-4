@@ -112,7 +112,7 @@ export default function QuickActionsFab() {
   if (!mounted) return null;
 
   return (
-    <div ref={panelRef} className="fixed z-[70] right-[5.25rem] bottom-[calc(5.5rem+env(safe-area-inset-bottom))] sm:right-6 sm:bottom-6">
+    <div ref={panelRef} data-dashboard-dock-control="quick-actions" className="fixed z-[70] right-[5.25rem] bottom-[calc(5.5rem+env(safe-area-inset-bottom))] sm:right-6 sm:bottom-6">
       {open && (
         <div
           className="fixed inset-x-3 bottom-[calc(10rem+env(safe-area-inset-bottom))] max-h-[calc(100dvh-12rem)] overflow-y-auto rounded-3xl border border-slate-700/70 bg-slate-950/98 shadow-2xl shadow-black/50 backdrop-blur-xl p-3 overscroll-contain sm:absolute sm:inset-x-auto sm:bottom-[4.25rem] sm:right-0 sm:w-[min(92vw,420px)] sm:max-h-[min(70vh,560px)]"

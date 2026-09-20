@@ -116,7 +116,14 @@ export default function NativeAppAutoUpdater() {
       installStartedAt = Date.now();
       console.info('[CentralHub Android update] Install requested', { downloadId:readyRef.current });
       const opened = bridge.installAppUpdate(readyRef.current);
-      if (!opened) { installingRef.current = false; emit({ state:'failed', downloadId:readyRef.current, message:'Android could not open the installer. Tap Install to retry, or use the release download link.' }); return; }
+      if (!opened) {
+        installingRef.current = false;
+        installFailed = true;
+        let nativeReason = '';
+        try { const result = JSON.parse(bridge.getAppUpdateInstallStatus?.() || '{}') as {message?:string}; nativeReason = result.message || ''; } catch {}
+        emit({ state:'failed', downloadId:readyRef.current, message:(nativeReason || 'Android could not open the installer') + '. Tap Install to retry, or use Direct APK.' });
+        return;
+      }
       emit({ state:'installing', downloadId:readyRef.current, progress:100, message:'Update downloaded. Confirm installation if Android asks.' });
       clearInstallPoll();
       if (bridge.getAppUpdateInstallStatus) installPoll = window.setInterval(watchInstall, 1000);
@@ -202,7 +209,7 @@ export default function NativeAppAutoUpdater() {
     } catch {}
     const onCommand = (event: Event) => {
       const command = (event as CustomEvent<{ action?: string }>).detail?.action;
-      if (command === 'install') { installingRef.current = false; tryInstall(true); }
+      if (command === 'install') { installingRef.current = false; installFailed = false; tryInstall(true); }
       else if (command === 'retry') { release(true); void check(true); }
       else if (command === 'check') void check(true);
     };
