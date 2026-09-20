@@ -9,6 +9,7 @@ type Bridge = {
   getAppId?: () => string; getVersionCode?: () => number; getVersionName?: () => string;
   startAppUpdateDownload?: (url: string, versionName: string) => number;
   getAppUpdateDownloadStatus?: (downloadId: number) => string;
+  installAppUpdate?: (downloadId: number) => boolean;
   openExternalUrl?: (url: string) => boolean;
 };
 type Release = { versionName: string; versionCode: number; downloadUrl: string; releaseUrl: string };
@@ -31,7 +32,7 @@ export default function AppUpdateStatus() {
   useEffect(() => {
     const bridge = getBridge();
     setNative(bridge?.getAppId?.() === 'com.centralhub.network');
-    setNativeUpdaterAvailable(typeof bridge?.startAppUpdateDownload === 'function' && typeof bridge?.getAppUpdateDownloadStatus === 'function');
+    setNativeUpdaterAvailable(typeof bridge?.startAppUpdateDownload === 'function' && typeof bridge?.getAppUpdateDownloadStatus === 'function' && typeof bridge?.installAppUpdate === 'function');
     setInstalled({ code:Number(bridge?.getVersionCode?.() || 0), name:String(bridge?.getVersionName?.() || '') });
     try { const last = sessionStorage.getItem(KEY); if (last) setState(JSON.parse(last) as NativeUpdateStatus); } catch {}
     const onStatus = (event: Event) => setState((event as CustomEvent<NativeUpdateStatus>).detail);
@@ -110,7 +111,7 @@ export default function AppUpdateStatus() {
   return <div className="px-3 pt-2 md:px-5 md:pt-3">
     <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-end gap-2">
       {(error || native && !nativeUpdaterAvailable && hasUpdate) && release?.downloadUrl && <button type="button" onClick={openRelease} className="rounded-lg border border-slate-600/70 px-3 py-2 text-xs font-semibold text-cyan-200" title="Download exact signed APK directly">Direct APK</button>}
-      <button type="button" onClick={click} disabled={isDownloading || state.state === 'installing' || loading && !release}
+      <button type="button" onClick={click} disabled={(nativeUpdaterAvailable && (isDownloading || state.state === 'installing')) || (loading && !release)}
         title={info} aria-label={label}
         className={`inline-flex min-h-10 items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-bold shadow-sm ${error ? 'border-rose-400/50 bg-rose-900/30 text-rose-100' : currentDownload || hasUpdate ? 'border-amber-400/50 bg-amber-400 text-slate-950' : 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200'} disabled:opacity-80`}>
         <Icon size={15} className={isDownloading && state.state !== 'paused' || loading && !release ? 'animate-spin' : ''} />
