@@ -53,3 +53,24 @@
     grid-column:1 / -1 !important;
   }
 }
+
+/* Approved command-centre hierarchy, while drag/resize remains available in edit mode. */
+.workspace[data-editing='false'] { display:flex; flex-direction:column; gap:.5rem; }
+.workspace[data-editing='false'] .grid { order:1; width:100%; gap:.55rem; }
+.workspace[data-editing='false'] .toolbar { order:2; padding:.28rem .55rem; opacity:.83; }
+.workspace[data-editing='false'] .library { order:3; }
+.workspace[data-editing='false'] .widget[data-widget-id='growth-pulse'],
+.workspace[data-editing='false'] .widget[data-widget-id='security-pulse'] { align-self:stretch; }
+.workspace[data-editing='false'] .widget[data-widget-id='growth-pulse'] .ch-business-pulse,
+.workspace[data-editing='false'] .widget[data-widget-id='security-pulse'] .ch-security-pulse { height:100%; }
+@media(min-width:720px) and (max-width:1179px) {
+  .workspace[data-editing='false'] .widget[data-widget-id='growth-pulse'] {grid-column:span 8 !important;}
+  .workspace[data-editing='false'] .widget[data-widget-id='security-pulse'] {grid-column:span 4 !important;}
+  .workspace[data-editing='false'] .widget[data-widget-id='live-commerce'],
+  .workspace[data-editing='false'] .widget[data-widget-id='inventory-radar'],
+  .workspace[data-editing='false'] .widget[data-widget-id='sync-mesh'] {grid-column:span 4 !important;}
+}
+@media(max-width:719px) {
+  .workspace[data-editing='false'] .toolbar { order:0; }
+  .workspace[data-editing='false'] .grid { order:1; }
+}

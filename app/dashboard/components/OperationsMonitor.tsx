@@ -234,6 +234,31 @@ function CommandCentrePanel() {
   </Panel>;
 }
 
+
+/** Shared verified operational feed; no invented scans, orders/min or visitor counts. */
+export function OperationsStatusStrip() {
+  const { snapshot, connection, error, loading } = useMonitor();
+  const now = useClock();
+  const sampleAge = snapshot ? now - new Date(snapshot.sampled_at).getTime() : Infinity;
+  const fresh = !!snapshot && sampleAge >= 0 && sampleAge <= 90_000 && !error && connection !== 'offline';
+  const online = snapshot ? snapshot.stores.filter(store => store.security_status === 'online' && store.heartbeat_at && now - new Date(store.heartbeat_at).getTime() < 180_000).length : 0;
+  const pending = snapshot ? number(snapshot.sync.pending) + number(snapshot.sync.order_pending) : null;
+  const failed = snapshot ? number(snapshot.sync.failed) + number(snapshot.sync.order_failed) : null;
+  const items = [
+    { label:'Last verified sample', value:snapshot ? age(snapshot.sampled_at, now) : 'Waiting for data', icon:Clock3 },
+    { label:'Security heartbeats', value:snapshot ? online + ' / ' + snapshot.stores.length + ' observed online' : 'Unavailable', icon:ShieldCheck },
+    { label:'Orders · rolling 60m', value:fresh ? String(number(snapshot?.commerce.orders_60m)) : '—', icon:ShoppingBag },
+    { label:'Sync queue', value:pending === null ? 'Unavailable' : pending + ' pending · ' + failed + ' failed', icon:Database },
+    { label:'Verification', value:'30s while visible', icon:Activity },
+  ];
+  return <div className="ch-command-strip" aria-label="Verified live operating indicators" data-fresh={fresh}>
+    <div className="ch-command-strip-primary"><span className="ch-command-led" aria-hidden="true" />
+      <span><strong>{loading && !snapshot ? 'Connecting command centre' : error ? 'Data refresh delayed' : connection === 'offline' ? 'Offline · last data retained' : fresh ? 'Live & operational' : 'Waiting for verified sample'}</strong><small>{connection === 'live' ? 'Realtime events + 30s verification' : connection === 'polling' ? '30s verification · live events unavailable' : connection === 'offline' ? 'No connection' : 'Verification status pending'}</small></span>
+    </div>
+    {items.map(item => <div className="ch-command-strip-item" key={item.label}><item.icon size={15} aria-hidden="true"/><span><small>{item.label}</small><strong>{item.value}</strong></span></div>)}
+  </div>;
+}
+
 function CommercePanel() {
   const { snapshot, loading } = useMonitor();
   if (!snapshot) return loading ? <LoadingPanel title="Live commerce" /> : <Panel title="Live commerce"><div className="ch-empty">No commerce telemetry.</div></Panel>;

@@ -282,6 +282,15 @@ public final class CentralHubNativeBridge {
     }
 
     @JavascriptInterface
+    public boolean cancelAppUpdateDownload(long downloadId) {
+        if (downloadId <= 0) return false;
+        try {
+            DownloadManager manager = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
+            return manager != null && manager.remove(downloadId) > 0;
+        } catch (Exception ignored) { return false; }
+    }
+
+    @JavascriptInterface
     public String getAppUpdateDownloadStatus(long downloadId) {
         if (downloadId <= 0) return "{\"status\":\"invalid\",\"progress\":0}";
         DownloadManager manager = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
@@ -304,7 +313,7 @@ public final class CentralHubNativeBridge {
                 case DownloadManager.STATUS_FAILED: state = "failed"; break;
                 default: state = "unknown"; break;
             }
-            return "{\"status\":\"" + state + "\",\"progress\":" + progress + ",\"reason\":" + reason + "}";
+            return "{\"status\":\"" + state + "\",\"progress\":" + progress + ",\"reason\":" + reason + ",\"bytes\":" + soFar + ",\"totalBytes\":" + total + "}";
         } catch (Exception ignored) { return "{\"status\":\"failed\",\"progress\":0}"; }
         finally { if (cursor != null) cursor.close(); }
     }

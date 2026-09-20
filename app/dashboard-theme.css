@@ -721,3 +721,59 @@
   .ch-dashboard-workspace .ch-business-action small {font-size:clamp(.69rem,1.15vw,.76rem);}
   .ch-dashboard-workspace .ch-business-chart-head {font-size:.75rem;}
 }
+
+/* 2026 Command Centre: functional, verified telemetry, inspired by approved mockup. */
+.ch-dashboard-workspace .ch-live-console { background:linear-gradient(145deg,#071323 0%,#0b1224 50%,#090f1e 100%);border:1px solid rgba(56,189,248,.24);box-shadow:0 0 35px rgba(14,165,233,.10),inset 0 0 50px rgba(34,211,238,.018); }
+.ch-dashboard-workspace .ch-visual-surface { gap:.55rem; }
+.ch-dashboard-workspace .ch-command-strip { display:flex;flex-wrap:wrap;gap:.6rem;align-items:stretch;padding:.55rem .65rem;margin:0 0 .65rem; background:linear-gradient(100deg,rgba(6,43,55,.78),rgba(8,22,43,.92));border:1px solid rgba(34,211,238,.35);border-radius:.9rem;box-shadow:0 0 25px rgba(34,211,238,.07);color:#d1fae5; }
+.ch-dashboard-workspace .ch-command-strip-primary { display:flex;align-items:center;gap:.6rem;flex:1 1 172px;min-width:0;padding:.2rem .5rem;border-right:1px solid rgba(148,163,184,.18); }
+.ch-dashboard-workspace .ch-command-strip-primary span:last-child,.ch-dashboard-workspace .ch-command-strip-item span { display:grid;gap:.15rem;min-width:0; }
+.ch-dashboard-workspace .ch-command-strip strong { font-size:.74rem;letter-spacing:.005em;line-height:1.3;overflow-wrap:anywhere; }
+.ch-dashboard-workspace .ch-command-strip small { font-size:.62rem;color:#9bb4c7;line-height:1.35; }
+.ch-dashboard-workspace .ch-command-strip-item { display:flex;gap:.42rem;align-items:center;min-width:0;flex:1 1 130px;padding:.25rem .45rem;border-right:1px solid rgba(148,163,184,.09);color:#80ecff; }
+.ch-dashboard-workspace .ch-command-strip-item strong { color:#dff7ff; }
+.ch-dashboard-workspace .ch-command-led { position:relative;flex:0 0 9px;width:9px;height:9px;background:#f59e0b;border-radius:50%;box-shadow:0 0 10px #f59e0b55; }
+.ch-dashboard-workspace .ch-command-strip[data-fresh='true'] .ch-command-led {background:#34d399;box-shadow:0 0 12px #34d39999;}
+.ch-dashboard-workspace .ch-business-pulse {display:flex;flex-direction:column;justify-content:space-between;min-height:260px;}
+.ch-dashboard-workspace .ch-business-pulse .ch-business-grid {display:block;min-width:0;}
+.ch-dashboard-workspace .ch-business-pulse .ch-business-chart {min-height:0;background:rgba(2,10,26,.32);}
+.ch-dashboard-workspace .ch-business-pulse .ch-business-wave {height:clamp(100px,11vw,166px);}
+.ch-dashboard-workspace .ch-business-pulse .ch-business-pulse-head {margin-bottom:.65rem;}
+.ch-dashboard-workspace .ch-security-pulse {background:linear-gradient(130deg,rgba(7,27,45,.95),rgba(10,19,39,.94));border:1px solid rgba(34,211,238,.3);box-shadow:inset 0 0 16px rgba(34,211,238,.03),0 0 22px rgba(6,182,212,.04);}
+.ch-dashboard-workspace .ch-signal-panel {background:linear-gradient(110deg,rgba(8,27,43,.95),rgba(11,20,39,.96));border:1px solid rgba(34,211,238,.25);color:#e0f2fe;}
+.ch-dashboard-workspace .ch-signal-panel .ch-business-decisions {padding:0;border:0;background:none;}
+.ch-dashboard-workspace .ch-signal-panel .ch-business-decisions-title {font-size:.88rem;margin:.2rem 0 .6rem;}
+.ch-dashboard-workspace .ch-signal-panel .ch-business-action {margin:0;min-height:66px;}
+.ch-dashboard-workspace .ch-signal-panel .ch-business-note {margin-top:.65rem;}
+.ch-dashboard-workspace .ch-signal-panel .ch-business-action strong {font-size:.75rem;}
+.ch-dashboard-workspace .ch-visual-comparisons .ch-kpi {background:linear-gradient(160deg,rgba(10,30,48,.9),rgba(11,22,40,.95));border:1px solid rgba(58,180,219,.23);box-shadow:inset 0 1px 0 rgba(129,230,248,.04);border-radius:.75rem;min-height:118px;}
+.ch-dashboard-workspace .ch-visual-comparisons .ch-kpi::before {content:"";position:absolute;left:0;bottom:0;width:100%;height:2px;background:linear-gradient(90deg,transparent,var(--metric-accent,#22d3ee),transparent);opacity:.42;}
+.ch-dashboard-workspace .ch-visual-comparisons .ch-kpi {position:relative;overflow:hidden;}
+.ch-dashboard-workspace .ch-visual-comparisons .ch-kpi-value {font-size:clamp(.92rem,1.65vw,1.5rem);font-variant-numeric:tabular-nums;}
+.ch-dashboard-workspace .ch-visual-console .ch-visual-comparisons .ch-kpi-grid > .ch-kpi {flex:1 1 140px;}
+.ch-dashboard-workspace .ch-visual-console .ch-visual-comparisons .ch-kpi-grid {gap:.45rem;}
+.ch-dashboard-workspace .ch-live-console .ch-panel {min-width:0;}
+.ch-dashboard-workspace .ch-signal-panel .ch-business-decisions {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.48rem;}
+.ch-dashboard-workspace .ch-signal-panel .ch-business-decisions-title,.ch-dashboard-workspace .ch-signal-panel .ch-business-note {grid-column:1 / -1;}
+.ch-dashboard-workspace .ch-signal-panel .ch-business-action {grid-column:span 1;}
+.ch-dashboard-workspace .ch-command-strip[data-fresh='false'] .ch-command-strip-primary strong {color:#fcd34d;}
+.ch-model-shell[data-appearance='light'] .ch-command-strip,.ch-model-shell[data-appearance='light'] .ch-signal-panel {background:#eff9ff;border-color:#a5cbdc;color:#0f172a;}
+.ch-model-shell[data-appearance='light'] .ch-command-strip :is(strong,small),.ch-model-shell[data-appearance='light'] .ch-signal-panel .ch-business-decisions-title {color:#164e63;}
+.ch-model-shell[data-appearance='light'] .ch-command-strip-item strong {color:#164e63;}
+@media(max-width:1199px) {
+ .ch-dashboard-workspace .ch-signal-panel .ch-business-decisions {grid-template-columns:repeat(2,minmax(0,1fr));}
+}
+@media(max-width:850px) {
+ .ch-dashboard-workspace .ch-command-strip-item {flex-basis:calc(50% - .6rem);}
+ .ch-dashboard-workspace .ch-business-pulse .ch-business-wave {height:100px;}
+ .ch-dashboard-workspace .ch-signal-panel .ch-business-decisions {grid-template-columns:minmax(0,1fr);}
+ .ch-dashboard-workspace .ch-security-pulse .ch-security-stores {grid-template-columns:repeat(2,minmax(0,1fr));}
+}
+@media(max-width:719px) {
+ .ch-dashboard-workspace .ch-command-strip-primary {flex-basis:100%;border-right:0;}
+ .ch-dashboard-workspace .ch-command-strip-item {flex-basis:calc(50% - .6rem);padding:.22rem;}
+ .ch-dashboard-workspace .ch-signal-panel .ch-business-action {min-height:0;}
+ .ch-dashboard-workspace .ch-business-pulse {min-height:0;}
+ .ch-dashboard-workspace .ch-business-pulse .ch-business-brief strong {font-size:1rem;}
+}
+@media(prefers-reduced-motion:reduce){.ch-dashboard-workspace .ch-command-led{box-shadow:none;}}

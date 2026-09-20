@@ -11,7 +11,7 @@ import SecurityPulse from './SecurityPulse';
 import { getReferenceDashboardWidgets } from './ReferenceDashboard';
 import { getSectionVisualWidgets } from './SectionVisuals';
 import { ChannelVisualsProvider } from './ChannelVisuals';
-import { getOperationsMonitorWidgets, OperationsMonitorProvider } from './OperationsMonitor';
+import { getOperationsMonitorWidgets, OperationsMonitorProvider, OperationsStatusStrip } from './OperationsMonitor';
 import DashboardFilterBar from './DashboardFilterBar';
 import DashboardKpiGrid from './DashboardKpiGrid';
 import BusinessPulse from './BusinessPulse';
@@ -33,12 +33,12 @@ type DashboardWidget = {
 
 const EXECUTIVE_WIDGET_IDS = new Set([
   'growth-pulse',
-  'kpi-indexes',
   'security-pulse',
-  'operations-command-centre',
+  'kpi-indexes',
   'live-commerce',
-  'sync-mesh',
   'inventory-radar',
+  'sync-mesh',
+  'growth-signals',
   'action-required',
   'ai-insights',
 ]);
@@ -138,18 +138,19 @@ export default function DashboardOverview({ refreshKey, appearance = 'dark', con
   };
 
   const dashboardWidgets: DashboardWidget[] = report ? [
-    { id: 'growth-pulse', title: 'Business pulse & growth signals', description: 'Measured paid-order rhythm and grounded business actions', desktop: 12, tablet: 12, mobile: 12, minHeight: 350, content: <BusinessPulse report={report} connection={connection} refreshError={!!error} selectedStoreId={selectedStoreId} /> },
+    { id: 'growth-pulse', title: 'Business pulse', description: 'Measured paid-order rhythm', desktop: 8, tablet: 8, mobile: 12, minHeight: 280, content: <BusinessPulse report={report} connection={connection} refreshError={!!error} selectedStoreId={selectedStoreId} /> },
+    { id: 'growth-signals', title: 'Growth and attention', description: 'Measured sales and stock actions', desktop: 12, tablet: 12, mobile: 12, minHeight: 220, content: <BusinessPulse mode="signals" report={report} connection={connection} refreshError={!!error} selectedStoreId={selectedStoreId} /> },
     ...getOperationsMonitorWidgets(),
     ...getReferenceDashboardWidgets({ report, selectedStoreId, timeRange }),
-    { id: 'security-pulse', title: 'Security pulse', description: 'Realtime security and site-risk monitoring', desktop: 4, tablet: 6, mobile: 12, minHeight: 250, content: <SecurityPulse selectedStoreId={selectedStoreId} compact /> },
-    { id: 'kpi-indexes', title: 'KPI indexes', description: 'Revenue, profit, orders and inventory indexes', desktop: 8, tablet: 6, mobile: 12, minHeight: 250, content: <div className="ch-visual-comparisons"><DashboardKpiGrid compact current={report.current} previous={report.previous} /></div> },
+    { id: 'security-pulse', title: 'Security pulse', description: 'Realtime security and site-risk monitoring', desktop: 4, tablet: 4, mobile: 12, minHeight: 280, content: <SecurityPulse selectedStoreId={selectedStoreId} compact /> },
+    { id: 'kpi-indexes', title: 'KPI indexes', description: 'Revenue, profit, orders and inventory indexes', desktop: 12, tablet: 12, mobile: 12, minHeight: 160, content: <div className="ch-visual-comparisons"><DashboardKpiGrid compact current={report.current} previous={report.previous} /></div> },
     ...getSectionVisualWidgets({ report, selectedStoreId, refreshKey: report.loadedAt.getTime() }),
     { id: 'action-required', title: 'Action required', description: 'Items needing admin attention', desktop: 6, tablet: 12, mobile: 12, minHeight: 140, content: <ActionRequired key={selectedStoreId + report.loadedAt.toISOString()} /> },
     { id: 'ai-insights', title: 'AI insights', description: 'Decision support and system observations', desktop: 6, tablet: 12, mobile: 12, minHeight: 240, content: <AIInsights key={selectedStoreId + report.loadedAt.toISOString()} /> },
     { id: 'audit-log', title: 'Audit log', description: 'Recent CentralHub system activity', desktop: 12, tablet: 12, mobile: 12, minHeight: 240, content: <AuditLogWidget key={report.loadedAt.toISOString()} /> },
   ] : [];
 
-  const executiveOrder = ['growth-pulse', 'kpi-indexes', 'security-pulse', 'operations-command-centre', 'live-commerce', 'sync-mesh', 'inventory-radar', 'action-required', 'ai-insights'];
+  const executiveOrder = ['growth-pulse', 'security-pulse', 'kpi-indexes', 'live-commerce', 'inventory-radar', 'sync-mesh', 'growth-signals', 'action-required', 'ai-insights'];
   const executiveWidgets = dashboardWidgets.filter(widget => EXECUTIVE_WIDGET_IDS.has(widget.id)).sort((a, b) => executiveOrder.indexOf(a.id) - executiveOrder.indexOf(b.id));
   const detailWidgets = dashboardWidgets.filter(widget => !EXECUTIVE_WIDGET_IDS.has(widget.id));
   const financeWidgets = detailWidgets.filter(widget => FINANCE_WIDGET_IDS.has(widget.id));
@@ -178,7 +179,8 @@ export default function DashboardOverview({ refreshKey, appearance = 'dark', con
                     <p className="mt-1 text-xs text-slate-500">Live KPIs, security, core operations and actions that need attention.</p>
                   </div>
                 </div>
-                <DashboardWorkspace widgets={executiveWidgets} />
+                <OperationsStatusStrip />
+                <DashboardWorkspace widgets={executiveWidgets.map(widget => ['live-commerce', 'sync-mesh', 'inventory-radar'].includes(widget.id) ? { ...widget, desktop: 4, tablet: 4, mobile: 12, minHeight: 260 } : widget)} />
               </section>
 
               <section className="space-y-3" aria-label="Detailed dashboard modules">

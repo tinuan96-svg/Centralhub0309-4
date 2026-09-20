@@ -6,7 +6,6 @@ export const runtime = 'nodejs';
 
 const RELEASE_TAG = /^centralhub-android-v(.+)-c(\d+)$/i;
 const RELEASES_URL = 'https://api.github.com/repos/tinuan96-svg/Centralhub0309-4/releases?per_page=20';
-const CENTRALHUB_APK_URL = 'https://centralhub.network/downloads/centralhub-android-latest.apk';
 
 type GitHubAsset = {
   name?: string;
@@ -58,7 +57,7 @@ export async function GET(req: Request) {
           versionCode,
           tag: String(release.tag_name),
           publishedAt: release.published_at || null,
-          downloadUrl: CENTRALHUB_APK_URL,
+          downloadUrl: String(apk.browser_download_url),
           releaseUrl: String(release.html_url || ''),
           notes: String(release.body || '').slice(0, 1200),
         };

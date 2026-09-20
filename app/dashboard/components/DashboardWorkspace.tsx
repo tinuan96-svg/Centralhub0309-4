@@ -34,7 +34,7 @@ type StoredLayout = {
 };
 
 const STORAGE_KEY = 'centralhub-dashboard-layout-v2';
-const LAYOUT_VERSION = 3;
+const LAYOUT_VERSION = 4;
 const SCOPE = 'super_admin';
 const NEW_LIVE_WIDGET_IDS = new Set([
   'growth-pulse', 'operations-command-centre', 'live-commerce', 'traffic-pulse', 'sync-mesh', 'inventory-radar',
@@ -94,14 +94,14 @@ function mergeStoredLayout(stored: StoredLayout | null, defaults: StoredLayout):
     });
     // Version 2 retained oversized heights and placed new high-priority widgets
     // at the end of a saved mobile layout. Migrate once without deleting choices.
-    const mobilePriority = ['growth-pulse', 'kpi-indexes', 'security-pulse', 'operations-command-centre', 'live-commerce', 'sync-mesh', 'inventory-radar'];
-    const ordered = breakpoint === 'mobile' && (stored.version || 0) < LAYOUT_VERSION
+    const commandPriority = ['growth-pulse', 'security-pulse', 'kpi-indexes', 'live-commerce', 'inventory-radar', 'sync-mesh', 'growth-signals', 'action-required', 'ai-insights'];
+    const ordered = (stored.version || 0) < LAYOUT_VERSION
       ? [...merged].sort((a, b) => {
-          const ia = mobilePriority.indexOf(a.id), ib = mobilePriority.indexOf(b.id);
+          const ia = commandPriority.indexOf(a.id), ib = commandPriority.indexOf(b.id);
           return (ia < 0 ? 1000 + a.order : ia) - (ib < 0 ? 1000 + b.order : ib);
         })
       : merged;
-    return ordered.map((item, order) => ({ ...item, order, minHeight: breakpoint === 'mobile' ? Math.min(item.minHeight, 220) : item.minHeight }));
+    return ordered.map((item, order) => ({ ...item, order, colSpan: (stored.version || 0) < LAYOUT_VERSION ? known.get(item.id)?.colSpan ?? item.colSpan : item.colSpan, minHeight: breakpoint === 'mobile' ? Math.min(item.minHeight, 220) : item.minHeight }));
   };
   return { version: LAYOUT_VERSION, breakpoints: { desktop: merge('desktop'), tablet: merge('tablet'), mobile: merge('mobile') } };
 }
