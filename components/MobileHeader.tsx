@@ -196,6 +196,7 @@ export default function MobileHeader() {
       { href: '/developer/ci-cd', label: 'Builds & CI/CD' },
       { href: '/developer/ci-cd/releases', label: 'App Releases' },
     ] },
+    { href: '/developer/tinu-cloud', label: 'Tinu Cloud', icon: '☁️', key: '12.6 — tinu cloud' },
     { label: 'Settings', icon: '⚙️', key: '13 — settings', subItems: [
       { href: '/settings', label: 'System Overview' },
       { href: '/settings/notifications', label: 'Notifications & Phone Alerts' },
@@ -207,7 +208,7 @@ export default function MobileHeader() {
 
   const navItems = useMemo(() => {
     if (!mounted) return [];
-    let items = isAdmin ? allNavItems : allNavItems.filter((item) => !disabledNavKeys.includes(item.key));
+    let items = isAdmin ? allNavItems : allNavItems.filter((item) => item.key !== '12.6 — tinu cloud' && !disabledNavKeys.includes(item.key));
     if (navSearch.trim()) {
       const q = navSearch.toLowerCase();
       items = items.map(item => {

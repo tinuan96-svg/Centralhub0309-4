@@ -61,6 +61,9 @@ const sections: NavSection[] = [
   { key: '08.5-developer', label: 'Developer & CI/CD', icon: '🛠️', description: 'Builds, artifacts, releases and deployment automation', items: [
     { href: '/developer/ci-cd', label: 'Builds & CI/CD' }, { href: '/developer/ci-cd/releases', label: 'App Releases' },
   ] },
+  { key: '08.6-tinu-cloud', label: 'Tinu Cloud', icon: '☁️', description: 'Admin-only private development and hosting control', items: [
+    { href: '/developer/tinu-cloud', label: 'Tinu Cloud Control Centre' },
+  ] },
   { key: '09-system', label: 'Administration & System', icon: '⚙️', description: 'Users, configuration and audit controls', items: [
     { href: '/settings', label: 'System Settings' }, { href: '/settings/notifications', label: 'Notifications & Phone Alerts' }, { href: '/site-health', label: 'Site Health' }, { href: '/settings/users', label: 'User Management' }, { href: '/inventory-management/reports/audit', label: 'Audit Logs' },
   ] },
@@ -124,7 +127,7 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
   const counts: Record<string, number> = { '02-network-sales': stats.pendingOrders, '03-catalog-inventory': stats.lowStock, '04-procurement': stats.backorders, '06-customer-growth': stats.tickets };
   const filtered = useMemo(() => {
     const q = navSearch.trim().toLowerCase();
-    const allowed = isAdmin ? sections : sections.filter(s => !disabledNavKeys.includes(s.key));
+    const allowed = isAdmin ? sections : sections.filter(s => s.key !== '08.6-tinu-cloud' && !disabledNavKeys.includes(s.key));
     if (!q) return allowed;
     return allowed.map(s => ({ ...s, items: s.items.filter(i => i.label.toLowerCase().includes(q) || i.href.toLowerCase().includes(q)) })).filter(s => s.label.toLowerCase().includes(q) || s.items.length);
   }, [navSearch, isAdmin, disabledNavKeys]);

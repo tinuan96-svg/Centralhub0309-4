@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/components/AuthProvider';
 
 type Project = {
   id: string;
@@ -28,27 +28,50 @@ export default function TinuCloudPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { isAdmin, isLoading: authLoading, session } = useAuth();
 
   useEffect(() => {
+    if (authLoading || !isAdmin) return;
+    const controller = new AbortController();
     let alive = true;
-    (async () => {
-      const [projectRes, settingsRes] = await Promise.all([
-        supabase.from('tinu_cloud_projects').select('*').order('name'),
-        supabase.from('tinu_cloud_settings').select('*').eq('singleton', true).maybeSingle(),
-      ]);
-      if (!alive) return;
-      if (!projectRes.error) setProjects((projectRes.data || []) as Project[]);
-      if (!settingsRes.error) setSettings(settingsRes.data as Settings | null);
-      setLoading(false);
-    })();
-    return () => { alive = false; };
-  }, []);
+    const load = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        if (!session?.access_token) throw new Error('A valid admin session is required.');
+        const response = await fetch('/api/tinu-cloud/overview', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(response.status === 403 ? 'Admin access required.' : 'Unable to load Tinu Cloud.');
+        const data = await response.json();
+        if (data.success !== true || !data.settings || !Array.isArray(data.projects)) throw new Error('Tinu Cloud is not ready.');
+        if (!alive) return;
+        setProjects(data.projects as Project[]);
+        setSettings(data.settings as Settings);
+      } catch (cause) {
+        if (alive) setError(cause instanceof Error ? cause.message : 'Unable to load Tinu Cloud.');
+      } finally {
+        if (alive) setLoading(false);
+      }
+    };
+    void load();
+    return () => { alive = false; controller.abort(); };
+  }, [authLoading, isAdmin, session?.access_token]);
 
   const switches = [
     ['Source writes', settings?.source_writes_enabled],
     ['Deployments', settings?.deployments_enabled],
     ['Domain cutover', settings?.domain_cutover_enabled],
   ];
+
+  if (authLoading) return <main className="min-h-screen bg-[#030712] p-6 text-slate-300">Checking your session…</main>;
+  if (!isAdmin) return <main className="min-h-screen bg-[#030712] p-6 text-slate-300"><h1 className="text-xl font-black">Access restricted</h1><p className="mt-2 text-sm">Tinu Cloud is available to CentralHub administrators only.</p></main>;
+  if (loading || error || !settings) return <main className="min-h-screen bg-[#030712] p-6 text-slate-300" role="status">
+    <h1 className="text-xl font-black">Tinu Cloud</h1><p className="mt-2 text-sm">{loading ? 'Loading secure project registry…' : error || 'Tinu Cloud is not configured.'}</p>
+  </main>;
 
   return (
     <main className="min-h-screen bg-[#030712] px-4 py-5 text-slate-100 sm:px-6 lg:px-8">
@@ -62,7 +85,7 @@ export default function TinuCloudPage() {
             </div>
             <div className="rounded-2xl border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-right">
               <div className="text-[10px] font-black uppercase tracking-[.2em] text-amber-300">Migration stage</div>
-              <div className="mt-1 font-black capitalize text-amber-100">{settings?.stage || 'planning'}</div>
+              <div className="mt-1 font-black capitalize text-amber-100">{settings.stage}</div>
             </div>
           </div>
         </header>
@@ -82,7 +105,7 @@ export default function TinuCloudPage() {
               <p className="text-xs font-black uppercase tracking-[.2em] text-cyan-300">Migration registry</p>
               <h2 className="mt-1 text-xl font-black">Managed projects</h2>
             </div>
-            <span className={"rounded-full border px-3 py-1 text-xs font-black " + pending}>{loading ? 'Loading…' : projects.length + ' registered'}</span>
+            <span className={"rounded-full border px-3 py-1 text-xs font-black " + pending}>{projects.length + ' registered'}</span>
           </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {projects.map(project => (
