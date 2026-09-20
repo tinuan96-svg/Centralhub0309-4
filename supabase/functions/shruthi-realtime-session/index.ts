@@ -87,7 +87,7 @@ Deno.serve(async(req:Request)=>{
  // Never truncate serialized JSON in the middle of a product or date. Prefer
  // active products and retain the overall inventory totals when trimming.
  let contextText=JSON.stringify(sessionContext);
- while(contextText.length>80000 && inventory.rows.length>0){
+ while(contextText.length>16000 && inventory.rows.length>0){
    inventory.rows.pop();
    inventory.rows_included=inventory.rows.length;
    inventory.rows_are_partial=true;
@@ -133,7 +133,40 @@ CONVERSATION:
 CENTRALHUB CONTEXT:
 ${contextText}`
  const session={type:"realtime",model,output_modalities:["audio"],instructions,max_output_tokens:600,audio:{input:{format:{type:"audio/pcm",rate:24000},noise_reduction:{type:"near_field"},transcription:{model:"gpt-4o-mini-transcribe",prompt:"Natural executive-assistant speech. Malayalam and English code-switching; UK business, grocery, Meta, Facebook, Instagram, Supabase, Netlify and CentralHub terms."},turn_detection:{type:"server_vad",threshold:.62,prefix_padding_ms:240,silence_duration_ms:520,create_response:true,interrupt_response:false}},output:{format:{type:"audio/pcm",rate:24000},voice:"marin",speed:1.04}}};
- const upstream=await fetch("https://api.openai.com/v1/realtime/client_secrets",{method:"POST",headers:{Authorization:`Bearer ${apiKey}`,"Content-Type":"application/json"},body:JSON.stringify({session})}),raw=await upstream.text();
- if(!upstream.ok){console.error("Shruthi Realtime client secret request failed",upstream.status,raw.slice(0,500));return json({error:"realtime_session_failed",upstream_status:upstream.status},502);}
- try{return json(JSON.parse(raw));}catch{return json({error:"invalid_realtime_response"},502);}
+ // Realtime credentials never leave this server. Surface only safe failure categories.
+ let upstream:Response;
+ try{
+  upstream=await fetch("https://api.openai.com/v1/realtime/client_secrets",{
+   method:"POST",headers:{Authorization:`Bearer ${apiKey}`,"Content-Type":"application/json"},
+   body:JSON.stringify({session}),signal:AbortSignal.timeout(18000)
+  });
+ }catch(e){
+  console.error("Shruthi Realtime token network failure",e instanceof Error?e.name:"unknown");
+  return json({error:"upstream_network_failure",retryable:true},503);
+ }
+ const raw=await upstream.text();
+ if(!upstream.ok){
+  let detail:any={};try{detail=JSON.parse(raw)?.error||{};}catch{}
+  const code=String(detail.code||"").slice(0,80),param=String(detail.param||"").slice(0,100);
+  const requestId=String(upstream.headers.get("x-request-id")||"").slice(0,100);
+  console.error("Shruthi Realtime token rejected",JSON.stringify({
+   status:upstream.status,code,param,request_id:requestId,instructions_chars:instructions.length,inventory_rows:inventory.rows_included
+  }));
+  const limited=upstream.status===429,unavailable=upstream.status>=500;
+  const category=upstream.status===401||upstream.status===403?"upstream_credentials_rejected":
+   limited?(["insufficient_quota","credit_balance_exhausted","organization_usage_limit_exceeded"].includes(code)?"upstream_quota_unavailable":"upstream_rate_limited"):
+   upstream.status===400||upstream.status===422?"upstream_session_configuration_rejected":
+   unavailable?"upstream_temporarily_unavailable":"upstream_request_rejected";
+  return json({error:category,upstream_status:upstream.status,
+   retryable:unavailable||category==="upstream_rate_limited",request_id:requestId||undefined},
+   limited?429:unavailable?503:502);
+ }
+ try{
+  const value=JSON.parse(raw);
+  if(typeof value?.value!=="string"||!value.value.trim()){
+   console.error("Shruthi Realtime token response missing client secret");
+   return json({error:"invalid_realtime_response",retryable:false},502);
+  }
+  return json(value);
+ }catch{return json({error:"invalid_realtime_response",retryable:false},502);}
 });

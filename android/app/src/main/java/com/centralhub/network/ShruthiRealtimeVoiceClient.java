@@ -129,7 +129,26 @@ final class ShruthiRealtimeVoiceClient {
         try{
             int code=c.getResponseCode();InputStream in=code>=200&&code<300?c.getInputStream():c.getErrorStream();StringBuilder raw=new StringBuilder();
             if(in!=null)try(BufferedReader r=new BufferedReader(new InputStreamReader(in,StandardCharsets.UTF_8))){String line;while((line=r.readLine())!=null)raw.append(line);}
-            if(code<200||code>=300)throw new IllegalStateException("Realtime session unavailable ("+code+")");
+            if(code<200||code>=300){
+                String reason="Voice session could not start";
+                try{
+                    JSONObject err=new JSONObject(raw.toString());
+                    String kind=err.optString("error");
+                    int upstream=err.optInt("upstream_status",0);
+                    switch(kind){
+                        case "upstream_credentials_rejected": reason="Voice service credentials rejected. Check the server API key";break;
+                        case "upstream_quota_unavailable": reason="Voice service quota or billing unavailable";break;
+                        case "upstream_rate_limited": reason="Voice service rate limited. Try again shortly";break;
+                        case "upstream_session_configuration_rejected": reason="Voice session configuration rejected by the service";break;
+                        case "upstream_temporarily_unavailable":case "upstream_network_failure":reason="Voice service temporarily unavailable";break;
+                        case "realtime_not_configured":case "service_not_configured":reason="Voice service is not configured on the server";break;
+                        case "unauthorized":reason="CentralHub sign-in expired. Sign in again";break;
+                        case "admin_required":reason="CentralHub administrator access required";break;
+                        default:if(upstream>0)reason="Voice session rejected upstream (HTTP "+upstream+")";break;
+                    }
+                }catch(Exception ignored){}
+                throw new IllegalStateException(reason+" (HTTP "+code+")");
+            }
             JSONObject p=new JSONObject(raw.toString());String value=p.optString("value");
             if(value.isEmpty()&&p.optJSONObject("client_secret")!=null)value=p.optJSONObject("client_secret").optString("value");
             if(value.isEmpty())throw new IllegalStateException("Realtime session did not return a client secret");
@@ -264,7 +283,25 @@ final class ShruthiRealtimeVoiceClient {
     private boolean rememberEvent(String id){if(id==null||id.isEmpty())return true;synchronized(seenEvents){if(!seenEvents.add(id))return false;if(seenEvents.size()>MAX_EVENT_IDS)seenEvents.remove(seenEvents.iterator().next());}return true;}
     private void resetResponseState(){activeResponseId="";audioEventType="";transcriptEventType="";synchronized(blockedResponses){blockedResponses.clear();}synchronized(seenEvents){seenEvents.clear();}}
     private void cleanupAudio(){Thread c=captureThread;captureThread=null;if(c!=null)c.interrupt();Thread p=playbackThread;playbackThread=null;if(p!=null)p.interrupt();playbackQueue.clear();try{if(echoCanceler!=null)echoCanceler.release();}catch(Exception ignored){}echoCanceler=null;echoCancellationReady=false;try{if(noiseSuppressor!=null)noiseSuppressor.release();}catch(Exception ignored){}noiseSuppressor=null;try{if(recorder!=null)recorder.stop();}catch(Exception ignored){}try{if(recorder!=null)recorder.release();}catch(Exception ignored){}recorder=null;try{if(player!=null)player.pause();}catch(Exception ignored){}try{if(player!=null)player.flush();}catch(Exception ignored){}try{if(player!=null)player.release();}catch(Exception ignored){}player=null;if(audioManager!=null)try{audioManager.setMode(previousAudioMode);}catch(Exception ignored){}}
-    private void failOrReconnect(String msg){if(explicitlyClosed||!running.get()||!reconnectScheduled.compareAndSet(false,true))return;generation.incrementAndGet();resetResponseState();assistantAudioActive.set(false);captureEnabled.set(false);cleanupAudio();WebSocket failed=socket;socket=null;if(failed!=null)failed.cancel();reconnectAttempt++;if(reconnectAttempt>4){running.set(false);reconnectScheduled.set(false);ACTIVE.compareAndSet(this,null);state("error");listener.onError(msg+". Tap the microphone to reconnect.");return;}state("reconnecting");long delay=Math.min(2800L,350L<<(reconnectAttempt-1));scheduler.schedule(()->{reconnectScheduled.set(false);captureEnabled.set(true);if(running.get()&&!explicitlyClosed)openSession();},delay,TimeUnit.MILLISECONDS);}
+    private void failOrReconnect(String msg){
+        if(explicitlyClosed||!running.get()||!reconnectScheduled.compareAndSet(false,true))return;
+        generation.incrementAndGet();resetResponseState();assistantAudioActive.set(false);captureEnabled.set(false);cleanupAudio();
+        WebSocket failed=socket;socket=null;if(failed!=null)failed.cancel();
+        boolean requiresAction=msg.contains("credentials rejected")||msg.contains("quota or billing")
+            ||msg.contains("configuration rejected")||msg.contains("not configured")
+            ||msg.contains("sign-in expired")||msg.contains("administrator access required");
+        reconnectAttempt++;
+        if(requiresAction||reconnectAttempt>3){
+            running.set(false);reconnectScheduled.set(false);ACTIVE.compareAndSet(this,null);
+            state("error");listener.onError(msg+(requiresAction?".":"; tap the microphone to retry."));return;
+        }
+        state("reconnecting");
+        long delay=Math.min(4000L,600L<<(reconnectAttempt-1));
+        scheduler.schedule(()->{
+            reconnectScheduled.set(false);captureEnabled.set(true);
+            if(running.get()&&!explicitlyClosed)openSession();
+        },delay,TimeUnit.MILLISECONDS);
+    }
     private void state(String v){try{listener.onState(v);}catch(Exception ignored){}}
     private static void sleep(long ms){try{Thread.sleep(ms);}catch(InterruptedException e){Thread.currentThread().interrupt();}}
     private static String message(Throwable e,String fallback){String m=e==null?"":e.getMessage();return m==null||m.trim().isEmpty()?fallback:m.trim();}

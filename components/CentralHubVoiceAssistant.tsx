@@ -776,8 +776,9 @@ export default function CentralHubVoiceAssistant() {
     setSession(true);
   }, [chooseTheme, setSession]);
 
-  const voiceState: VoiceState = realtimeState === 'speaking' ? 'speaking' : (realtimeState === 'connecting' || realtimeState === 'thinking' || realtimeState === 'reconnecting') ? 'processing' : realtimeState === 'listening' ? 'listening' : processing ? 'processing' : speaking ? 'speaking' : recording ? 'listening' : (noraSession ? 'listening' : 'waiting');
+  const voiceState: VoiceState = realtimeState === 'error' ? 'waiting' : realtimeState === 'speaking' ? 'speaking' : (realtimeState === 'connecting' || realtimeState === 'thinking' || realtimeState === 'reconnecting') ? 'processing' : realtimeState === 'listening' ? 'listening' : processing ? 'processing' : speaking ? 'speaking' : recording ? 'listening' : (noraSession && !error ? 'listening' : 'waiting');
   const statusLabel =
+    realtimeState === 'error' ? 'Voice unavailable · tap mic to retry' :
     voiceState === 'processing' ? 'Processing…' :
     voiceState === 'speaking' ? 'Speaking…' :
     voiceState === 'listening' ? 'Listening…' :
