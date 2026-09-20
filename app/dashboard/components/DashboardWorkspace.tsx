@@ -34,7 +34,7 @@ type StoredLayout = {
 };
 
 const STORAGE_KEY = 'centralhub-dashboard-layout-v2';
-const LAYOUT_VERSION = 2;
+const LAYOUT_VERSION = 3;
 const SCOPE = 'super_admin';
 const NEW_LIVE_WIDGET_IDS = new Set([
   'growth-pulse', 'operations-command-centre', 'live-commerce', 'traffic-pulse', 'sync-mesh', 'inventory-radar',
@@ -92,7 +92,16 @@ function mergeStoredLayout(stored: StoredLayout | null, defaults: StoredLayout):
       const insertAt = NEW_LIVE_WIDGET_IDS.has(item.id) ? Math.min(defaultIndex, merged.length) : merged.length;
       merged.splice(insertAt, 0, { ...item, order: insertAt });
     });
-    return merged.map((item, order) => ({ ...item, order }));
+    // Version 2 retained oversized heights and placed new high-priority widgets
+    // at the end of a saved mobile layout. Migrate once without deleting choices.
+    const mobilePriority = ['growth-pulse', 'kpi-indexes', 'security-pulse', 'operations-command-centre', 'live-commerce', 'sync-mesh', 'inventory-radar'];
+    const ordered = breakpoint === 'mobile' && (stored.version || 0) < LAYOUT_VERSION
+      ? [...merged].sort((a, b) => {
+          const ia = mobilePriority.indexOf(a.id), ib = mobilePriority.indexOf(b.id);
+          return (ia < 0 ? 1000 + a.order : ia) - (ib < 0 ? 1000 + b.order : ib);
+        })
+      : merged;
+    return ordered.map((item, order) => ({ ...item, order, minHeight: breakpoint === 'mobile' ? Math.min(item.minHeight, 220) : item.minHeight }));
   };
   return { version: LAYOUT_VERSION, breakpoints: { desktop: merge('desktop'), tablet: merge('tablet'), mobile: merge('mobile') } };
 }
@@ -293,7 +302,7 @@ export default function DashboardWorkspace({ widgets }: { widgets: WidgetDefinit
         return <section
           key={item.id}
           className={`${styles.widget} ${draggingId === item.id ? styles.dragging : ''}`}
-          style={{ gridColumn: `span ${breakpoint === 'mobile' ? 12 : item.colSpan}`, minHeight: item.minHeight }}
+          style={{ gridColumn: `span ${breakpoint === 'mobile' ? 12 : item.colSpan}`, minHeight: editing ? item.minHeight : undefined }}
           draggable={editing}
           onDragStart={event => { if (!editing) return; setDraggingId(item.id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', item.id); }}
           onDragEnd={() => setDraggingId(null)}

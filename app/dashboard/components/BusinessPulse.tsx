@@ -38,12 +38,15 @@ export default function BusinessPulse({ report, connection, refreshError, select
 
   const movingLowStock = useMemo(() => {
     const stocks = new Map(report.inventory.map(row => [row.product_id, row]));
-    return report.products.filter(product => {
-      const stock = stocks.get(product.id);
-      if (!stock || product.units <= 0) return false;
-      const threshold = stock.low_stock_threshold == null ? 0 : Number(stock.low_stock_threshold);
-      return stock.stock_quantity <= threshold;
-    });
+    return report.products
+      .filter(product => {
+        const stock = stocks.get(product.id);
+        if (!stock || product.units <= 0) return false;
+        const threshold = stock.low_stock_threshold == null ? 0 : Number(stock.low_stock_threshold);
+        return stock.stock_quantity <= threshold;
+      })
+      .map(product => ({ ...product, stock: stocks.get(product.id)! }))
+      .sort((a, b) => b.units - a.units);
   }, [report]);
 
   const incompleteCosts = report.current.missingCosts > 0;
@@ -52,6 +55,11 @@ export default function BusinessPulse({ report, connection, refreshError, select
   const live = !refreshError && isRecent && connection === 'connected';
   const polled = !refreshError && isRecent && connection === 'polling';
   const top = report.products.slice(0, 3);
+  // This is realised paid-unit pace, not a forecast or a purchase quantity.
+  const lowStockDetail = movingLowStock.slice(0, 3).map(product => ({
+    ...product,
+    dailyUnits: product.units / daysCovered,
+  }));
 
   return <section className="ch-business-pulse ch-panel" aria-label="Measured business pulse and growth signals">
     <div className="ch-business-pulse-head">
@@ -78,7 +86,7 @@ export default function BusinessPulse({ report, connection, refreshError, select
             {activity.buckets.map((bucket, i) => <circle key={i} cx={6 + i * (308 / 15)} cy={79 - Math.max(0, bucket.revenue) / Math.max(1, activity.peak) * 61} r="2" fill="#a5f3fc"><title>{readableCount(bucket.orders)} paid orders · {formatCurrency(bucket.revenue)}</title></circle>)}
           </svg><div className="ch-business-sweep" aria-hidden="true" />
         </div>
-        <div className="ch-business-chart-foot"><span>{report.start.toLocaleDateString('en-GB')}</span><span>Actual order timestamps · sweep is visual only</span><span>{new Date(Math.min(report.end.getTime(), report.loadedAt.getTime())).toLocaleDateString('en-GB')}</span></div>
+        <div className="ch-business-chart-foot"><span>{report.start.toLocaleDateString('en-GB')}</span><span>Paid orders · visual sweep only</span><span>{new Date(Math.min(report.end.getTime(), report.loadedAt.getTime())).toLocaleDateString('en-GB')}</span></div>
         <div className="ch-business-brief">
           <div><span>Paid revenue</span><strong>{formatCurrency(report.current.totalRevenue)}</strong></div>
           <div><span>Average paid order</span><strong>{activity.avgOrder === null ? '—' : formatCurrency(activity.avgOrder)}</strong></div>
@@ -89,7 +97,10 @@ export default function BusinessPulse({ report, connection, refreshError, select
       <div className="ch-business-decisions">
         <div className="ch-business-decisions-title"><TrendingUp size={16} /><strong>Growth & attention signals</strong><small>Read-only · derived from this report</small></div>
         {incompleteCosts && <Link href="/profit-analysis" className="ch-business-action"><ReceiptText size={17}/><span><strong>Complete cost coverage</strong><small>Gross profit is unavailable while paid-order costs are incomplete. Review cost snapshots.</small></span><ArrowUpRight size={16}/></Link>}
-        {movingLowStock.length > 0 && <Link href="/backorder-planning" className="ch-business-action"><PackageSearch size={17}/><span><strong>{readableCount(movingLowStock.length)} selling products at or below stock threshold</strong><small>Shared warehouse quantity · sales from selected period. Check replenishment before committing stock.</small></span><ArrowUpRight size={16}/></Link>}
+        {movingLowStock.length > 0 && <Link href="/backorder-planning" className="ch-business-action"><PackageSearch size={17}/><span><strong>{readableCount(movingLowStock.length)} selling products at or below stock threshold</strong><small>Shared warehouse quantity · paid units from selected period.</small>
+          {lowStockDetail.map(product => <small className="ch-business-stock-detail" key={product.id}><b>{product.name}</b> · on hand {product.stock.stock_quantity.toLocaleString('en-GB')} · sold {product.units.toLocaleString('en-GB')} · {product.dailyUnits.toFixed(1)} units/day in period · threshold {product.stock.low_stock_threshold == null ? 'not set' : product.stock.low_stock_threshold.toLocaleString('en-GB')}</small>)}
+          <small>Open Backorder Planning for lead-time and safety-stock-based quantities; no purchase quantity is estimated here.</small>
+        </span><ArrowUpRight size={16}/></Link>}
         {top[0] && <Link href="/profit-analysis" className="ch-business-action"><TrendingUp size={17}/><span><strong>Highest paid-product revenue: {top[0].name}</strong><small>{readableCount(top[0].units)} units · {formatCurrency(top[0].revenue)} product sales in selected period.</small></span><ArrowUpRight size={16}/></Link>}
         {!top.length && !incompleteCosts && movingLowStock.length === 0 && <div className="ch-business-action ch-business-action-empty"><Clock3 size={17}/><span><strong>No paid-product sales in the selected period</strong><small>Check the period, storefront filter and order/payment sync before making a pricing decision.</small></span></div>}
         <div className="ch-business-note"><WifiOff size={13}/><span>Store selector filters sales; stock and stock thresholds are shared-warehouse figures. No forecasts or unverified margin claims.</span></div>

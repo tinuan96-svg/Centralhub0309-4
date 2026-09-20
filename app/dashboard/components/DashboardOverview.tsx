@@ -144,7 +144,7 @@ export default function DashboardOverview({ refreshKey, appearance = 'dark', con
     { id: 'security-pulse', title: 'Security pulse', description: 'Realtime security and site-risk monitoring', desktop: 4, tablet: 6, mobile: 12, minHeight: 250, content: <SecurityPulse selectedStoreId={selectedStoreId} compact /> },
     { id: 'kpi-indexes', title: 'KPI indexes', description: 'Revenue, profit, orders and inventory indexes', desktop: 8, tablet: 6, mobile: 12, minHeight: 250, content: <div className="ch-visual-comparisons"><DashboardKpiGrid compact current={report.current} previous={report.previous} /></div> },
     ...getSectionVisualWidgets({ report, selectedStoreId, refreshKey: report.loadedAt.getTime() }),
-    { id: 'action-required', title: 'Action required', description: 'Items needing admin attention', desktop: 6, tablet: 12, mobile: 12, minHeight: 240, content: <ActionRequired key={selectedStoreId + report.loadedAt.toISOString()} /> },
+    { id: 'action-required', title: 'Action required', description: 'Items needing admin attention', desktop: 6, tablet: 12, mobile: 12, minHeight: 140, content: <ActionRequired key={selectedStoreId + report.loadedAt.toISOString()} /> },
     { id: 'ai-insights', title: 'AI insights', description: 'Decision support and system observations', desktop: 6, tablet: 12, mobile: 12, minHeight: 240, content: <AIInsights key={selectedStoreId + report.loadedAt.toISOString()} /> },
     { id: 'audit-log', title: 'Audit log', description: 'Recent CentralHub system activity', desktop: 12, tablet: 12, mobile: 12, minHeight: 240, content: <AuditLogWidget key={report.loadedAt.toISOString()} /> },
   ] : [];

@@ -32,3 +32,15 @@
 @media (max-width: 1179px) { .actionLabel { display: none; } }
 @media (max-width: 719px) { .grid { grid-template-columns: minmax(0, 1fr); } .widget { grid-column: 1 / -1 !important; } .toolbar { align-items: flex-start; } .toolbarActions { width: 100%; justify-content: flex-start; } .saveState { order: 99; margin-left: auto; } .editChrome { position: relative; inset: auto; margin: -1.85rem .25rem .3rem; } .workspace[data-editing='true'] .widget { padding-top: 2rem; } .quickControls button { min-width: 2rem; min-height: 1.8rem; } }
 @media print { .toolbar, .library, .editChrome, .resizeHandle { display: none !important; } .workspace[data-editing='true'] .widget { padding-top: 0; border: 0; background: transparent; } }
+
+/* In view mode the content determines each row's height, even for an old saved layout.
+   Empty cards returned as null by async widgets must not reserve a 240px slot. */
+.workspace[data-editing='false'] .widget { min-height:0 !important; align-self:start; }
+.workspace[data-editing='false'] .widgetBody { height:auto; }
+.workspace[data-editing='false'] .widget:has(> .widgetBody:empty) { display:none; }
+@media(max-width:719px) {
+  .workspace .grid { gap:.45rem; align-items:start; grid-auto-rows:auto; }
+  .workspace[data-editing='false'] .widget { min-height:0 !important; height:auto; }
+  .workspace[data-editing='false'] .widgetBody > :first-child { height:auto; }
+  .workspace .toolbar { gap:.3rem; padding:.4rem .55rem; }
+}
