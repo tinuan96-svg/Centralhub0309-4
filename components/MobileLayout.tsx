@@ -40,6 +40,17 @@ export default function MobileLayout({ children }: MobileLayoutProps) {
   const dashboardFloatingControlStyles = (
     <style jsx global>{`
       @media (max-width: 699px) {
+        /* Folded mobile: reserve a compact dock above the bottom nav.
+           No always-on floating button should cover scrollable dashboard cards. */
+        .ch-dashboard-route > main {
+          margin-bottom: calc(5.25rem + env(safe-area-inset-bottom));
+        }
+        .ch-dashboard-route [data-dashboard-dock-control="learning"] {
+          top: auto !important;
+          right: 9.5rem !important;
+          bottom: calc(5.6rem + env(safe-area-inset-bottom)) !important;
+          transform: none !important;
+        }
         .ch-dashboard-route div:has(> button[aria-label="Open quick actions"]),
         .ch-dashboard-route div:has(> button[aria-label="Close quick actions"]) {
           right: 5.25rem !important;
