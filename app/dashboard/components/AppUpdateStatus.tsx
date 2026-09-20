@@ -7,6 +7,8 @@ import type { NativeUpdateStatus } from '@/components/NativeAppAutoUpdater';
 
 type Bridge = {
   getAppId?: () => string; getVersionCode?: () => number; getVersionName?: () => string;
+  startAppUpdateDownload?: (url: string, versionName: string) => number;
+  getAppUpdateDownloadStatus?: (downloadId: number) => string;
   openExternalUrl?: (url: string) => boolean;
 };
 type Release = { versionName: string; versionCode: number; downloadUrl: string; releaseUrl: string };
@@ -18,6 +20,7 @@ const getBridge = () => (window as typeof window & { CentralHubNative?: Bridge }
 
 export default function AppUpdateStatus() {
   const [native, setNative] = useState(false);
+  const [nativeUpdaterAvailable, setNativeUpdaterAvailable] = useState(false);
   const [installed, setInstalled] = useState<{ code: number; name: string }>({ code:0, name:'' });
   const [release, setRelease] = useState<Release | null>(null);
   const [state, setState] = useState<NativeUpdateStatus>({ state:'checking' });
@@ -28,6 +31,7 @@ export default function AppUpdateStatus() {
   useEffect(() => {
     const bridge = getBridge();
     setNative(bridge?.getAppId?.() === 'com.centralhub.network');
+    setNativeUpdaterAvailable(typeof bridge?.startAppUpdateDownload === 'function' && typeof bridge?.getAppUpdateDownloadStatus === 'function');
     setInstalled({ code:Number(bridge?.getVersionCode?.() || 0), name:String(bridge?.getVersionName?.() || '') });
     try { const last = sessionStorage.getItem(KEY); if (last) setState(JSON.parse(last) as NativeUpdateStatus); } catch {}
     const onStatus = (event: Event) => setState((event as CustomEvent<NativeUpdateStatus>).detail);
@@ -52,6 +56,9 @@ export default function AppUpdateStatus() {
         if (!response.ok || !body?.success) throw new Error(body?.error || 'Update feed unavailable (HTTP ' + response.status + ')');
         if (!active) return;
         setRelease(body.latest || null);
+        if (getBridge()?.getAppId?.() === 'com.centralhub.network' && body.latest && body.latest.versionCode <= Number(getBridge()?.getVersionCode?.() || 0)) {
+          setState({ state:'current', installedVersionCode:Number(getBridge()?.getVersionCode?.() || 0), versionCode:body.latest.versionCode });
+        }
         setFetchError('');
       } catch (err) { if (active) setFetchError(err instanceof Error ? err.message : 'Update check failed'); }
       finally { if (active) setLoading(false); }
@@ -72,7 +79,8 @@ export default function AppUpdateStatus() {
   const totalBytes = Number(state.totalBytes || 0);
   const measured = totalBytes > 0;
   const mb = (n: number) => (n / 1048576).toFixed(1) + ' MB';
-  const label = !native ? release ? 'Download Android app' : loading ? 'Checking Android…' : 'Check Android app' :
+  const label = native && !nativeUpdaterAvailable ? (release && hasUpdate ? 'Download signed Android update' : loading ? 'Checking Android…' : fetchError ? 'Retry Android update check' : release ? 'Android app up to date' : 'Check Android update') :
+    !native ? release ? 'Download Android app' : loading ? 'Checking Android…' : 'Check Android app' :
     isDownloading ? state.state === 'paused' ? 'Download paused' : measured ? 'Downloading ' + progress + '%' : bytes > 0 ? 'Downloading ' + mb(bytes) : state.state === 'pending' ? 'Waiting to download' : 'Connecting to download…' :
     state.state === 'downloaded' || state.state === 'permission' ? 'Install downloaded update' :
     state.state === 'installing' ? 'Confirm Android installation' :
@@ -81,17 +89,18 @@ export default function AppUpdateStatus() {
   const command = (action: string) => window.dispatchEvent(new CustomEvent(COMMAND_EVENT,{detail:{action}}));
   const openRelease = () => {
     if (!release?.downloadUrl) return;
+    console.info('[CentralHub Android update] Direct signed release selected', { installedVersionCode:installed.code, latestVersionCode:release.versionCode, source:new URL(release.downloadUrl).origin });
     if (getBridge()?.openExternalUrl?.(release.downloadUrl)) return;
     window.open(release.downloadUrl, '_blank', 'noopener,noreferrer');
   };
   const click = () => {
-    if (!native) { if (release?.downloadUrl) openRelease(); else setClock(c => c+1); return; }
+    if (!native || !nativeUpdaterAvailable) { if (release?.downloadUrl && (!native || hasUpdate)) openRelease(); else setClock(c => c+1); return; }
     if (isDownloading || state.state === 'installing') return;
     if (state.state === 'downloaded' || state.state === 'permission') { command('install'); return; }
     command(state.state === 'failed' || hasUpdate ? 'retry' : 'check');
     setClock(c=>c+1);
   };
-  const info = fetchError || state.message ||
+  const info = fetchError || (native && !nativeUpdaterAvailable ? 'This installed app cannot perform native updates. Install the signed APK once; future updates can then run inside CentralHub.' : '') || state.message ||
     (state.state === 'paused' ? 'Android has paused the download' + (state.reason ? ' · reason ' + state.reason : '') : '') ||
     (isDownloading ? measured ? mb(bytes) + ' of ' + mb(totalBytes) : bytes > 0 ? mb(bytes) + ' downloaded; total size not reported yet' : 'Waiting for Android DownloadManager' : '') ||
     (native ? 'Installed ' + (installed.name || installed.code || 'unknown') + (release ? ' · Latest ' + release.versionName : '') : 'CentralHub Android release');
@@ -100,14 +109,14 @@ export default function AppUpdateStatus() {
 
   return <div className="px-3 pt-2 md:px-5 md:pt-3">
     <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-end gap-2">
-      {error && release?.downloadUrl && <button type="button" onClick={openRelease} className="rounded-lg border border-slate-600/70 px-3 py-2 text-xs font-semibold text-cyan-200" title="Download exact signed APK directly">Direct APK</button>}
+      {(error || native && !nativeUpdaterAvailable && hasUpdate) && release?.downloadUrl && <button type="button" onClick={openRelease} className="rounded-lg border border-slate-600/70 px-3 py-2 text-xs font-semibold text-cyan-200" title="Download exact signed APK directly">Direct APK</button>}
       <button type="button" onClick={click} disabled={isDownloading || state.state === 'installing' || loading && !release}
         title={info} aria-label={label}
         className={`inline-flex min-h-10 items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-bold shadow-sm ${error ? 'border-rose-400/50 bg-rose-900/30 text-rose-100' : currentDownload || hasUpdate ? 'border-amber-400/50 bg-amber-400 text-slate-950' : 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200'} disabled:opacity-80`}>
         <Icon size={15} className={isDownloading && state.state !== 'paused' || loading && !release ? 'animate-spin' : ''} />
         <span>{label}</span>
       </button>
-      {(error || currentDownload) && <span role={error ? 'alert' : 'status'} className="w-full text-right text-[11px] text-slate-400">{info}</span>}
+      {(error || currentDownload || native && !nativeUpdaterAvailable) && <span role={error ? 'alert' : 'status'} className="w-full text-right text-[11px] text-slate-400">{info}</span>}
     </div>
   </div>;
 }

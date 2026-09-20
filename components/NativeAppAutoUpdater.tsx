@@ -35,12 +35,23 @@ export default function NativeAppAutoUpdater() {
 
   useEffect(() => {
     let closed = false, checking = false, pollTimer: number | null = null, checkTimer: number | null = null;
+    let loggedState = '', loggedProgress = -10;
     const bridge = getBridge();
     if (bridge?.getAppId?.() !== 'com.centralhub.network' || !bridge.getVersionCode || !bridge.startAppUpdateDownload || !bridge.getAppUpdateDownloadStatus) return;
 
     const emit = (detail: NativeUpdateStatus) => {
       if (closed) return;
       try { sessionStorage.setItem(STATUS_KEY, JSON.stringify(detail)); } catch {}
+      // Only log transitions and 10% increments. No access tokens, customer data or full update URLs.
+      if (loggedState !== detail.state || (typeof detail.progress === 'number' && detail.progress >= loggedProgress + 10)) {
+        const diagnostic = { state:detail.state, installedVersionCode:detail.installedVersionCode,
+          latestVersionCode:detail.versionCode, progress:detail.progress, bytes:detail.bytes,
+          totalBytes:detail.totalBytes, androidReason:detail.reason, message:detail.message };
+        if (detail.state === 'failed') console.warn('[CentralHub Android update]', diagnostic);
+        else console.info('[CentralHub Android update]', diagnostic);
+        loggedState = detail.state;
+        if (typeof detail.progress === 'number') loggedProgress = detail.progress;
+      }
       window.dispatchEvent(new CustomEvent<NativeUpdateStatus>(EVENT, { detail }));
     };
     const clearPoll = () => { if (pollTimer !== null) window.clearInterval(pollTimer); pollTimer = null; };
@@ -66,6 +77,7 @@ export default function NativeAppAutoUpdater() {
         return;
       }
       installingRef.current = true;
+      console.info('[CentralHub Android update] Install requested', { downloadId:readyRef.current });
       const opened = bridge.installAppUpdate(readyRef.current);
       if (!opened) { installingRef.current = false; emit({ state:'failed', downloadId:readyRef.current, message:'Android could not open the installer. Tap Install to retry, or use the release download link.' }); return; }
       emit({ state:'installing', downloadId:readyRef.current, progress:100, message:'Update downloaded. Confirm installation if Android asks.' });
@@ -102,6 +114,7 @@ export default function NativeAppAutoUpdater() {
       if (activeRef.current || readyRef.current !== null) return;
       const id = Number(bridge.startAppUpdateDownload?.(target.downloadUrl, target.versionName) || -1);
       if (!Number.isSafeInteger(id) || id <= 0) { fail('Android could not start the APK download. Use the direct release link.'); return; }
+      console.info('[CentralHub Android update] Download queued', { installedVersionCode:Number(bridge.getVersionCode?.() || 0), latestVersionCode:target.versionCode, source:new URL(target.downloadUrl).origin, downloadId:id });
       activeRef.current = { id, versionCode:target.versionCode, versionName:target.versionName, lastBytes:0, lastProgressAt:Date.now() };
       try { sessionStorage.setItem(ACTIVE_KEY, JSON.stringify(activeRef.current)); localStorage.setItem('centralhub:auto-native-update:' + target.versionCode, String(Date.now())); } catch {}
       emit({ state:'pending', versionCode:target.versionCode, versionName:target.versionName, downloadId:id, progress:0 });
@@ -112,7 +125,7 @@ export default function NativeAppAutoUpdater() {
     const check = async (force = false) => {
       if (closed || checking || activeRef.current || readyRef.current !== null) return;
       const current = Number(bridge.getVersionCode?.() || 0);
-      if (!Number.isFinite(current) || current <= 0) return;
+      if (!Number.isFinite(current) || current <= 0) { fail('Installed Android version cannot be identified. Use the direct signed APK link.'); return; }
       checking = true;
       emit({ state:'checking', installedVersionCode:current });
       try {
@@ -127,7 +140,7 @@ export default function NativeAppAutoUpdater() {
         if (!response.ok || !body?.success) throw new Error(body?.error || 'Update feed unavailable (HTTP ' + response.status + ')');
         latestRef.current = body.latest || null;
         if (!body.latest || body.latest.versionCode <= current) {
-          emit({ state:'current', installedVersionCode:current, versionCode:body.latest?.versionCode });
+          emit({ state:'current', installedVersionCode:current, versionCode:body.latest?.versionCode, message:body.latest ? 'Installed Android app is up to date.' : 'No published Android update is available in the release feed.' });
           return;
         }
         const target = body.latest;
