@@ -371,8 +371,8 @@ public final class CentralHubNativeBridge {
         try {
             Intent install = new Intent(Intent.ACTION_VIEW)
                     .setDataAndType(apk, "application/vnd.android.package-archive")
-                    .setClipData(ClipData.newUri(context.getContentResolver(), "CentralHub Android update", apk))
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            install.setClipData(ClipData.newUri(context.getContentResolver(), "CentralHub Android update", apk));
             context.getSharedPreferences(AppUpdateInstallReceiver.PREFS, Context.MODE_PRIVATE).edit()
                     .putString("state", "confirmation")
                     .putString("message", "Opening Android package installer")
