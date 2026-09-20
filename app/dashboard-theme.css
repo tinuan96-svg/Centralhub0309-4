@@ -856,3 +856,139 @@
   .ch-dashboard-workspace .ch-business-pulse .ch-business-sweep,
   .ch-dashboard-workspace .ch-security-pulse-compact .ch-radar-sweep {animation:none!important;}
 }
+
+/* Folded-phone first-view density. Keep the real paid-order SVG and numeric
+   scopes visible; never substitute sample numbers or truncate the chart. */
+@media (max-width: 699px) {
+  .ch-dashboard-workspace .ch-business-pulse {
+    padding:.55rem .65rem !important;
+    gap:.25rem !important;
+    border-radius:.85rem;
+  }
+  .ch-dashboard-workspace .ch-business-pulse-head {
+    display:flex;
+    flex-wrap:nowrap;
+    justify-content:space-between;
+    align-items:center;
+    gap:.35rem;
+    margin:0 0 .25rem !important;
+  }
+  .ch-dashboard-workspace .ch-business-pulse-head > div:first-child {min-width:0; flex:1 1 auto;}
+  .ch-dashboard-workspace .ch-business-eyebrow {display:none;}
+  .ch-dashboard-workspace .ch-business-pulse h2 {
+    margin:0 !important;
+    font-size:1rem !important;
+    line-height:1.2;
+    white-space:normal;
+  }
+  .ch-dashboard-workspace .ch-business-pulse .ch-business-source {
+    flex:0 1 auto;
+    max-width:48%;
+    min-width:0;
+    margin:0 !important;
+    padding:.26rem .4rem !important;
+    font-size:.62rem;
+    line-height:1.25;
+  }
+  .ch-dashboard-workspace .ch-business-pulse .ch-business-source > span {overflow-wrap:anywhere;}
+  .ch-dashboard-workspace .ch-business-pulse .ch-business-grid {gap:0;}
+  .ch-dashboard-workspace .ch-business-pulse .ch-business-chart {
+    padding:.4rem .5rem !important;
+    border-radius:.7rem;
+  }
+  .ch-dashboard-workspace .ch-business-pulse .ch-business-chart-head {
+    display:flex;
+    flex-wrap:nowrap;
+    gap:.2rem;
+    align-items:baseline;
+    font-size:.6rem !important;
+    line-height:1.2;
+  }
+  .ch-dashboard-workspace .ch-business-pulse .ch-business-chart-head span:first-child {
+    min-width:0;
+    flex:1 1 auto;
+  }
+  .ch-dashboard-workspace .ch-business-pulse .ch-business-chart-head span:last-child {
+    flex:0 1 auto;
+    text-align:right;
+    min-width:0;
+    font-variant-numeric:tabular-nums;
+    overflow-wrap:anywhere;
+  }
+  .ch-dashboard-workspace .ch-business-pulse .ch-business-wave {
+    height:48px !important;
+    min-height:48px !important;
+    margin:.16rem 0 !important;
+  }
+  .ch-dashboard-workspace .ch-business-pulse .ch-business-chart-foot {
+    font-size:.54rem;
+    gap:.15rem;
+  }
+  .ch-dashboard-workspace .ch-business-pulse .ch-business-chart-foot span:nth-child(2) {
+    display:none;
+  }
+  .ch-dashboard-workspace .ch-business-pulse .ch-business-brief {
+    display:grid !important;
+    grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+    margin-top:.32rem !important;
+    gap:.3rem !important;
+  }
+  .ch-dashboard-workspace .ch-business-pulse .ch-business-brief > div {
+    min-width:0;
+    padding-top:.25rem;
+  }
+  .ch-dashboard-workspace .ch-business-pulse .ch-business-brief span {
+    font-size:.58rem;
+    line-height:1.2;
+  }
+  .ch-dashboard-workspace .ch-business-pulse .ch-business-brief strong {
+    font-size:clamp(.78rem,3.5vw,.98rem) !important;
+    line-height:1.35;
+    margin-top:.12rem;
+  }
+  .ch-dashboard-workspace .ch-security-pulse-compact {
+    padding:.55rem .65rem !important;
+  }
+  .ch-dashboard-workspace .ch-security-pulse-compact .ch-panel-heading {
+    margin-bottom:.3rem;
+  }
+  .ch-dashboard-workspace .ch-security-pulse-compact .ch-security-layout {
+    grid-template-columns:76px minmax(0,1fr) !important;
+    gap:.35rem;
+  }
+  .ch-dashboard-workspace .ch-security-pulse-compact .ch-radar {
+    width:76px !important;
+  }
+  .ch-dashboard-workspace .ch-security-pulse-compact .ch-radar-core strong {
+    font-size:1.05rem;
+  }
+  .ch-dashboard-workspace .ch-security-pulse-compact .ch-security-summary .ch-visual-metrics {
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+    gap:.3rem !important;
+  }
+  .ch-dashboard-workspace .ch-security-pulse-compact .ch-visual-metric > span {
+    font-size:.61rem !important;
+    line-height:1.15;
+  }
+  .ch-dashboard-workspace .ch-security-pulse-compact .ch-visual-metric strong {
+    font-size:1rem;
+    line-height:1.15;
+  }
+  .ch-dashboard-workspace .ch-security-pulse-compact .ch-visual-metric small {
+    font-size:.57rem;
+    line-height:1.2;
+  }
+  .ch-dashboard-workspace .ch-security-pulse-compact .ch-security-store-details {
+    margin-top:.1rem;
+  }
+  .ch-dashboard-workspace .ch-security-pulse-compact .ch-security-threat-details {
+    margin-top:.3rem;
+    padding:.35rem .5rem;
+  }
+  .ch-dashboard-workspace .ch-security-pulse-compact .ch-security-footer {
+    margin-top:.25rem;
+    padding-top:.2rem;
+    line-height:1.25;
+  }
+}
