@@ -6,11 +6,13 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
+// Remote stores receive the same customer-facing lifecycle labels as CentralHub.
+// Internal carrier states are normalized before they can overwrite those labels.
 const statusMap: Record<string, string> = {
   pending_payment: "pending", paid: "paid", confirmed: "confirmed",
-  picking: "picking", picked: "picked", packing: "processing", packed: "packed",
+  picking: "picking", picked: "picked", packing: "packing", packed: "ready_to_ship",
   ready_to_ship: "ready_to_ship", shipment_booked: "shipment_booked",
-  collected: "collected", shipped: "shipped", at_local_depot: "at_local_depot",
+  collected: "shipped", in_transit: "shipped", shipped: "shipped", at_local_depot: "at_local_depot",
   out_for_delivery: "out_for_delivery", delivered: "delivered", completed: "completed",
   cancelled: "cancelled", refunded: "refunded", delivery_attempted: "delivery_attempted",
   ready_for_collection: "ready_for_collection", delivery_rescheduled: "delivery_rescheduled",
@@ -33,6 +35,12 @@ function normalizeSlug(value: string) {
   if (slug === "keralagroceries") return "keralagrocery";
   if (slug === "tamilretail.com") return "tamilretail";
   return slug;
+}
+
+function canonicalRequestedStatus(value: string) {
+  if (value === "packed") return "ready_to_ship";
+  if (value === "collected" || value === "in_transit") return "shipped";
+  return value;
 }
 
 function toHex(buffer: ArrayBuffer) {
@@ -121,16 +129,34 @@ Deno.serve(async (req: Request) => {
   try {
     const body = await req.json().catch(() => ({}));
     orderId = body?.orderId;
-    const requestedStatus = body?.status;
+    const requestedStatus = canonicalRequestedStatus(String(body?.status || ""));
     const notes = body?.notes || null;
     if (!orderId || !requestedStatus) return reply({ success: false, error: "orderId and status are required" }, 400);
 
     const { data: order, error: orderError } = await central
       .from("orders")
-      .select("id,store_id,order_number,payment_status,tracking_number,courier_name,shipment_status,shipment_label_url,shipment_number")
+      .select("id,store_id,order_number,sync_origin,payment_status,tracking_number,courier_name,shipment_status,shipment_label_url,shipment_number")
       .eq("id", orderId)
       .single();
     if (orderError || !order) return reply({ success: false, error: "Order not found" }, 404);
+
+    // CentralHub-only manual/accounting records do not exist on any storefront.
+    // Do not push their lifecycle or mark a missing remote order as an integration failure.
+    if (String(order.sync_origin || "").toLowerCase() === "centralhub_manual") {
+      const { error: clearError } = await central
+        .from("orders")
+        .update({ sync_state: "pending", sync_error: null })
+        .eq("id", order.id)
+        .eq("sync_origin", "centralhub_manual");
+      if (clearError) throw clearError;
+      return reply({
+        success: true,
+        skipped: true,
+        reason: "centralhub_manual",
+        remote_sync_required: false,
+        order_id: order.id,
+      });
+    }
 
     const { data: store, error: storeError } = await central
       .from("stores")
