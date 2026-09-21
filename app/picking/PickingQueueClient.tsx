@@ -71,7 +71,7 @@ export default function PickingQueueClient({ params, searchParams }: { params: a
         const orderIds = ordersMissingItems.map((o: any) => o.id);
         const { data: orderItemsData, error: orderItemsError } = await supabase
           .from('order_items')
-          .select('order_id, product_id, name, image, quantity, price, subtotal, brand, weight, unit')
+          .select('order_id, product_id, product_name, product_image, quantity, unit_price, total_price, brand, weight, unit, picked_quantity, skip_reason')
           .in('order_id', orderIds);
 
         if (!orderItemsError && orderItemsData) {
@@ -80,14 +80,16 @@ export default function PickingQueueClient({ params, searchParams }: { params: a
             if (!itemsByOrder.has(item.order_id)) itemsByOrder.set(item.order_id, []);
             itemsByOrder.get(item.order_id)!.push({
               product_id: item.product_id,
-              name: item.name,
-              image: item.image,
+              name: item.product_name,
+              image: item.product_image,
               quantity: item.quantity,
-              price: item.price,
-              subtotal: item.subtotal,
+              price: item.unit_price,
+              subtotal: item.total_price,
               brand: item.brand,
               weight: item.weight,
               unit: item.unit,
+              picked_quantity: item.picked_quantity,
+              skip_reason: item.skip_reason,
             });
           });
           ordersWithItems = orderData.map((o: any) => ({
@@ -182,7 +184,7 @@ export default function PickingQueueClient({ params, searchParams }: { params: a
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedStoreId]);
 
   useEffect(() => {
     if (!mounted) return;

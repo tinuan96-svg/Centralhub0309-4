@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { OrderWithItems, OrderStatus, Store } from '@/lib/types';
 import StoreBadge from '@/components/StoreBadge';
 import { OrderService } from '@/lib/services/orderService';
+import { PickingService } from '@/lib/services/pickingService';
 import { supabase as supabaseClient } from '@/lib/supabase';
 
 const STATUS_STYLES: Record<string, string> = {
@@ -159,6 +160,7 @@ export default function OrderDetailSheet({
   const [isCreatingShipment, setIsCreatingShipment] = useState(false);
   const [isZebraPrinting, setIsZebraPrinting] = useState(false);
   const [isStartingPicking, setIsStartingPicking] = useState(false);
+  const [pickingError, setPickingError] = useState<string | null>(null);
   const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [isReturning, setIsReturning] = useState(false);
@@ -241,23 +243,19 @@ export default function OrderDetailSheet({
   };
 
   const handleStartPicking = async () => {
+    if (isStartingPicking) return;
     setIsStartingPicking(true);
+    setPickingError(null);
     try {
-      const { data: { user } } = await supabaseClient.auth.getUser();
-      await supabaseClient
-        .from('orders')
-        .update({
-          order_status: 'picking',
-          picking_started_at: new Date().toISOString(),
-          picked_by_user: user?.id,
-          locked_by: user?.id,
-          locked_at: new Date().toISOString(),
-        })
-        .eq('id', order.id);
+      const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
+      if (authError || !user?.id) throw new Error('Your session has expired. Please sign in again.');
+      const result = await PickingService.startPicking(order.id, user.id);
+      if (!result.success) throw new Error(result.error || 'Unable to start picking this order.');
       onClose();
-      router.push(`/picking/active?id=${order.id}`);
+      router.push(`/picking/active?id=${encodeURIComponent(order.id)}`);
     } catch (e) {
       console.error('Error starting picking:', e);
+      setPickingError(e instanceof Error ? e.message : 'Unable to start picking. Please try again.');
     } finally {
       setIsStartingPicking(false);
     }
@@ -546,6 +544,7 @@ export default function OrderDetailSheet({
                 </button>
               )}
               {/* Primary actions */}
+              {pickingError && <p role="alert" className="rounded-lg border border-rose-500/40 bg-rose-950/30 p-3 text-sm text-rose-200">{pickingError}</p>}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {order.payment_status === 'paid' && !['picking', 'packing', 'packed', 'ready_to_ship', 'shipped', 'delivered', 'completed'].includes(order.order_status) && (
                   <button

@@ -76,19 +76,21 @@ export class PickingService {
     if (rawItems.length === 0) {
       const { data: orderItemsData, error: oiError } = await supabase
         .from('order_items')
-        .select('product_id, name, image, quantity, price, subtotal, brand, weight, unit')
+        .select('product_id, product_name, product_image, quantity, unit_price, total_price, brand, weight, unit, picked_quantity, skip_reason')
         .eq('order_id', orderId);
       if (!oiError && orderItemsData) {
         rawItems = orderItemsData.map((item: any) => ({
           product_id: item.product_id,
-          name: item.name,
-          image: item.image,
+          name: item.product_name,
+          image: item.product_image,
           quantity: item.quantity,
-          price: item.price,
-          subtotal: item.subtotal,
+          price: item.unit_price,
+          subtotal: item.total_price,
           brand: item.brand,
           weight: item.weight,
           unit: item.unit,
+          picked_quantity: item.picked_quantity,
+          skip_reason: item.skip_reason,
         }));
       }
     }
@@ -142,6 +144,7 @@ export class PickingService {
    * Start picking an order
    */
   static async startPicking(orderId: string, userId: string): Promise<{ success: boolean; error: string | null }> {
+    if (!userId) return { success: false, error: 'Please sign in before starting picking.' };
     const { data: order, error: fetchError } = await supabase
       .from('orders')
       .select('warehouse_status, locked_by')
@@ -153,7 +156,7 @@ export class PickingService {
       return { success: false, error: 'Order is being picked by another user' };
     }
 
-    const { error: updateError } = await supabase
+    const { data: updatedOrder, error: updateError } = await supabase
       .from('orders')
       .update({
         order_status: 'picking',
@@ -164,9 +167,11 @@ export class PickingService {
         locked_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
-      .eq('id', orderId);
+      .eq('id', orderId)
+      .select('id')
+      .maybeSingle();
 
-    if (updateError) return { success: false, error: updateError.message };
+    if (updateError || !updatedOrder) return { success: false, error: updateError?.message || 'Order update was not saved. Please check your access and try again.' };
 
     pushOrderStatusToStore(orderId, 'picking', 'Picking started');
 

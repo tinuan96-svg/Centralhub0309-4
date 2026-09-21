@@ -42,6 +42,7 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
   const [groupedItems, setGroupedItems] = useState<GroupedItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [useAI, setUseAI] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
 
@@ -60,7 +61,7 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
   );
 
   useEffect(() => {
-    if (savedProgress && savedProgress.orderIds.join(',') === idsStr) {
+    if (Array.isArray(savedProgress?.orderIds) && savedProgress.orderIds.join(',') === idsStr && Number.isInteger(savedProgress.index) && savedProgress.index >= 0) {
       setCurrentIndex(savedProgress.index);
     }
   }, [savedProgress, idsStr]);
@@ -366,6 +367,7 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
       return;
     }
     setLoading(true);
+    setLoadError(null);
     try {
       const results = await Promise.all(orderIds.map(id => PickingService.getOrderForPicking(id)));
       const validOrders = results.filter((o): o is OrderWithItems => !!o);
@@ -424,6 +426,9 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
       // Restoration logic moved to a separate useEffect to prevent loops
     } catch (err) {
       console.error('Error fetching orders:', err);
+      setLoadError('Unable to load picking items. Please return to the queue and try again.');
+      setOrders([]);
+      setGroupedItems([]);
     } finally {
       setLoading(false);
     }
@@ -433,8 +438,8 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
   const hasRestoredRef = useRef(false);
   useEffect(() => {
     if (!loading && groupedItems.length > 0 && !hasRestoredRef.current) {
-      if (savedProgress && savedProgress.orderIds.join(',') === idsStr) {
-        setCurrentIndex(savedProgress.index);
+      if (Array.isArray(savedProgress?.orderIds) && savedProgress.orderIds.join(',') === idsStr && Number.isInteger(savedProgress.index) && savedProgress.index >= 0) {
+        setCurrentIndex(Math.min(savedProgress.index, groupedItems.length - 1));
       } else {
         const firstIncomplete = groupedItems.findIndex(g => g.total_picked < g.total_needed);
         if (firstIncomplete !== -1) setCurrentIndex(firstIncomplete);
@@ -465,7 +470,7 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
       stopListening();
       clearTimeout(timer);
       if (typeof window !== 'undefined') {
-        window.speechSynthesis.cancel();
+        try { window.speechSynthesis?.cancel?.(); } catch (error) { console.warn('Picking speech cleanup unavailable:', error); }
       }
     };
   }, [fetchOrders, stopListening, startListening]);
@@ -494,11 +499,11 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
     );
   }
 
-  if (!loading && orders.length === 0) {
+  if (!loading && (loadError || orders.length === 0 || groupedItems.length === 0)) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-8 text-center">
-        <p className="text-slate-400 font-black uppercase tracking-widest text-sm mb-6">No active orders</p>
-        <button onClick={() => router.push('/picking')} className="bg-slate-800 text-white px-6 py-3 rounded-2xl font-bold uppercase tracking-widest text-xs shadow-lg shadow-black/40 border border-slate-700">Go Back</button>
+        <p role="alert" className="text-amber-300 font-bold text-sm mb-6">{loadError || (orders.length === 0 ? 'No active orders found.' : 'No linked products are available to pick for this order. Check the order items in the queue.')}</p>
+        <button onClick={() => router.push('/picking')} className="bg-slate-800 text-white px-6 py-3 rounded-2xl font-bold uppercase tracking-widest text-xs shadow-lg shadow-black/40 border border-slate-700">Back to Picking Queue</button>
       </div>
     );
   }

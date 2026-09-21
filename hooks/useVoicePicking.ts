@@ -492,7 +492,15 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
       synth.resume();
     } catch (e) {}
 
-    const utterance = new SpeechSynthesisUtterance(speech);
+    // Some Android WebViews expose speechSynthesis but not its utterance constructor.
+    // A missing browser TTS API must never crash the order picking screen.
+    const Utterance = (window as typeof window & { SpeechSynthesisUtterance?: typeof SpeechSynthesisUtterance }).SpeechSynthesisUtterance;
+    if (typeof Utterance !== 'function') {
+      setError('Voice output unavailable');
+      finishSpeech();
+      return;
+    }
+    const utterance = new Utterance(speech);
     utterance.lang = 'en-GB';
 
     const femaleVoice = voices.find(v =>
