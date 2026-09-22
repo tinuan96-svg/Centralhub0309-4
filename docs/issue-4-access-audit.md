@@ -1,10 +1,20 @@
 # Issue #4 — staff access audit / security release gate (22 September 2026)
 
-## Release status: DO NOT ACTIVATE STAFF OR DEPLOY PARTIAL RBAC
+## Current verified release status (supersedes initial audit below)
+- **NOT READY TO ACTIVATE STAFF OR MERGE PR #5.** The latest development branch includes isolated staff UI, manual Super Admin provisioning/activation, service-role-only bounded departmental actions, and privileged integration hardening. It remains a draft; `main` is still the current production website code.
+- Supabase **production database migrations have already been applied** for staff foundation and restrictive RLS. This is not equivalent to deploying or activating the new staff app. A live read confirmed **zero staff accounts and one active verified Super Admin**.
+- **Material cross-store disclosure risk corrected in the live RLS:** previous order-item and shipment policies used `o.id=order_id`. Because the inner `orders` table also has `order_id`, PostgreSQL resolved that to `o.id=o.order_id`, losing the outer-row correlation. Migration `20260922223000_staff_correlated_order_scope_fix.sql` now qualifies `order_items.order_id` and `shipments.order_id` in both permissive and restrictive SELECT policies and removes obsolete direct-staff-write grants. Database introspection verified all four policy predicates now bind to the correct outer row.
+- Existing **DHL tracking, shipment-sync and bank-sync live Edge versions have NOT been replaced** with hardened versions. Verify/configure their actual external schedulers and secret deployment first; direct rollout risks stopping operational tracking and reconciliation.
+- GitHub CI / static tests and SQL policy introspection are **not** positive and negative end-to-end tests using real restricted staff identities. Do not enable `CENTRALHUB_STAFF_ACCESS_VERIFIED` or `CENTRALHUB_STAFF_CREATION_ENABLED` until isolated role/store/bypass/revocation testing, external job compatibility, Android and Super Admin regression checks and one coordinated release have passed.
+- No new staff users were created or activated to perform this audit. Existing Super Admin access and customer stores must remain operational throughout release verification.
+
+## Initial historical audit (superseded by current status above)
+
+## Release status at initial audit: DO NOT ACTIVATE STAFF OR DEPLOY PARTIAL RBAC
 The repository contains a Supabase Auth login screen and an admin/user selector,
 but **does not have an operational permission boundary for staff**. The staff
 RBAC foundation in this branch is deny-by-default and has no active assignments.
-No production Supabase migration is applied by this branch.
+At the initial audit, no staff migration had yet been applied. See the current status above for production migrations subsequently applied.
 
 ### Confirmed in connected production configuration
 - The current Netlify production deploy uses `main@ed5aa9b8267a0bad3377b2fb9470f1a43fcdb14b`.
@@ -40,7 +50,7 @@ No production Supabase migration is applied by this branch.
 - **Manual staff login creation**: the Super Admin enters the staff name, personal work email, role, section/action permissions, and permitted stores. A verified admin-only endpoint uses Supabase Auth Admin `createUser` and a cryptographically random temporary password; no invitation email is sent. The one-time password is returned only to the authenticated Super Admin over a no-store response and displayed until dismissed, not persisted to application storage, audit logs or account tables.
 - First login requires the staff member to replace the temporary password through the authenticated `/api/staff/first-login` route. Password rotation does NOT grant permissions or activate the account; the old session is signed out. The changed-password flag is stored in trusted Auth app metadata by the server, not accepted from client input.
 - **Manual activation**: the Super Admin must explicitly select `Active` after checking the assigned stores and capabilities. The PATCH endpoint verifies the password-change flag and full security rollout switch, and denies activation if it is not satisfied. Changing permissions and suspending an account are also Super Admin-only.
-- Current implementation intentionally shows ALL staff accounts only the password setup / pending access screen, even when a public frontend flag is toggled. This is not yet functional staff access and cannot be released as complete until the backend enforcement project is finished.
+- At the initial audit, staff saw only password setup / pending access. The current development branch has since added an isolated staff workspace; it remains disabled in production pending full verification.
 - Reserved actions `users.view`, `users.manage`, `security.manage`, `settings.manage` are not staff-assignable even by direct POST/PATCH.
 
 ## Mandatory release checks
@@ -62,10 +72,11 @@ No production Supabase migration is applied by this branch.
    store, direct REST/RPC/API bypass, changes during an active session,
    account suspension, public endpoints and existing admin flows.
 7. Run CI, Netlify deploy-preview smoke, Supabase security advisor and
-   rollback test before ONE approved production release. Do not apply this
-   schema to production or enable staff invites until the complete gate passes.
+   rollback test before ONE approved production release. Staff schema
+   migrations have since been applied to production; do not enable staff
+   creation or activation until the complete release gate passes.
 
 ## In-progress change
-The new migration defines private RLS-protected staff tables with no browser
-grants, predefined role *names*, but zero grants. It only lays the foundation;
-it is NOT the requested end-to-end feature.
+At the original audit the first migration defined private RLS-protected staff
+tables. Subsequent applied migrations introduced role grants and bounded actions.
+This historical paragraph alone does NOT establish end-to-end readiness.
