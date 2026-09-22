@@ -59,12 +59,20 @@ test('staff password setup is separate from explicit admin activation',()=>{
   assert.match(route,/must_change_password:false/);
   assert.doesNotMatch(route,/status\s*:\s*['"]active['"]/);
 });
-test('staff cannot enter admin workspace before complete backend authorization',()=>{
+test('staff workspace requires authoritative active access and assigned route permission',()=>{
   const auth=read('components/AuthProvider.tsx');
-  assert.match(auth,/staffPending=user\?\.app_metadata\?\.role==='staff';/);
-  assert.match(auth,/staffPending\?<StaffPendingAccess/);
-  assert.doesNotMatch(auth,/NEXT_PUBLIC_CENTRALHUB_STAFF_UI_VERIFIED/);
+  assert.match(auth,/fetch\('\/api\/staff\/access'/);
+  assert.match(auth,/staffNeedsSetup=isStaff&&\(!staffAccess\?\.active\|\|staffAccess\.must_change_password\)/);
+  assert.match(auth,/staffCanOpenPath\(pathname,permissions\)/);
+  assert.match(auth,/staffRouteDenied/);
+  const access=read('app/api/staff/access/route.ts');
+  assert.match(access,/auth\.getUser\(bearer\.slice\(7\)\)/);
+  assert.match(access,/account\.data\.status==='active'/);
+  assert.match(access,/must_change_password===false/);
+  const routes=read('lib/access-control/routes.ts');
+  assert.match(routes,/return required\.length>0/);
 });
+
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
