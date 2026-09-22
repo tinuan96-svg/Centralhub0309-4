@@ -153,11 +153,11 @@ Deno.serve(async (req: Request) => {
 
     const supabase = createClient(url, role);
     const authorization=req.headers.get("Authorization")||"";
-    const bearer=authorization.replace(/^Bearer\\s+/i,"").trim();
+    const bearer=authorization.replace(/^Bearer\s+/i,"").trim();
     const reject=(status:number,error:string)=>new Response(JSON.stringify({success:false,error}),{
       status,headers:{...corsHeaders,"Content-Type":"application/json","Cache-Control":"no-store"}
     });
-    if(!/^Bearer\\s+\\S+$/i.test(authorization)) return reject(401,"Authentication required");
+    if(!/^Bearer\s+\S+$/i.test(authorization)) return reject(401,"Authentication required");
 
     // Preserve scheduled/service-role bank reconciliation. A caller holding
     // any ordinary authenticated JWT must pass live, trusted authorization.
