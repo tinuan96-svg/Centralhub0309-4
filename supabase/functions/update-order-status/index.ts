@@ -88,7 +88,6 @@ Deno.serve(async (req: Request) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
   const central = createClient(supabaseUrl, serviceKey);
-  let callerStaffContext: { allStores: boolean; storeIds: string[] } | null = null;
 
   const authHeader = req.headers.get("Authorization") || "";
   const bearer = authHeader.replace(/^Bearer\s+/i, "").trim();
@@ -106,26 +105,21 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: userError } = await userClient.auth.getUser();
     if (userError || !user) return reply({ success: false, error: "Unauthorized" }, 401);
 
-    const metadataRole = String(user.app_metadata?.role || "").toLowerCase();
-    const isAdminRole = ["admin", "superadmin", "administrator"].includes(metadataRole);
-    let allowed = isAdminRole;
-    let staffContext: { allStores: boolean; storeIds: string[] } | null = null;
-    if (!allowed && metadataRole === "staff") {
-      const [{ data: profile }, { data: account }, { data: permission }, { data: stores }] = await Promise.all([
-        central.from("user_profiles").select("is_active").eq("id", user.id).maybeSingle(),
-        central.from("ch_staff_accounts").select("status,all_stores").eq("user_id", user.id).maybeSingle(),
-        central.from("ch_staff_permission_overrides").select("allowed").eq("user_id", user.id).eq("permission_key", "orders.edit").maybeSingle(),
-        central.from("ch_staff_store_access").select("store_id").eq("user_id", user.id),
-      ]);
-      allowed = profile?.is_active === true && account?.status === "active" && permission?.allowed === true &&
-        user.app_metadata?.must_change_password === false;
-      if (allowed) staffContext = { allStores: account?.all_stores === true, storeIds: (stores || []).map((row: any) => row.store_id) };
-    } else if (!allowed) {
-      const { data: profile } = await central.from("user_profiles").select("profile_role,is_active").eq("id", user.id).maybeSingle();
-      allowed = profile?.is_active !== false && ["admin", "superadmin", "administrator"].includes(String(profile?.profile_role || "").toLowerCase());
-    }
-    if (!allowed) return reply({ success: false, error: "Forbidden" }, 403);
-    callerStaffContext = staffContext;
+    // This function syncs remote order lifecycle, inventory and customer
+    // notifications using service-role credentials. Do not treat orders.edit
+    // as permission to set refunded/delivered/cancelled or trigger stock changes.
+    // Staff actions use separately bounded and audited APIs, never this route.
+    const [{data:identity,error:identityError},{data:profile,error:profileError},
+      {data:staffRecord,error:staffError}]=await Promise.all([
+      central.auth.admin.getUserById(user.id),
+      central.from("user_profiles").select("profile_role,is_active").eq("id",user.id).maybeSingle(),
+      central.from("ch_staff_accounts").select("user_id").eq("user_id",user.id).maybeSingle()
+    ]);
+    if(identityError||profileError||staffError||!identity.user||!profile)
+      return reply({success:false,error:"Identity could not be verified"},403);
+    const trustedAdmin=identity.user.app_metadata?.role==="admin" &&
+      profile.profile_role==="admin" && profile.is_active===true && !staffRecord;
+    if(!trustedAdmin) return reply({success:false,error:"Verified Super Admin required"},403);
   }
 
   let orderId: string | undefined;
@@ -149,9 +143,6 @@ Deno.serve(async (req: Request) => {
       .eq("id", orderId)
       .single();
     if (orderError || !order) return reply({ success: false, error: "Order not found" }, 404);
-    if (callerStaffContext && !callerStaffContext.allStores && !callerStaffContext.storeIds.includes(order.store_id)) {
-      return reply({ success: false, error: "Forbidden for this store" }, 403);
-    }
 
     // CentralHub-only manual/accounting records do not exist on any storefront.
     // Do not push their lifecycle or mark a missing remote order as an integration failure.
