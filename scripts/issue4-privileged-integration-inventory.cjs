@@ -52,5 +52,6 @@ fs.writeFileSync('artifacts/issue4-privileged-integration-inventory.json',
 console.log('Issue #4 privileged entrypoints:',results.length,'Edge:',results.filter(x=>x.kind==='edge').length,
  'API:',results.filter(x=>x.kind==='api').length,'Netlify:',results.filter(x=>x.kind==='netlify').length);
 console.log('Service-role indicators:',elevated.length,'Manual review flags:',manual.length);
+console.log('Manual privileged-entrypoint review list:',manual.map(x=>x.file).join(' | '));
 if(bad.length)console.error('Missing explicit staff/admin route authorization:',bad.map(x=>x.file).join(', '));
 assert.equal(bad.length,0,'New staff/admin APIs must have an explicit server-side authorization gate');
