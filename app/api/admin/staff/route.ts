@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { randomBytes } from 'node:crypto';
 import { AccessDenied, requireVerifiedSuperAdmin } from '@/lib/access-control/admin';
 import { isStaffPermission, isStaffRole, type StaffRole } from '@/lib/access-control/catalog';
 
@@ -66,7 +67,9 @@ async function readDirectory(admin: any) {
     administrators: (profiles.data || []).filter((p:any)=>p.profile_role==='admin')
       .map((p:any)=>({id:p.id,email:p.email,full_name:p.full_name,is_active:p.is_active})),
     stores: stores.data || [],
-    invitesEnabled: process.env.CENTRALHUB_STAFF_INVITES_ENABLED === 'true',
+    creationEnabled: process.env.CENTRALHUB_STAFF_CREATION_ENABLED === 'true' && process.env.CENTRALHUB_STAFF_ACCESS_VERIFIED === 'true',
+    activationMode: 'manual' as const,
+    accountCreationMode: 'manual' as const,
     activationEnabled: process.env.CENTRALHUB_STAFF_ACCESS_VERIFIED === 'true',
   };
 }
@@ -76,8 +79,9 @@ export async function GET(request: Request) {
   } catch (error) { return handleError(error); }
 }
 export async function POST(request: Request) {
-  if (process.env.CENTRALHUB_STAFF_INVITES_ENABLED !== 'true') {
-    return respond('Invitations are disabled until the end-to-end staff access audit passes', 503);
+  if (process.env.CENTRALHUB_STAFF_CREATION_ENABLED !== 'true' ||
+      process.env.CENTRALHUB_STAFF_ACCESS_VERIFIED !== 'true') {
+    return respond('Staff creation is disabled until all backend access controls pass security verification', 503);
   }
   try {
     const { admin, actorId } = await requireVerifiedSuperAdmin(request);
@@ -88,15 +92,21 @@ export async function POST(request: Request) {
       fullName.length < 1 || fullName.length > 120) throw new AccessDenied('Valid name and email are required',400);
     const assignment = parseAssignment(input);
     await verifyStores(admin,assignment.storeIds);
-    // Invite-only, never create a password on behalf of the staff member.
-    const { data: invite, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email,{data:{full_name:fullName}});
-    if (inviteError || !invite.user) throw new AccessDenied('Could not invite user; check if the email is already registered',409);
-    const invitedId = invite.user.id;
+    // Super Admin provisions the login manually. Never store or log the
+    // one-time password outside Supabase Auth; return it exactly once.
+    // Staff must change it at first login; activation is a separate Admin action.
+    const temporaryPassword = randomBytes(32).toString('base64url');
+    const { data: created, error: createError } = await admin.auth.admin.createUser({
+      email,
+      password: temporaryPassword,
+      email_confirm: true,
+      user_metadata: { full_name: fullName },
+      app_metadata: { role: 'staff', must_change_password: true }
+    });
+    if (createError || !created.user) throw new AccessDenied('Could not create account; check whether the email is already registered', 409);
+    const invitedId = created.user.id;
     try {
-      const { error: metadataError } = await admin.auth.admin.updateUserById(invitedId,{
-        app_metadata: { ...invite.user.app_metadata, role:'staff' }
-      });
-      if (metadataError) throw metadataError;
+      // Privileged identity metadata was already assigned by Auth Admin API.
       const { error: profileError } = await admin.from('user_profiles')
         .upsert({id:invitedId,email,full_name:fullName,profile_role:'user',is_active:false},{onConflict:'id'});
       if (profileError) throw profileError;
@@ -115,15 +125,19 @@ export async function POST(request: Request) {
         if(error) throw error;
       }
       const {error: auditError} = await admin.from('ch_staff_access_audit').insert({
-        actor_id:actorId,target_user_id:invitedId,action:'invite',
+        actor_id:actorId,target_user_id:invitedId,action:'manual_create',
         after_state:{role_key:assignment.roleKey,permissions:assignment.permissions,
           store_ids:assignment.storeIds,all_stores:assignment.allStores,status:'pending'}
       });
       if(auditError) throw auditError;
-      return NextResponse.json({success:true,user_id:invitedId,status:'pending'}, {status:201});
+      return NextResponse.json({success:true,user_id:invitedId,status:'pending',
+        temporary_password: temporaryPassword, password_change_required:true}, {
+        status:201, headers:{'Cache-Control':'no-store, private','Pragma':'no-cache'}
+      });
     } catch (error) {
       // Fail closed: don't leave an unassigned but authenticated staff account.
-      await admin.auth.admin.deleteUser(invitedId).catch(()=>{});
+      const { error: deleteError } = await admin.auth.admin.deleteUser(invitedId);
+      if (deleteError) console.error('Staff account provisioning rollback needs manual review');
       throw error;
     }
   } catch (error) { return handleError(error); }
