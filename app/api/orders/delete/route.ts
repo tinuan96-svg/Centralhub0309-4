@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { requireStaffContext, requireStaffPermission, type StaffContext } from '@/lib/access-control/staff';
+import { requireVerifiedSuperAdmin } from '@/lib/access-control/admin';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -19,29 +19,16 @@ export async function POST(req: Request) {
   const bearer = req.headers.get('authorization');
   if (!bearer?.startsWith('Bearer ')) return fail('Authentication required', 401);
   const centralUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const serviceKey = process.env.CENTRALHUB_SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!centralUrl || !anonKey || !serviceKey) return fail('Service unavailable', 503);
+  if (!centralUrl || !serviceKey) return fail('Service unavailable', 503);
 
-  // Never use a caller-supplied user ID, user_metadata, or unsigned JWT role.
-  const authClient = createClient(centralUrl, anonKey);
-  const { data: { user }, error: authError } = await authClient.auth.getUser(bearer.slice(7));
-  if (authError || !user) return fail('Invalid session', 401);
-  const centralAdmin = createClient(centralUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
-  const { data: authoritativeUser, error: adminAuthError } = await centralAdmin.auth.admin.getUserById(user.id);
-  if (adminAuthError || !authoritativeUser.user) return fail('Insufficient privileges', 403);
-  const identityRole=authoritativeUser.user.app_metadata?.role;
-  let staffContext: StaffContext | null = null;
-  if(identityRole==='admin'){
-    const { data: profile, error: profileError } = await centralAdmin.from('user_profiles')
-      .select('is_active,profile_role').eq('id', user.id).maybeSingle();
-    if (profileError || !profile || !profile.is_active || profile.profile_role !== 'admin') {
-      return fail('Inactive or unauthorized account', 403);
-    }
-  } else if(identityRole==='staff'){
-    try { staffContext=await requireStaffContext(req); }
-    catch { return fail('Insufficient privileges',403); }
-  } else return fail('Insufficient privileges',403);
+  // Remote deletion is destructive and cannot be rolled back if the following
+  // CentralHub delete fails. It remains Super Admin only until a coordinated,
+  // audited multi-store deletion workflow has been designed and tested.
+  try { await requireVerifiedSuperAdmin(req); }
+  catch { return fail('Verified Super Admin access required',403); }
+  const centralAdmin = createClient(centralUrl, serviceKey,
+    { auth: { autoRefreshToken:false,persistSession:false } });
   let payload: { orderId?: unknown; storeSlug?: unknown };
   try { payload = await req.json(); } catch { return fail('Invalid JSON', 400); }
   const orderId = typeof payload.orderId === 'string' ? payload.orderId : '';
@@ -59,11 +46,6 @@ export async function POST(req: Request) {
   // remote lookup by ID: however there is no trustworthy store binding then.
   // Fail closed instead of allowing deletion of an arbitrary remote order.
   if (!order || !store || order.store_id !== store.id) return fail('Order/store verification failed', 409);
-  if(staffContext){
-    try { requireStaffPermission(staffContext,'orders.delete',store.id); }
-    catch { return fail('Order deletion is not assigned for this store',403); }
-  }
-
   const [urlKey, tokenKey] = storeEnvironment[storeSlug];
   const remoteUrl = process.env[urlKey] || (storeSlug.startsWith('kerala') ? process.env.KERALA_SUPABASE_URL : undefined);
   const remoteKey = process.env[tokenKey] || (storeSlug.startsWith('kerala') ? process.env.KERALA_SUPABASE_SERVICE_ROLE_KEY : undefined);
