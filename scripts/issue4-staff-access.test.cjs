@@ -503,6 +503,17 @@ test('billing and accounting staff writes remain bounded, store-scoped and servi
  assert.match(revoke,/revoke execute on function/);
 });
 
+test('privileged shipping workers reject anonymous invocation in source',()=>{
+ for(const path of ['supabase/functions/dhl-tracking-poller/index.ts','supabase/functions/shipment-sync-worker/index.ts']){
+  const src=read(path);
+  assert.match(src,/SUPABASE_SERVICE_ROLE_KEY/);
+  assert.match(src,/X-CentralHub-Worker-Secret/);
+  assert.match(src,/configuredWorker\.length>=32/);
+  assert.match(src,/trustedService/);
+  assert.match(src,/status:401/);
+ }
+});
+
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
