@@ -63,8 +63,15 @@ test('staff workspace requires authoritative active access and assigned route pe
   const auth=read('components/AuthProvider.tsx');
   assert.match(auth,/fetch\('\/api\/staff\/access'/);
   assert.match(auth,/staffNeedsSetup=isStaff&&\(!staffAccess\?\.active\|\|staffAccess\.must_change_password\)/);
-  assert.match(auth,/staffCanOpenPath\(pathname,permissions\)/);
+  assert.match(auth,/staffPathAllowed=pathname==='\/dashboard'/);
+  assert.match(auth,/isStaff&&session\?<StaffWorkspace/);
   assert.match(auth,/staffRouteDenied/);
+  assert.doesNotMatch(auth,/suppressHydrationWarning>\{children\}/);
+  assert.match(auth,/setInterval\(\(\)=>\{void verify\(\);\},30000\)/);
+  const workspace=read('components/StaffWorkspace.tsx');
+  assert.match(workspace,/\/api\/staff\/context/);
+  assert.match(workspace,/\/api\/staff\/records/);
+  assert.doesNotMatch(workspace,/from\(['"]orders['"]\)/);
   const access=read('app/api/staff/access/route.ts');
   assert.match(access,/auth\.getUser\(bearer\.slice\(7\)\)/);
   assert.match(access,/account\.data\.status==='active'/);
