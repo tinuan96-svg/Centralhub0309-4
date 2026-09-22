@@ -323,6 +323,41 @@ test('packing cannot mark empty or incompletely verified orders as packed',()=>{
  assert.match(sql,/from public,anon,authenticated/);
  assert.match(sql,/to service_role/);
 });
+test('packing scan updates only exact barcode-matched item quantities in one audited transaction',()=>{
+ const sql=read('supabase/migrations/20260922191500_staff_verify_packing_barcode_atomic.sql');
+ assert.match(sql,/create or replace function public\.ch_staff_verify_packing_item/);
+ assert.match(sql,/s\.status='active'/);
+ assert.match(sql,/permission_key='fulfilment\.pack'/);
+ assert.match(sql,/o\.warehouse_status='packing'/);
+ assert.match(sql,/o\.store_id=p_store_id/);
+ assert.match(sql,/p\.gtin/);
+ assert.match(sql,/v_matches<>1/);
+ assert.match(sql,/verified_quantity=v_new/);
+ assert.match(sql,/items=jsonb_set\(v_json/);
+ assert.match(sql,/insert into public\.ch_staff_activity_audit/);
+ assert.match(sql,/from public,anon,authenticated/);
+ assert.match(sql,/to service_role/);
+ const route=read('app/api/staff/fulfilment/verify/route.ts');
+ assert.match(route,/requireStaffPermission\(context,'fulfilment\.pack',storeId\)/);
+ assert.match(route,/\.rpc\('ch_staff_verify_packing_item'/);
+ assert.match(route,/\.eq\('store_id',storeId\)/);
+ const panel=read('components/StaffPackingPanel.tsx');
+ assert.match(panel,/\/api\/staff\/fulfilment\/verify/);
+ assert.match(panel,/\/api\/staff\/fulfilment\/pack/);
+ const workspace=read('components/StaffWorkspace.tsx');
+ assert.match(workspace,/<StaffPackingPanel/);
+});
+
+test('packing cannot finish with missing, unmatched, skipped or partially scanned items',()=>{
+ const sql=read('supabase/migrations/20260922192000_staff_pack_line_integrity_gate.sql');
+ assert.match(sql,/for update/);
+ assert.match(sql,/packing_lines_missing/);
+ assert.match(sql,/packing_line_count_mismatch/);
+ assert.match(sql,/packing_snapshot_mismatch/);
+ assert.match(sql,/coalesce\(i\.picked_quantity,0\)<>i\.quantity/);
+ assert.match(sql,/coalesce\(i\.verified_quantity,0\)<>i\.quantity/);
+ assert.match(sql,/nullif\(pg_catalog\.btrim\(i\.skip_reason\)/);
+});
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
