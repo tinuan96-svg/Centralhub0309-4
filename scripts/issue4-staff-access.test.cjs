@@ -237,8 +237,9 @@ test('staff schema remains private and default-deny',()=>{
 });
 test('privileged cross-store order deletion checks caller and store binding',()=>{
   const route=read('app/api/orders/delete/route.ts');
-  assert.match(route,/auth\.getUser\(bearer\.slice\(7\)\)/);
-  assert.match(route,/admin\.getUserById\(user\.id\)/);
+  assert.match(route,/await requireVerifiedSuperAdmin\(req\)/);
+  assert.doesNotMatch(route,/requireStaffPermission/);
+  assert.doesNotMatch(route,/requireStaffContext/);
   assert.match(route,/order\.store_id !== store\.id/);
   const caller=read('lib/services/orderService.ts');
   assert.match(caller,/Authorization: `Bearer \$\{session\.access_token\}`/);
