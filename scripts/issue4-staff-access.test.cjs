@@ -141,6 +141,20 @@ test('sensitive staff writes require audited server actions, not unrestricted Po
   assert.doesNotMatch(sql,/drop policy .*admin/i);
 });
 
+test('bank reconciliation edge preserves trusted automation and denies arbitrary signed-in users',()=>{
+  const src=read('supabase/functions/sync-bank-statements/index.ts');
+  assert.match(src,/internalServiceCall=Boolean\(role\)&&bearer===role/);
+  assert.match(src,/getUserById\(user\.id\)/);
+  assert.match(src,/profile\.profile_role!=="admin"/);
+  assert.match(src,/account\?\.status!=="active"/);
+  assert.match(src,/must_change_password!==false/);
+  assert.match(src,/override\?\.allowed\?\?Boolean\(roleGrant\)/);
+  assert.match(src,/CENTRALHUB_STAFF_ACCESS_VERIFIED/);
+  assert.match(src,/staffStoreIds\.includes\(account\.store_id\)/);
+  assert.match(src,/staffAllStores/);
+  assert.match(src,/return reject\(403,"An authorised CentralHub account is required"\)/);
+});
+
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
