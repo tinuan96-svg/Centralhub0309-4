@@ -63,6 +63,18 @@ jobs:
       - name: Staff access foundation security regression tests
         run: npm run audit:staff
 
+      - name: Inventory privileged integrations
+        run: npm run audit:privileged
+
+      - name: Publish security inventory for manual review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue4-privileged-integration-inventory
+          path: artifacts/issue4-privileged-integration-inventory.json
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Typecheck
         run: npx tsc --noEmit
 
