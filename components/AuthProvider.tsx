@@ -141,7 +141,7 @@ export default function AuthProvider({children}:{children:React.ReactNode}){
     (!user&&!isAtLogin?<div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-slate-400 space-y-4"><p>Redirecting to login...</p><button onClick={()=>window.location.href='/login'} className="text-blue-500 hover:underline text-sm">Click here if not redirected</button></div>:
     staffNeedsSetup&&user?<StaffPendingAccess user={user} session={session} signOut={handleSignOut}/>:
     staffRouteDenied?<div className="min-h-screen bg-slate-950 p-8 text-slate-100"><h1 className="text-xl font-bold">Access not assigned</h1><p className="mt-3 text-slate-300">Staff cannot open the administration pages. Use your assigned workspace.</p><button onClick={()=>router.replace('/dashboard')} className="mt-5 rounded-xl bg-cyan-500 px-4 py-2 font-bold text-slate-950">Back to workspace</button></div>:
-    isStaff&&session?<StaffWorkspace session={session} signOut={handleSignOut}/>:
+    isStaff&&session?<StaffWorkspace key={`${user?.id}:${permissions.slice().sort().join(',')}:${staffAccess?.store_ids.slice().sort().join(',')}:${staffAccess?.all_stores}`} session={session} signOut={handleSignOut}/>:
     user&&!isAdmin?<div className="min-h-screen bg-slate-950 p-8 text-slate-100"><h1 className="text-xl font-bold">CentralHub access not authorised</h1><p className="mt-3 text-slate-300">This login is not an active, verified Super Admin or an assigned staff account.</p><button className="mt-5 rounded-xl border border-slate-600 px-4 py-2 text-white" onClick={()=>void handleSignOut()}>Sign out</button></div>:
     children)
   }</AuthContext.Provider>;
