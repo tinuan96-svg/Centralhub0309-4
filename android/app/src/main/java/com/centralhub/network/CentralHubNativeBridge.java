@@ -33,6 +33,8 @@ public final class CentralHubNativeBridge {
     private final Context context;
     private TextToSpeech taraTts;
     private volatile boolean taraTtsReady = false;
+    // Independent voice channel for picking; do not require a Nora conversation.
+    private volatile boolean pickingVoiceActive = false;
     private String pendingSpeech = "";
     private String pendingLanguageTag = "en-GB";
 
@@ -137,6 +139,20 @@ public final class CentralHubNativeBridge {
 
     @JavascriptInterface public boolean isTaraTtsReady() { return taraTtsReady && taraTts != null; }
 
+    public boolean isPickingVoiceActive() { return pickingVoiceActive; }
+
+    @JavascriptInterface
+    public void setPickingVoiceActive(boolean active) {
+        pickingVoiceActive = active;
+        if (!active) stopTaraTts();
+    }
+
+    @JavascriptInterface
+    public boolean speakPicking(String text, String languageTag) {
+        if (!pickingVoiceActive) return false;
+        return speakTara(text, languageTag);
+    }
+
     @JavascriptInterface
     public boolean isTaraLanguageAvailable(String languageTag) {
         TextToSpeech tts = taraTts;
@@ -149,7 +165,7 @@ public final class CentralHubNativeBridge {
     @JavascriptInterface
     public boolean speakTara(String text, String languageTag) {
         if (text == null || text.trim().isEmpty()) return false;
-        if (!activity.isNoraConversationActive()) return false;
+        if (!activity.isNoraConversationActive() && !pickingVoiceActive) return false;
         final String speech = text.trim();
         final String requestedLanguage = languageTag == null || languageTag.trim().isEmpty() ? "en-GB" : languageTag.trim();
         if (!isTaraTtsReady()) {
@@ -163,7 +179,7 @@ public final class CentralHubNativeBridge {
         if (currentTts == null || !taraTtsReady) return false;
         final Locale selectedLocale = selectSupportedLocale(currentTts, locale);
         activity.runOnUiThread(() -> {
-            if (!activity.isNoraConversationActive()) {
+            if (!activity.isNoraConversationActive() && !pickingVoiceActive) {
                 pendingSpeech = "";
                 pendingLanguageTag = "en-GB";
                 activity.setTaraSpeaking(false);
