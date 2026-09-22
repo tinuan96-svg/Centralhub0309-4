@@ -66,16 +66,3 @@ on conflict (role_key) do nothing;
 -- Intentionally no permission grants: nothing becomes accessible until every
 -- underlying API/RPC/table/storage endpoint has been mapped and secured.
 
--- The existing trigger used to trust user-editable raw_user_meta_data.profile_role.
--- Always create new accounts as non-admin; only a trusted server action can
--- elevate an account after confirming the acting Super Admin.
-create or replace function public.handle_new_user()
-returns trigger language plpgsql security definer set search_path = ''
-as $$
-begin
-  insert into public.user_profiles(id,email,full_name,profile_role)
-  values (new.id,new.email,coalesce(new.raw_user_meta_data->>'full_name',''),'user')
-  on conflict (id) do nothing;
-  return new;
-end;
-$$;
