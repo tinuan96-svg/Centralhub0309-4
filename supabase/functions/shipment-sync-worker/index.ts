@@ -4,7 +4,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey, X-CentralHub-Worker-Secret",
 };
 
 // Retry intervals in minutes: 1, 5, 15, 30, 60
@@ -16,6 +16,14 @@ Deno.serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const suppliedBearer=(req.headers.get("Authorization")||"").replace(/^Bearer\\s+/i,"").trim();
+    const suppliedWorker=(req.headers.get("X-CentralHub-Worker-Secret")||"").trim();
+    const configuredWorker=(Deno.env.get("CENTRALHUB_SHIPMENT_SYNC_WORKER_SECRET")||"").trim();
+    const trustedService=suppliedBearer.length>0&&suppliedBearer===supabaseServiceKey;
+    const trustedWorker=configuredWorker.length>=32&&suppliedWorker.length===configuredWorker.length&&
+      crypto.subtle.timingSafeEqual?.(new TextEncoder().encode(suppliedWorker),new TextEncoder().encode(configuredWorker));
+    if(!trustedService&&!trustedWorker)
+      return new Response(JSON.stringify({success:false,error:"Unauthorized"}),{status:401,headers:{...corsHeaders,"Content-Type":"application/json"}});
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // 1. Fetch items that need retry or are pending
