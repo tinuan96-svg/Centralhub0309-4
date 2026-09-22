@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { AuthService } from '@/lib/services/authService';
 import { PushNotificationService } from '@/lib/services/pushNotificationService';
 import { supabase } from '@/lib/supabase';
+import StaffPendingAccess from '@/components/StaffPendingAccess';
 import type { User, Session } from '@supabase/supabase-js';
 
 interface AuthContextType { user: User | null; session: Session | null; isLoading: boolean; isAdmin: boolean; disabledNavKeys: string[]; signOut: () => Promise<void>; }
@@ -47,16 +48,17 @@ export default function AuthProvider({children}:{children:React.ReactNode}){
   },[pathname,router,isMounted]);
 
   useEffect(() => {
-    if (!session?.user) return;
+    if (!session?.user || session.user.app_metadata?.role === 'staff') return;
     PushNotificationService.registerNativeDevice().catch((error) => {
       console.warn('CentralHub native push registration deferred:', error?.message || error);
     });
   }, [session?.user?.id]);
 
   const handleSignOut=async()=>{await AuthService.signOut();router.replace('/login')};
-  // UX gate only. Staff must also be denied at every database/API boundary.
-  // Never set this flag until the complete issue #4 backend audit passes.
-  const staffPending=user?.app_metadata?.role==='staff' && process.env.NEXT_PUBLIC_CENTRALHUB_STAFF_UI_VERIFIED!=='true';
+  // Fail closed: staff never receive the admin workspace merely because a
+  // public UI feature flag is flipped. Replace only after live DB session
+  // authorisation + route/API/RLS checks have all been validated end-to-end.
+  const staffPending=user?.app_metadata?.role==='staff';
   const isAdmin=(user?.app_metadata as any)?.role==='admin'; const isAtLogin=pathname==='/login'||pathname==='/login/';
-  return <AuthContext.Provider value={{user,session,isLoading,isAdmin,disabledNavKeys,signOut:handleSignOut}}>{!isMounted?<div suppressHydrationWarning>{children}</div>:isLoading?<div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-white space-y-4"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div><div className="text-center"><p className="text-lg font-bold">CentralHub</p><p className="text-slate-400 text-sm">Securing your session...</p></div></div>:( !user&&!isAtLogin?<div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-slate-400 space-y-4"><p>Redirecting to login...</p><button onClick={()=>window.location.href='/login'} className="text-blue-500 hover:underline text-sm">Click here if not redirected</button></div>:staffPending?<div className="min-h-screen bg-slate-950 p-8 text-slate-100"><h1 className="text-xl font-bold">Staff access pending</h1><p className="mt-3 text-slate-300">This account cannot access CentralHub until the Super Admin completes security verification and activates its permitted sections.</p><button className="mt-4 rounded-lg bg-slate-800 px-4 py-2 text-white" onClick={()=>void handleSignOut()}>Sign out</button></div>:children)}</AuthContext.Provider>
+  return <AuthContext.Provider value={{user,session,isLoading,isAdmin,disabledNavKeys,signOut:handleSignOut}}>{!isMounted?<div suppressHydrationWarning>{children}</div>:isLoading?<div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-white space-y-4"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div><div className="text-center"><p className="text-lg font-bold">CentralHub</p><p className="text-slate-400 text-sm">Securing your session...</p></div></div>:( !user&&!isAtLogin?<div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-slate-400 space-y-4"><p>Redirecting to login...</p><button onClick={()=>window.location.href='/login'} className="text-blue-500 hover:underline text-sm">Click here if not redirected</button></div>:staffPending?<StaffPendingAccess user={user} session={session} signOut={handleSignOut}/>:children)}</AuthContext.Provider>
 }
