@@ -87,7 +87,7 @@ test('only server-verified active Super Admin can mount the legacy admin workspa
   assert.match(auth,/fetch\('\/api\/auth\/admin-session'/);
   assert.match(auth,/user&&!isAdmin\?</);
   assert.match(endpoint,/requireVerifiedSuperAdmin\(request\)/);
-  assert.match(endpoint,/Cache-Control': 'no-store, private'/);
+  assert.match(endpoint,/Cache-Control'\\s*:\\s*'no-store, private'/);
 });
 
 test('staff records API uses allowlisted columns and scoped server-side queries',()=>{
