@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { randomBytes } from 'node:crypto';
 import { AccessDenied, requireVerifiedSuperAdmin } from '@/lib/access-control/admin';
-import { isStaffPermission, isStaffRole, type StaffRole } from '@/lib/access-control/catalog';
+import { isStaffAssignablePermission, isStaffRole, type StaffRole } from '@/lib/access-control/catalog';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -22,7 +22,7 @@ function parseAssignment(value: StaffInput) {
   const permissions = value.permissions;
   const storeIds = value.store_ids;
   if (!isStaffRole(roleKey) || !Array.isArray(permissions) ||
-      permissions.length > 100 || !permissions.every(isStaffPermission) ||
+      permissions.length > 100 || !permissions.every(isStaffAssignablePermission) ||
       !Array.isArray(storeIds) || storeIds.length > 50 ||
       !storeIds.every((id) => typeof id === 'string' && UUID.test(id)) ||
       typeof value.all_stores !== 'boolean') {
