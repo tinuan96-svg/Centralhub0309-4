@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getServiceClient, getUserFromRequest, jsonError } from '../../push/_utils';
+import { getServiceClient, jsonError } from '../../push/_utils';
+import { requireVerifiedSuperAdmin } from '@/lib/access-control/admin';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -11,8 +12,11 @@ export async function GET(req: Request) {
     return new Response('Not available in static export', { status: 404 });
   }
 
-  const { user, error: authError } = await getUserFromRequest(req);
-  if (authError || !user) return jsonError(authError || 'Unauthorized', 401);
+  try {
+    await requireVerifiedSuperAdmin(req);
+  } catch {
+    return jsonError('Verified Super Admin access required', 403);
+  }
 
   try {
     const supabase = getServiceClient();

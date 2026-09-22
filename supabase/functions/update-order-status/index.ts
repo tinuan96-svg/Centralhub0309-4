@@ -105,17 +105,21 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: userError } = await userClient.auth.getUser();
     if (userError || !user) return reply({ success: false, error: "Unauthorized" }, 401);
 
-    const metadataRole = String(user.app_metadata?.role || "").toLowerCase();
-    let allowed = ["admin", "superadmin", "administrator"].includes(metadataRole);
-    if (!allowed) {
-      const { data: profile } = await central
-        .from("user_profiles")
-        .select("profile_role,is_active")
-        .eq("id", user.id)
-        .maybeSingle();
-      allowed = profile?.is_active !== false && ["admin", "superadmin", "administrator"].includes(String(profile?.profile_role || "").toLowerCase());
-    }
-    if (!allowed) return reply({ success: false, error: "Forbidden: admin only" }, 403);
+    // This function syncs remote order lifecycle, inventory and customer
+    // notifications using service-role credentials. Do not treat orders.edit
+    // as permission to set refunded/delivered/cancelled or trigger stock changes.
+    // Staff actions use separately bounded and audited APIs, never this route.
+    const [{data:identity,error:identityError},{data:profile,error:profileError},
+      {data:staffRecord,error:staffError}]=await Promise.all([
+      central.auth.admin.getUserById(user.id),
+      central.from("user_profiles").select("profile_role,is_active").eq("id",user.id).maybeSingle(),
+      central.from("ch_staff_accounts").select("user_id").eq("user_id",user.id).maybeSingle()
+    ]);
+    if(identityError||profileError||staffError||!identity.user||!profile)
+      return reply({success:false,error:"Identity could not be verified"},403);
+    const trustedAdmin=identity.user.app_metadata?.role==="admin" &&
+      profile.profile_role==="admin" && profile.is_active===true && !staffRecord;
+    if(!trustedAdmin) return reply({success:false,error:"Verified Super Admin required"},403);
   }
 
   let orderId: string | undefined;

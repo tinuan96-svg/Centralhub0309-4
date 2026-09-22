@@ -68,7 +68,7 @@ const sections: NavSection[] = [
 
 export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, onToggleCollapse }: { collapsed?: boolean; onToggleCollapse?: () => void }) {
   const pathname = usePathname();
-  const { isAdmin, disabledNavKeys, user, signOut } = useAuth();
+  const { isAdmin, isStaff, permissions, disabledNavKeys, user, signOut } = useAuth();
   const [navSearch, setNavSearch] = useState('');
   const [expanded, setExpanded] = useState<string[]>(['01-command']);
   const [mounted, setMounted] = useState(false);
@@ -122,12 +122,29 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
   }, [currentSectionKey, expanded]);
 
   const counts: Record<string, number> = { '02-network-sales': stats.pendingOrders, '03-catalog-inventory': stats.lowStock, '04-procurement': stats.backorders, '06-customer-growth': stats.tickets };
+  const sectionPermission: Record<string,string[]> = {
+    '01-command':['dashboard.view'],
+    '02-network-sales':['stores.view','orders.view','customers.view'],
+    '03-catalog-inventory':['products.view','inventory.view'],
+    '04-procurement':['procurement.view'],
+    '05-fulfilment':['fulfilment.view','shipping.view'],
+    '06-customer-growth':['support.view'],
+    '10-marketing':['marketing.view'],
+    '07-analytics':['analytics.view'],
+    '07-intelligence':['analytics.view'],
+    '07-pricing':['pricing.view'],
+    '08-finance':['finance.view'],
+    '08.5-developer':['security.view'],
+    '09-system':['settings.view','security.view','users.view'],
+  };
   const filtered = useMemo(() => {
     const q = navSearch.trim().toLowerCase();
-    const allowed = isAdmin ? sections : sections.filter(s => !disabledNavKeys.includes(s.key));
+    const allowed = isAdmin ? sections : isStaff
+      ? sections.filter(section => (sectionPermission[section.key]||[]).some(permission=>permissions.includes(permission)))
+      : sections.filter(s => !disabledNavKeys.includes(s.key));
     if (!q) return allowed;
     return allowed.map(s => ({ ...s, items: s.items.filter(i => i.label.toLowerCase().includes(q) || i.href.toLowerCase().includes(q)) })).filter(s => s.label.toLowerCase().includes(q) || s.items.length);
-  }, [navSearch, isAdmin, disabledNavKeys]);
+  }, [navSearch, isAdmin, isStaff, permissions, disabledNavKeys]);
 
   // Keep the sidebar stable on desktop/fold layouts. Only narrow phone-sized views
   // auto-collapse after navigation; the active section and scroll position persist.

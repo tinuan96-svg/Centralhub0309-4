@@ -1,0 +1,50 @@
+import {StaffAccessDenied,requireStaffContext,requireStaffPermission,staffErrorResponse} from '@/lib/access-control/staff';
+export const dynamic='force-dynamic';
+export const runtime='nodejs';
+
+const resources={
+  orders:{permission:'orders.view',table:'orders',columns:'id,store_id,order_number,customer_name,order_status,payment_status,total,created_at'},
+  customers:{permission:'customers.view',table:'customers',columns:'id,store_id,name,email,phone,created_at'},
+  customer_care:{permission:'support.view',table:'support_tickets',columns:'id,store_id,subject,description,status,created_at'},
+  billing:{permission:'billing.view',table:'finance_documents',columns:'id,store_id,invoice_number,document_type,document_date,currency,amount_gross,posting_status,subject,created_at'},
+  finance:{permission:'finance.view',table:'bank_transactions',columns:'id,store_id,description,reference,amount,type,accounting_category,classification_status,is_reconciled,created_at'},
+  marketing:{permission:'marketing.view',table:'marketing_campaigns',columns:'id,store_id,name,status,created_at'},
+  inventory:{permission:'inventory.view',table:'inventory_logs',columns:'id,store_id,product_id,sku,old_quantity,new_quantity,change,created_at'},
+  fulfilment:{permission:'fulfilment.view',table:'orders',columns:'id,store_id,order_number,order_status,payment_status,warehouse_status,locked_by,picking_started_at,created_at'},
+  procurement:{permission:'procurement.view',table:'purchase_orders',columns:'id,supplier_id,status,order_date,created_at'}
+} as const;
+type Resource=keyof typeof resources;
+export async function GET(request:Request){
+  try{
+    const url=new URL(request.url);
+    const section=url.searchParams.get('section')||'';
+    if(!Object.prototype.hasOwnProperty.call(resources,section))
+      throw new StaffAccessDenied('This section is not currently available to staff',404);
+    const storeId=url.searchParams.get('store_id')||'';
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(storeId))
+      throw new StaffAccessDenied('Select a valid store',400);
+    const rawPage=Number(url.searchParams.get('page')||'1');
+    if(!Number.isInteger(rawPage)||rawPage<1||rawPage>10000)
+      throw new StaffAccessDenied('Invalid page',400);
+    const context=await requireStaffContext(request);
+    const resource=resources[section as Resource];
+    requireStaffPermission(context,resource.permission,storeId);
+    // No select(*), client-controlled tables/columns, or unrestricted queries.
+    // Purchase orders are presently network-global, with no store_id column;
+    // only explicit All Stores staff may read them. All other resources use an
+    // actual store_id filter before the service-role query executes.
+    if(section==='procurement'&&!context.allStores)
+      throw new StaffAccessDenied('Purchase orders are not separated by store yet. All Stores access is required.',403);
+    // Dynamic table/column names are selected only from the server-owned
+    // allowlist above. Widen the Supabase builder type here to avoid an
+    // exponential union across every generated database table.
+    let query=(context.admin as any).from(resource.table)
+      .select(resource.columns,{count:'exact'});
+    if(section!=='procurement')query=query.eq('store_id',storeId);
+    const {data,error,count}=await query.order('created_at',{ascending:false})
+      .range((rawPage-1)*50,rawPage*50-1);
+    if(error)throw error;
+    return Response.json({section,store_id:storeId,page:rawPage,total:count||0,rows:data||[]},
+      {headers:{'Cache-Control':'no-store, private'}});
+  }catch(error){return staffErrorResponse(error);}
+}

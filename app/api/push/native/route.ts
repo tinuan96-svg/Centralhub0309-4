@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requireVerifiedSuperAdmin } from '@/lib/access-control/admin';
 import { getServiceClient, getUserFromRequest, jsonError } from '../_utils';
 
 export const dynamic = 'force-dynamic';
@@ -19,6 +20,10 @@ export async function GET(req: Request) {
 
   const { user, error } = await getUserFromRequest(req);
   if (error || !user) return jsonError(error || 'Unauthorized', 401);
+  // Staff identities (even with an old valid token) cannot subscribe to or
+  // receive global administrator notifications through these endpoints.
+  try { await requireVerifiedSuperAdmin(req); }
+  catch { return jsonError('Verified Super Admin access required',403); }
 
   const { data, count, error: dbError } = await getServiceClient()
     .from('native_push_devices')
@@ -43,6 +48,10 @@ export async function POST(req: Request) {
 
   const { user, error } = await getUserFromRequest(req);
   if (error || !user) return jsonError(error || 'Unauthorized', 401);
+  // Staff identities (even with an old valid token) cannot subscribe to or
+  // receive global administrator notifications through these endpoints.
+  try { await requireVerifiedSuperAdmin(req); }
+  catch { return jsonError('Verified Super Admin access required',403); }
 
   let body: any;
   try {
@@ -97,6 +106,10 @@ export async function DELETE(req: Request) {
 
   const { user, error } = await getUserFromRequest(req);
   if (error || !user) return jsonError(error || 'Unauthorized', 401);
+  // Staff identities (even with an old valid token) cannot subscribe to or
+  // receive global administrator notifications through these endpoints.
+  try { await requireVerifiedSuperAdmin(req); }
+  catch { return jsonError('Verified Super Admin access required',403); }
 
   let body: any;
   try {

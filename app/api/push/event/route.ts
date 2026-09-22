@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { sendWebPush, getWebPushConfigStatus, StoredPushSubscription } from '@/lib/server/webPush';
 import { getFirebaseMessagingConfigStatus, sendFirebasePush } from '@/lib/server/firebaseMessaging';
-import { getServiceClient, getUserFromRequest, jsonError } from '../_utils';
+import { getServiceClient, jsonError } from '../_utils';
+import { requireVerifiedSuperAdmin } from '@/lib/access-control/admin';
 import { getStoreNotificationBrand } from '@/lib/notifications/storeNotificationBrand';
 
 export const dynamic = 'force-dynamic';
@@ -53,8 +54,12 @@ export async function POST(req: Request) {
     });
   }
 
-  const { user, error } = await getUserFromRequest(req);
-  if (error || !user) return jsonError(error || 'Unauthorized', 401);
+  let actorId: string;
+  try {
+    ({ actorId } = await requireVerifiedSuperAdmin(req));
+  } catch {
+    return jsonError('Verified Super Admin access required', 403);
+  }
 
   let body: any;
   try {
@@ -137,7 +142,7 @@ export async function POST(req: Request) {
   const { data: notification, error: notificationError } = await supabase
     .from('system_notifications')
     .insert({
-      user_id: user.id,
+      user_id: actorId,
       store_id: canonicalStoreId,
       title: notificationDetails.title,
       message: notificationDetails.message,
@@ -176,7 +181,7 @@ export async function POST(req: Request) {
   const { data: subscriptions, error: subscriptionError } = await supabase
     .from('push_subscriptions')
     .select('id, endpoint, p256dh, auth')
-    .eq('user_id', user.id)
+    .eq('user_id', actorId)
     .eq('is_enabled', true);
 
   if (subscriptionError) return jsonError(subscriptionError.message, 500);
@@ -184,7 +189,7 @@ export async function POST(req: Request) {
   const { data: nativeDevices, error: nativeError } = await supabase
     .from('native_push_devices')
     .select('id, token')
-    .eq('user_id', user.id)
+    .eq('user_id', actorId)
     .eq('is_enabled', true);
 
   if (nativeError) return jsonError(nativeError.message, 500);

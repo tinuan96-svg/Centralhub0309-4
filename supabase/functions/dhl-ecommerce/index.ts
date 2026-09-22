@@ -50,15 +50,15 @@ async function authorizeAdmin(req: Request) {
   const { data: { user }, error } = await db.auth.getUser(token);
   if (error || !user) return false;
 
-  const metadataRole = String(user.app_metadata?.role || "").toLowerCase();
-  if (["admin", "superadmin", "administrator"].includes(metadataRole)) return true;
-
-  const { data: profile } = await db
-    .from("user_profiles")
-    .select("profile_role,is_active")
-    .eq("id", user.id)
-    .maybeSingle();
-  return profile?.is_active !== false && ["admin", "superadmin", "administrator"].includes(String(profile?.profile_role || "").toLowerCase());
+  const [{data:identity,error:identityError},{data:profile,error:profileError},
+    {data:staffRecord,error:staffError}]=await Promise.all([
+    db.auth.admin.getUserById(user.id),
+    db.from("user_profiles").select("profile_role,is_active").eq("id",user.id).maybeSingle(),
+    db.from("ch_staff_accounts").select("user_id").eq("user_id",user.id).maybeSingle()
+  ]);
+  return !identityError&&!profileError&&!staffError&&
+    identity.user?.app_metadata?.role==="admin"&&profile?.profile_role==="admin"&&
+    profile.is_active===true&&!staffRecord;
 }
 
 let cachedToken: { token: string; expiresAt: number } | null = null;

@@ -35,7 +35,10 @@ jobs:
         run: npm ci
 
       - name: Dependency high severity security gate
-        run: npm audit --audit-level=high
+        # Production dependency gate. The Capacitor dev-only xcode package requires uuid ^7,
+        # while CentralHub intentionally overrides uuid to 11.1.1; npm's retired quick-audit
+        # endpoint rejects that dev tree as invalid even though npm ci reports zero vulnerabilities.
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Supabase client config gate
         run: |
@@ -56,6 +59,21 @@ jobs:
 
       - name: Order sync contract audit
         run: npm run audit:order-sync
+
+      - name: Staff access foundation security regression tests
+        run: npm run audit:staff
+
+      - name: Inventory privileged integrations
+        run: npm run audit:privileged
+
+      - name: Publish security inventory for manual review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue4-privileged-integration-inventory
+          path: artifacts/issue4-privileged-integration-inventory.json
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Typecheck
         run: npx tsc --noEmit

@@ -4,7 +4,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey, X-CentralHub-Worker-Secret",
 };
 
 const DHL_BASE = Deno.env.get("DHL_ENV") === "uat"
@@ -143,6 +143,13 @@ Deno.serve(async (req: Request) => {
     const url = Deno.env.get("SUPABASE_URL");
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!url || !serviceKey) throw new Error("Supabase server credentials are missing");
+    const suppliedBearer=(req.headers.get("Authorization")||"").replace(/^Bearer\s+/i,"").trim();
+    const suppliedWorker=(req.headers.get("X-CentralHub-Worker-Secret")||"").trim();
+    const configuredWorker=(Deno.env.get("CENTRALHUB_DHL_TRACKING_WORKER_SECRET")||"").trim();
+    const trustedService=suppliedBearer.length>0&&suppliedBearer===serviceKey;
+    const trustedWorker=configuredWorker.length>=32&&suppliedWorker===configuredWorker;
+    if(!trustedService&&!trustedWorker)
+      return new Response(JSON.stringify({success:false,error:"Unauthorized"}),{status:401,headers:{...corsHeaders,"Content-Type":"application/json"}});
     const db = createClient(url, serviceKey, { auth: { persistSession: false } });
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60_000).toISOString();
 

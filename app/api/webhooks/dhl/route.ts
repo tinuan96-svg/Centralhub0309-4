@@ -16,21 +16,17 @@ export async function POST(request: Request) {
   const signature = request.headers.get('x-dhl-signature');
   const secret = process.env.DHL_WEBHOOK_SECRET;
 
-  // SECURITY: Verify webhook signature
-  if (secret && signature) {
-    const isValid = verifyHmacSignature(body, signature, secret);
-    if (!isValid) {
-      console.warn('Invalid DHL Webhook signature');
-      return NextResponse.json({ success: false, error: 'Invalid signature' }, { status: 401 });
-    }
-  } else if (secret && !signature) {
-    console.warn('Missing DHL Webhook signature');
-    return NextResponse.json({ success: false, error: 'Missing signature' }, { status: 401 });
+  // Never accept unsigned shipment updates if the webhook integration has
+  // not been configured. Validate the exact configured carrier signature.
+  if (!secret?.trim()) return NextResponse.json(
+    { success:false,error:'DHL webhook signature verification is not configured' },{status:503});
+  if (!signature || !verifyHmacSignature(body,signature,secret)) {
+    return NextResponse.json({success:false,error:'Invalid or missing DHL signature'},{status:401});
   }
 
   try {
     const payload = JSON.parse(body);
-    console.log('Received DHL Webhook:', JSON.stringify(payload));
+    // Do not log raw carrier payloads: they can include names and addresses.
 
     // DHL eCommerce UK webhook format usually sends shipmentId and a status code
     const trackingNumber = payload.shipmentId || payload.trackingNumber;

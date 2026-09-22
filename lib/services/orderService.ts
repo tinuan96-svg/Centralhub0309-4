@@ -624,16 +624,19 @@ export class OrderService {
 
       const storeSlug = (order as any)?.stores?.slug;
 
+      // Verify the order/store binding while the central record still exists.
+      if (storeSlug) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) throw new Error('Please sign in again before deleting an order.');
+        const remoteResponse = await fetch('/api/orders/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+          body: JSON.stringify({ orderId, storeSlug }),
+        });
+        if (!remoteResponse.ok) throw new Error('Remote store deletion was not completed. CentralHub order was kept.');
+      }
       const { error } = await supabase.from('orders').delete().eq('id', orderId);
       if (error) throw error;
-
-      if (storeSlug) {
-        fetch('/api/orders/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ orderId, storeSlug }),
-        }).catch(err => console.error('Remote order delete failed:', err));
-      }
       return { success: true, error: null };
     } catch (error: any) {
       return { success: false, error: error.message };
