@@ -23,6 +23,8 @@ export default function AuthProvider({children}:{children:React.ReactNode}){
   const [session,setSession]=useState<Session|null>(null);
   const [isLoading,setIsLoading]=useState(true);
   const [staffLoading,setStaffLoading]=useState(false);
+  const [adminLoading,setAdminLoading]=useState(false);
+  const [verifiedAdminSessionToken,setVerifiedAdminSessionToken]=useState<string|null>(null);
   const [staffAccess,setStaffAccess]=useState<StaffAccessSnapshot|null>(null);
   const [isMounted,setIsMounted]=useState(false);
   const [disabledNavKeys,setDisabledNavKeys]=useState<string[]>([]);
@@ -86,15 +88,43 @@ export default function AuthProvider({children}:{children:React.ReactNode}){
     return()=>{cancelled=true;window.clearInterval(poll);window.removeEventListener('focus',onFocus);};
   },[isStaff,session?.access_token,user?.id]);
 
+  const adminClaim=user?.app_metadata?.role==='admin';
+  useEffect(()=>{
+    let cancelled=false;
+    if(!adminClaim||!session?.access_token){
+      setVerifiedAdminSessionToken(null);
+      setAdminLoading(false);
+      return;
+    }
+    const token=session.access_token;
+    setVerifiedAdminSessionToken(null);
+    setAdminLoading(true);
+    const verify=async()=>{
+      try{
+        const response=await fetch('/api/auth/admin-session',{
+          headers:{Authorization:`Bearer ${token}`},cache:'no-store'
+        });
+        if(!response.ok)throw new Error('Super Admin verification failed');
+        if(!cancelled)setVerifiedAdminSessionToken(token);
+      }catch{if(!cancelled)setVerifiedAdminSessionToken(null);}
+      finally{if(!cancelled)setAdminLoading(false);}
+    };
+    void verify();
+    const poll=window.setInterval(()=>{void verify();},30000);
+    const onFocus=()=>{void verify();};
+    window.addEventListener('focus',onFocus);
+    return()=>{cancelled=true;window.clearInterval(poll);window.removeEventListener('focus',onFocus);};
+  },[adminClaim,session?.access_token,user?.id]);
+
   useEffect(() => {
-    if (!session?.user || session.user.app_metadata?.role === 'staff') return;
+    if (!session?.user || session.user.app_metadata?.role !== 'admin' || verifiedAdminSessionToken!==session.access_token) return;
     PushNotificationService.registerNativeDevice().catch((error) => {
       console.warn('CentralHub native push registration deferred:', error?.message || error);
     });
-  }, [session?.user?.id]);
+  }, [session?.user?.id,session?.access_token,verifiedAdminSessionToken]);
 
   const handleSignOut=async()=>{await AuthService.signOut();router.replace('/login')};
-  const isAdmin=user?.app_metadata?.role==='admin';
+  const isAdmin=adminClaim&&verifiedAdminSessionToken===session?.access_token;
   const isAtLogin=pathname==='/login'||pathname==='/login/';
   const permissions=staffAccess?.active?staffAccess.permissions:[];
   const staffNeedsSetup=isStaff&&(!staffAccess?.active||staffAccess.must_change_password);
@@ -102,7 +132,7 @@ export default function AuthProvider({children}:{children:React.ReactNode}){
   // data-fetching components. Only the isolated, server-scoped workspace is allowed.
   const staffPathAllowed=pathname==='/dashboard'||pathname==='/dashboard/';
   const staffRouteDenied=isStaff&&!!staffAccess?.active&&!isAtLogin&&!staffPathAllowed;
-  const loading=isLoading||(isStaff&&staffLoading);
+  const loading=isLoading||(isStaff&&staffLoading)||(adminClaim&&adminLoading);
 
   const value={user,session,isLoading:loading,isAdmin,isStaff,staffAccess,permissions,disabledNavKeys,signOut:handleSignOut};
   return <AuthContext.Provider value={value}>{
@@ -112,6 +142,7 @@ export default function AuthProvider({children}:{children:React.ReactNode}){
     staffNeedsSetup&&user?<StaffPendingAccess user={user} session={session} signOut={handleSignOut}/>:
     staffRouteDenied?<div className="min-h-screen bg-slate-950 p-8 text-slate-100"><h1 className="text-xl font-bold">Access not assigned</h1><p className="mt-3 text-slate-300">Staff cannot open the administration pages. Use your assigned workspace.</p><button onClick={()=>router.replace('/dashboard')} className="mt-5 rounded-xl bg-cyan-500 px-4 py-2 font-bold text-slate-950">Back to workspace</button></div>:
     isStaff&&session?<StaffWorkspace session={session} signOut={handleSignOut}/>:
+    user&&!isAdmin?<div className="min-h-screen bg-slate-950 p-8 text-slate-100"><h1 className="text-xl font-bold">CentralHub access not authorised</h1><p className="mt-3 text-slate-300">This login is not an active, verified Super Admin or an assigned staff account.</p><button className="mt-5 rounded-xl border border-slate-600 px-4 py-2 text-white" onClick={()=>void handleSignOut()}>Sign out</button></div>:
     children)
   }</AuthContext.Provider>;
 }
