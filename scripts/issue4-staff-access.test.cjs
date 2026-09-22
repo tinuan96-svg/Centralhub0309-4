@@ -419,7 +419,7 @@ test('handover requires a live staff identity and four permissions and changes o
   assert.ok(sql.includes("'"+permission+"'"));
   assert.ok(api.includes("'"+permission+"'"));
  }
- assert.match(sql,/s\.status='active'/);
+ assert.match(sql,/a\.status='active'/);
  assert.match(sql,/x\.store_id=p_store_id/);
  assert.match(sql,/where id=p_shipment_id and order_id=p_order_id for update/);
  assert.match(sql,/s\.label_printed is distinct from true/);
