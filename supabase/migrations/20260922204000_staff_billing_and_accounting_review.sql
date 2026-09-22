@@ -50,7 +50,7 @@ begin
    nullif(btrim(v_document.invoice_number),'') is null or
    v_document.document_date is null or
    v_document.amount_gross is null or v_document.amount_gross<0 or
-   v_document.currency<>'GBP'
+   v_document.currency is distinct from 'GBP'
  ) then raise exception 'billing_document_missing_required_fields' using errcode='23514'; end if;
  insert into public.ch_staff_billing_reviews(document_id,store_id,reviewer_id,decision,note)
  values(p_document_id,p_store_id,p_actor,p_decision,btrim(p_note)) returning id into v_id;
@@ -93,7 +93,7 @@ begin
   reconciled_with_order_id,reconciled_with_supplier_invoice_id,amount
  into v_row from public.bank_transactions
  where id=p_bank_transaction_id and store_id=p_store_id for update;
- if not found or v_row.is_reconciled or
+ if not found or v_row.is_reconciled is true or
   v_row.classification_status in ('reconciled','ignored') or
   v_row.reconciled_with_order_id is not null or
   v_row.reconciled_with_supplier_invoice_id is not null or v_row.amount is null
