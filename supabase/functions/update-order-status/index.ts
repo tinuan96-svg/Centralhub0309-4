@@ -88,6 +88,7 @@ Deno.serve(async (req: Request) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
   const central = createClient(supabaseUrl, serviceKey);
+  let callerStaffContext: { allStores: boolean; storeIds: string[] } | null = null;
 
   const authHeader = req.headers.get("Authorization") || "";
   const bearer = authHeader.replace(/^Bearer\s+/i, "").trim();
@@ -124,7 +125,7 @@ Deno.serve(async (req: Request) => {
       allowed = profile?.is_active !== false && ["admin", "superadmin", "administrator"].includes(String(profile?.profile_role || "").toLowerCase());
     }
     if (!allowed) return reply({ success: false, error: "Forbidden" }, 403);
-    (req as any).__centralhubStaffContext = staffContext;
+    callerStaffContext = staffContext;
   }
 
   let orderId: string | undefined;
@@ -148,8 +149,7 @@ Deno.serve(async (req: Request) => {
       .eq("id", orderId)
       .single();
     if (orderError || !order) return reply({ success: false, error: "Order not found" }, 404);
-    const staffContext = (req as any).__centralhubStaffContext as { allStores:boolean; storeIds:string[] } | null;
-    if (staffContext && !staffContext.allStores && !staffContext.storeIds.includes(order.store_id)) {
+    if (callerStaffContext && !callerStaffContext.allStores && !callerStaffContext.storeIds.includes(order.store_id)) {
       return reply({ success: false, error: "Forbidden for this store" }, 403);
     }
 
