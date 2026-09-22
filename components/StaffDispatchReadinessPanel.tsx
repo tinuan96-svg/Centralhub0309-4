@@ -6,8 +6,8 @@ type Readiness={
  shipment:{id:string;carrier:string;status:string;tracking_number:string|null;label_printed:boolean|null}|null;
 };
 const button='rounded-xl border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40';
-export default function StaffDispatchReadinessPanel({orderId,storeId,token,onClose}:{
- orderId:string;storeId:string;token:string;onClose:()=>void;
+export default function StaffDispatchReadinessPanel({orderId,storeId,token,onClose,onSaved}:{
+ orderId:string;storeId:string;token:string;onClose:()=>void;onSaved?:()=>void;
 }){
  const [data,setData]=useState<Readiness|null>(null);
  const [error,setError]=useState('');
@@ -41,7 +41,7 @@ export default function StaffDispatchReadinessPanel({orderId,storeId,token,onClo
    });
    const result=await response.json();
    if(!response.ok)throw new Error(result.error||'Could not confirm physical handover');
-   setComplete(true);setConfirmed(false);setData(null);
+   setComplete(true);setConfirmed(false);setData(null);onSaved?.();
   }catch(err){
    setError(err instanceof Error?err.message:'Handover was not recorded');
    setConfirmed(false);setData(null);
