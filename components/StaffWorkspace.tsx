@@ -35,6 +35,8 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
   const [page,setPage]=useState(1);
   const [rows,setRows]=useState<Record<string,unknown>[]>([]);
   const [total,setTotal]=useState(0);
+  const [reloadCounter,setReloadCounter]=useState(0);
+  const [updatingTicket,setUpdatingTicket]=useState('');
   const [error,setError]=useState('');
   const [busy,setBusy]=useState(true);
   const bearer=session.access_token;
@@ -72,7 +74,25 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
       finally{if(active)setBusy(false);}
     })();
     return()=>{active=false;};
-  },[context,storeId,section,page,bearer]);
+  },[context,storeId,section,page,bearer,reloadCounter]);
+  const changeSupportStatus=async(ticketId:string,expected:string,next:string)=>{
+    if(!context?.permissions.includes('support.edit')||section!=='customer_care'||!storeId||updatingTicket)return;
+    setUpdatingTicket(ticketId);setError('');
+    try{
+      const response=await fetch('/api/staff/support/status',{
+        method:'POST',cache:'no-store',
+        headers:{'Content-Type':'application/json',Authorization:`Bearer ${bearer}`},
+        body:JSON.stringify({ticket_id:ticketId,store_id:storeId,
+          expected_status:expected,next_status:next})
+      });
+      const result=await response.json();
+      if(!response.ok)throw new Error(result.error||'Could not update ticket status');
+      setRows([]);setReloadCounter(n=>n+1);
+    }catch(err){
+      setRows([]);setError(err instanceof Error?err.message:'Ticket update failed');
+      setReloadCounter(n=>n+1);
+    }finally{setUpdatingTicket('');}
+  };
   const selected=sections.find(s=>s.key===section);
   return <main className="min-h-[100dvh] bg-slate-950 p-4 text-slate-100 sm:p-6">
     <div className="mx-auto max-w-7xl space-y-5">
@@ -106,7 +126,7 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
           <section className="overflow-hidden rounded-2xl border border-slate-700 bg-slate-900/70">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-700 p-4">
               <div><h2 className="text-lg font-bold text-white">{selected?.label}</h2>
-                <p className="text-xs text-slate-300">Read-only records · Store-scoped access · {total} results</p></div>
+                <p className="text-xs text-slate-300">Store-scoped records · {total} results{section==='customer_care'&&context.permissions.includes('support.edit')?' · Ticket status updates enabled':' · Read-only view'}</p></div>
               <span className="rounded-md border border-cyan-800 px-2 py-1 text-xs text-cyan-300">Verified feature access</span>
             </div>
             <div className="w-full overflow-x-auto">
@@ -115,10 +135,22 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
                 <table className="min-w-full divide-y divide-slate-700 text-left text-sm">
                   <thead className="bg-slate-800 text-slate-100"><tr>
                     {selected?.columns.map(column=><th className="px-3 py-3 font-bold" key={column}>{column.replace(/_/g,' ')}</th>)}
+                    {section==='customer_care'&&context.permissions.includes('support.edit')&&<th className="px-3 py-3 font-bold">Action</th>}
                   </tr></thead>
                   <tbody className="divide-y divide-slate-800">
                     {rows.map((row,index)=><tr key={String(row.id||index)} className="align-top">
                       {selected?.columns.map(column=><td key={column} className="max-w-xs break-words px-3 py-3 text-slate-200">{displayCell(row[column])}</td>)}
+                      {section==='customer_care'&&context.permissions.includes('support.edit')&&<td className="px-3 py-3">
+                        {typeof row.id==='string'&&typeof row.status==='string'&&(
+                          row.status==='open'||row.status==='in_progress'||row.status==='resolved'||row.status==='closed'
+                        )&&<button className={button} disabled={busy||Boolean(updatingTicket)}
+                          onClick={()=>void changeSupportStatus(String(row.id),String(row.status),
+                            row.status==='open'?'in_progress':row.status==='in_progress'?'resolved':
+                            row.status==='resolved'?'closed':'open')}>
+                          {updatingTicket===row.id?'Saving…':row.status==='open'?'Start work':
+                            row.status==='in_progress'?'Resolve':row.status==='resolved'?'Close':'Reopen'}
+                        </button>}
+                      </td>}
                     </tr>)}
                   </tbody>
                 </table>}
@@ -129,7 +161,7 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
               <button className={button} disabled={busy||page*50>=total} onClick={()=>setPage(n=>n+1)}>Next</button>
             </div>
           </section>}
-        <p className="text-xs text-slate-400">Further actions such as refunds, order approval and financial changes require their own separately verified permissions. These cannot be performed through the read-only workspace.</p>
+        <p className="text-xs text-slate-400">Only the explicitly assigned Customer Care ticket-status action is available here. Refunds, order approval, payment changes and other sensitive actions require separate verified permissions and are unavailable in this workspace.</p>
       </div>}
     </div>
   </main>;
