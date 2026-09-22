@@ -261,47 +261,36 @@ export class ShippingService {
       await this.addShipmentEvent(shipment.id, 'ready_to_ship', 'Shipment created and ready for pickup', null);
 
       if (params.order_id) {
-        console.log('Updating order status for order:', params.order_id);
-
-        // 1. Primary update (all columns)
+        // Booking a label is NOT physical dispatch. Keep the order at
+        // ready_to_ship until an audited courier handover or carrier collection
+        // confirms it left the warehouse.
         const { error: primaryError } = await supabase
           .from('orders')
           .update({
-            order_status: 'shipment_booked',
-            warehouse_status: 'dispatched',
-            fulfillment_status: 'shipment_booked',
+            order_status: 'ready_to_ship',
+            warehouse_status: 'ready_to_ship',
+            fulfillment_status: 'ready_to_ship',
+            shipment_status: 'label_created',
+            tracking_number: dhlResponse.trackingNumber || null,
             updated_at: new Date().toISOString()
           })
-          .eq('id', params.order_id);
+          .eq('id', params.order_id)
+          .eq('payment_status', 'paid')
+          .eq('is_deleted', false);
 
         if (primaryError) {
-          console.warn('Fulfillment status update failed, attempting fallback:', primaryError.message);
-
-          // 2. Fallback update (remove fulfillment_status if it doesn't exist)
-          const { error: fallbackError } = await supabase
-            .from('orders')
-            .update({
-              order_status: 'shipped',
-              warehouse_status: 'dispatched',
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', params.order_id);
-
-          if (fallbackError) {
-            console.error('Final fallback update failed:', fallbackError.message);
-          }
+          console.error('Shipment was booked but order readiness update failed:', primaryError.message);
+          return { success: false, shipment, error: 'Shipment booked; order requires manager review before courier handover' };
         }
 
-        // Log to order history as well
         await supabase.from('order_status_history').insert([{
           order_id: params.order_id,
-          new_status: 'shipped',
-          notes: `Shipment ${shipmentNumber} created via DHL. Tracking: ${dhlResponse.trackingNumber}`,
-          inventory_action: 'commit',
+          new_status: 'ready_to_ship',
+          notes: `Shipment ${shipmentNumber} booked via DHL. Awaiting physical courier handover. Tracking: ${dhlResponse.trackingNumber}`,
+          inventory_action: 'none',
           inventory_action_completed: true
         }]);
 
-        // 3. Queue synchronization to remote store
         const { data: orderData } = await supabase
           .from('orders')
           .select('order_number, store_id')
@@ -317,7 +306,8 @@ export class ShippingService {
           });
         }
 
-        pushOrderStatusToStore(params.order_id, 'shipment_booked', `Shipment ${shipmentNumber} created`);
+        pushOrderStatusToStore(params.order_id, 'ready_to_ship',
+          `Shipment ${shipmentNumber} booked; awaiting courier handover`);
       }
 
       return { success: true, shipment };
