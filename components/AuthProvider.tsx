@@ -6,7 +6,8 @@ import { AuthService } from '@/lib/services/authService';
 import { PushNotificationService } from '@/lib/services/pushNotificationService';
 import { supabase } from '@/lib/supabase';
 import StaffPendingAccess from '@/components/StaffPendingAccess';
-import { staffCanOpenPath, type StaffAccessSnapshot } from '@/lib/access-control/routes';
+import StaffWorkspace from '@/components/StaffWorkspace';
+import type { StaffAccessSnapshot } from '@/lib/access-control/routes';
 import type { User, Session } from '@supabase/supabase-js';
 
 interface AuthContextType {
@@ -63,13 +64,26 @@ export default function AuthProvider({children}:{children:React.ReactNode}){
   useEffect(()=>{
     let cancelled=false;
     if(!isStaff||!session?.access_token){setStaffAccess(null);setStaffLoading(false);return;}
+    setStaffAccess(null);
     setStaffLoading(true);
-    fetch('/api/staff/access',{headers:{Authorization:`Bearer ${session.access_token}`},cache:'no-store'})
-      .then(async response=>{const body=await response.json();if(!response.ok)throw new Error(body.error||'Staff access unavailable');return body as StaffAccessSnapshot})
-      .then(access=>{if(!cancelled)setStaffAccess(access)})
-      .catch(()=>{if(!cancelled)setStaffAccess(null)})
-      .finally(()=>{if(!cancelled)setStaffLoading(false)});
-    return()=>{cancelled=true};
+    const verify=async()=>{
+      try{
+        const response=await fetch('/api/staff/access',{
+          headers:{Authorization:`Bearer ${session.access_token}`},cache:'no-store'
+        });
+        const body=await response.json();
+        if(!response.ok)throw new Error(body.error||'Staff access unavailable');
+        if(!cancelled)setStaffAccess(body as StaffAccessSnapshot);
+      }catch{if(!cancelled)setStaffAccess(null);}
+      finally{if(!cancelled)setStaffLoading(false);}
+    };
+    void verify();
+    // Revocation is enforced immediately by every server request; periodically
+    // recheck the UI as well so suspended staff do not see stale cached rows.
+    const poll=window.setInterval(()=>{void verify();},30000);
+    const onFocus=()=>{void verify();};
+    window.addEventListener('focus',onFocus);
+    return()=>{cancelled=true;window.clearInterval(poll);window.removeEventListener('focus',onFocus);};
   },[isStaff,session?.access_token,user?.id]);
 
   useEffect(() => {
@@ -84,16 +98,20 @@ export default function AuthProvider({children}:{children:React.ReactNode}){
   const isAtLogin=pathname==='/login'||pathname==='/login/';
   const permissions=staffAccess?.active?staffAccess.permissions:[];
   const staffNeedsSetup=isStaff&&(!staffAccess?.active||staffAccess.must_change_password);
-  const staffRouteDenied=isStaff&&!!staffAccess?.active&&!isAtLogin&&!staffCanOpenPath(pathname,permissions);
+  // Staff never mount the existing admin dashboard, sidebar, settings or
+  // data-fetching components. Only the isolated, server-scoped workspace is allowed.
+  const staffPathAllowed=pathname==='/dashboard'||pathname==='/dashboard/';
+  const staffRouteDenied=isStaff&&!!staffAccess?.active&&!isAtLogin&&!staffPathAllowed;
   const loading=isLoading||(isStaff&&staffLoading);
 
   const value={user,session,isLoading:loading,isAdmin,isStaff,staffAccess,permissions,disabledNavKeys,signOut:handleSignOut};
   return <AuthContext.Provider value={value}>{
-    !isMounted?<div suppressHydrationWarning>{children}</div>:
+    !isMounted?<div className="min-h-screen bg-slate-950" aria-busy="true" />:
     loading?<div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-white space-y-4"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div><div className="text-center"><p className="text-lg font-bold">CentralHub</p><p className="text-slate-400 text-sm">Securing your session...</p></div></div>:
     (!user&&!isAtLogin?<div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-slate-400 space-y-4"><p>Redirecting to login...</p><button onClick={()=>window.location.href='/login'} className="text-blue-500 hover:underline text-sm">Click here if not redirected</button></div>:
     staffNeedsSetup&&user?<StaffPendingAccess user={user} session={session} signOut={handleSignOut}/>:
-    staffRouteDenied?<div className="min-h-screen bg-slate-950 p-8 text-slate-100"><h1 className="text-xl font-bold">Access not assigned</h1><p className="mt-3 text-slate-300">Your staff login does not have permission for this CentralHub section.</p><button onClick={()=>router.replace('/dashboard')} className="mt-5 rounded-xl bg-cyan-500 px-4 py-2 font-bold text-slate-950">Back to dashboard</button></div>:
+    staffRouteDenied?<div className="min-h-screen bg-slate-950 p-8 text-slate-100"><h1 className="text-xl font-bold">Access not assigned</h1><p className="mt-3 text-slate-300">Staff cannot open the administration pages. Use your assigned workspace.</p><button onClick={()=>router.replace('/dashboard')} className="mt-5 rounded-xl bg-cyan-500 px-4 py-2 font-bold text-slate-950">Back to workspace</button></div>:
+    isStaff&&session?<StaffWorkspace session={session} signOut={handleSignOut}/>:
     children)
   }</AuthContext.Provider>;
 }
