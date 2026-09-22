@@ -6,15 +6,26 @@ import { AuthService } from '@/lib/services/authService';
 import { PushNotificationService } from '@/lib/services/pushNotificationService';
 import { supabase } from '@/lib/supabase';
 import StaffPendingAccess from '@/components/StaffPendingAccess';
-import StaffWorkspace from '@/components/StaffWorkspace';
+import { staffCanOpenPath, type StaffAccessSnapshot } from '@/lib/access-control/routes';
 import type { User, Session } from '@supabase/supabase-js';
 
-interface AuthContextType { user: User | null; session: Session | null; isLoading: boolean; isAdmin: boolean; disabledNavKeys: string[]; signOut: () => Promise<void>; }
-const AuthContext=createContext<AuthContextType>({user:null,session:null,isLoading:true,isAdmin:false,disabledNavKeys:[],signOut:async()=>{}});
+interface AuthContextType {
+  user:User|null; session:Session|null; isLoading:boolean; isAdmin:boolean;
+  isStaff:boolean; staffAccess:StaffAccessSnapshot|null; permissions:string[];
+  disabledNavKeys:string[]; signOut:()=>Promise<void>;
+}
+const AuthContext=createContext<AuthContextType>({user:null,session:null,isLoading:true,isAdmin:false,isStaff:false,staffAccess:null,permissions:[],disabledNavKeys:[],signOut:async()=>{}});
 export const useAuth=()=>useContext(AuthContext);
 
 export default function AuthProvider({children}:{children:React.ReactNode}){
-  const [user,setUser]=useState<User|null>(null); const [session,setSession]=useState<Session|null>(null); const [isLoading,setIsLoading]=useState(true); const [isMounted,setIsMounted]=useState(false); const [disabledNavKeys,setDisabledNavKeys]=useState<string[]>([]); const router=useRouter(); const pathname=usePathname();
+  const [user,setUser]=useState<User|null>(null);
+  const [session,setSession]=useState<Session|null>(null);
+  const [isLoading,setIsLoading]=useState(true);
+  const [staffLoading,setStaffLoading]=useState(false);
+  const [staffAccess,setStaffAccess]=useState<StaffAccessSnapshot|null>(null);
+  const [isMounted,setIsMounted]=useState(false);
+  const [disabledNavKeys,setDisabledNavKeys]=useState<string[]>([]);
+  const router=useRouter(); const pathname=usePathname();
   useEffect(()=>{setIsMounted(true)},[]);
 
   useEffect(()=>{
@@ -42,11 +53,24 @@ export default function AuthProvider({children}:{children:React.ReactNode}){
         if(!s){try{s=(await supabase.auth.getSession()).data.session}catch{}}
         applySession(s);
       }else applySession(nextSession);
-      if(event==='SIGNED_OUT'){setDisabledNavKeys([]);window.location.replace('/login')}
+      if(event==='SIGNED_OUT'){setDisabledNavKeys([]);setStaffAccess(null);window.location.replace('/login')}
       else if(event==='SIGNED_IN'){const isAtLogin=pathname==='/login'||pathname==='/login/';if(isAtLogin)router.replace('/dashboard')}
     });
     return()=>{mounted=false;authListener?.subscription?.unsubscribe()};
   },[pathname,router,isMounted]);
+
+  const isStaff=user?.app_metadata?.role==='staff';
+  useEffect(()=>{
+    let cancelled=false;
+    if(!isStaff||!session?.access_token){setStaffAccess(null);setStaffLoading(false);return;}
+    setStaffLoading(true);
+    fetch('/api/staff/access',{headers:{Authorization:`Bearer ${session.access_token}`},cache:'no-store'})
+      .then(async response=>{const body=await response.json();if(!response.ok)throw new Error(body.error||'Staff access unavailable');return body as StaffAccessSnapshot})
+      .then(access=>{if(!cancelled)setStaffAccess(access)})
+      .catch(()=>{if(!cancelled)setStaffAccess(null)})
+      .finally(()=>{if(!cancelled)setStaffLoading(false)});
+    return()=>{cancelled=true};
+  },[isStaff,session?.access_token,user?.id]);
 
   useEffect(() => {
     if (!session?.user || session.user.app_metadata?.role === 'staff') return;
@@ -56,10 +80,20 @@ export default function AuthProvider({children}:{children:React.ReactNode}){
   }, [session?.user?.id]);
 
   const handleSignOut=async()=>{await AuthService.signOut();router.replace('/login')};
-  // Fail closed: staff never receive the admin workspace merely because a
-  // public UI feature flag is flipped. Replace only after live DB session
-  // authorisation + route/API/RLS checks have all been validated end-to-end.
-  const staffPending=user?.app_metadata?.role==='staff';
-  const isAdmin=(user?.app_metadata as any)?.role==='admin'; const isAtLogin=pathname==='/login'||pathname==='/login/';
-  return <AuthContext.Provider value={{user,session,isLoading,isAdmin,disabledNavKeys,signOut:handleSignOut}}>{!isMounted?<div suppressHydrationWarning>{children}</div>:isLoading?<div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-white space-y-4"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div><div className="text-center"><p className="text-lg font-bold">CentralHub</p><p className="text-slate-400 text-sm">Securing your session...</p></div></div>:( !user&&!isAtLogin?<div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-slate-400 space-y-4"><p>Redirecting to login...</p><button onClick={()=>window.location.href='/login'} className="text-blue-500 hover:underline text-sm">Click here if not redirected</button></div>:staffPending?(session && process.env.NEXT_PUBLIC_CENTRALHUB_STAFF_UI_VERIFIED==='true' && user?.app_metadata?.must_change_password===false?<StaffWorkspace session={session} signOut={handleSignOut}/>:<StaffPendingAccess user={user} session={session} signOut={handleSignOut}/>):children)}</AuthContext.Provider>
+  const isAdmin=user?.app_metadata?.role==='admin';
+  const isAtLogin=pathname==='/login'||pathname==='/login/';
+  const permissions=staffAccess?.active?staffAccess.permissions:[];
+  const staffNeedsSetup=isStaff&&(!staffAccess?.active||staffAccess.must_change_password);
+  const staffRouteDenied=isStaff&&!!staffAccess?.active&&!isAtLogin&&!staffCanOpenPath(pathname,permissions);
+  const loading=isLoading||(isStaff&&staffLoading);
+
+  const value={user,session,isLoading:loading,isAdmin,isStaff,staffAccess,permissions,disabledNavKeys,signOut:handleSignOut};
+  return <AuthContext.Provider value={value}>{
+    !isMounted?<div suppressHydrationWarning>{children}</div>:
+    loading?<div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-white space-y-4"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div><div className="text-center"><p className="text-lg font-bold">CentralHub</p><p className="text-slate-400 text-sm">Securing your session...</p></div></div>:
+    (!user&&!isAtLogin?<div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-slate-400 space-y-4"><p>Redirecting to login...</p><button onClick={()=>window.location.href='/login'} className="text-blue-500 hover:underline text-sm">Click here if not redirected</button></div>:
+    staffNeedsSetup&&user?<StaffPendingAccess user={user} session={session} signOut={handleSignOut}/>:
+    staffRouteDenied?<div className="min-h-screen bg-slate-950 p-8 text-slate-100"><h1 className="text-xl font-bold">Access not assigned</h1><p className="mt-3 text-slate-300">Your staff login does not have permission for this CentralHub section.</p><button onClick={()=>router.replace('/dashboard')} className="mt-5 rounded-xl bg-cyan-500 px-4 py-2 font-bold text-slate-950">Back to dashboard</button></div>:
+    children)
+  }</AuthContext.Provider>;
 }
