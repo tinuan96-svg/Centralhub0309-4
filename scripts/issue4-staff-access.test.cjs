@@ -99,6 +99,39 @@ test('staff records API uses allowlisted columns and scoped server-side queries'
   assert.doesNotMatch(route,/\.select\('\*'\)/);
 });
 
+test('current administrator RLS privilege requires live auth and active profile, never stale JWT admin claim',()=>{
+  const sql=read('supabase/migrations/20260922175000_trusted_live_admin_role.sql');
+  assert.match(sql,/join public\.user_profiles p on p\.id = u\.id/);
+  assert.match(sql,/u\.raw_app_meta_data->>'role' = 'admin'/);
+  assert.match(sql,/p\.profile_role = 'admin'/);
+  assert.match(sql,/p\.is_active = true/);
+  assert.match(sql,/not exists \(/);
+  assert.doesNotMatch(sql,/auth\.jwt\(\)/);
+});
+
+test('support status action checks live staff scope and writes status plus audit atomically',()=>{
+  const sql=read('supabase/migrations/20260922180000_staff_support_status_atomic.sql');
+  assert.match(sql,/create or replace function public\.ch_staff_change_support_status/);
+  assert.match(sql,/s\.status='active'/);
+  assert.match(sql,/u\.raw_app_meta_data->>'role'='staff'/);
+  assert.match(sql,/o\.permission_key='support\.edit'/);
+  assert.match(sql,/o\.permission_key='support\.view'/);
+  assert.match(sql,/a\.store_id=p_store_id/);
+  assert.match(sql,/where id=p_ticket_id and store_id=p_store_id and status=p_expected_status/);
+  assert.match(sql,/insert into public\.ch_staff_activity_audit/);
+  assert.match(sql,/from public,anon,authenticated/);
+  assert.match(sql,/to service_role/);
+  const route=read('app/api/staff/support/status/route.ts');
+  assert.match(route,/requireStaffContext\(request\)/);
+  assert.match(route,/requireStaffPermission\(context,'support\.edit',storeId\)/);
+  assert.match(route,/requireStaffPermission\(context,'support\.view',storeId\)/);
+  assert.match(route,/\.rpc\('ch_staff_change_support_status'/);
+  assert.match(route,/expected_status:expected,p_next_status:next/);
+  const workspace=read('components/StaffWorkspace.tsx');
+  assert.match(workspace,/context\.permissions\.includes\('support\.edit'\)/);
+  assert.match(workspace,/\/api\/staff\/support\/status/);
+});
+
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
