@@ -398,12 +398,14 @@ test('dispatch readiness exposes only store-scoped shipment evidence and never m
   assert.match(route,/\.eq\('id',orderId\)\.eq\('store_id',storeId\)/);
   assert.match(route,/\.eq\('order_id',orderId\)/);
   assert.match(route,/ready_for_handover:issues\.length===0/);
-  assert.match(route,/dispatch_action_available:false/);
+  assert.match(route,/dispatch_action_available:handoverAllowed/);
+  assert.match(route,/context\.permissions\.includes\('shipping\.edit'\)/);
   assert.doesNotMatch(route,/\.update\(|\.insert\(|\.delete\(|\.rpc\(|\.invoke\(/);
   assert.doesNotMatch(route,/recipient_name|recipient_address|shipping_cost|label_url/);
   const panel=read('components/StaffDispatchReadinessPanel.tsx');
   assert.match(panel,/\/api\/staff\/fulfilment\/dispatch-readiness/);
-  assert.doesNotMatch(panel,/method:'POST'/);
+  assert.match(panel,/\/api\/staff\/shipping\/handover/);
+  assert.match(panel,/physical_handover_confirmed:true/);
   const workspace=read('components/StaffWorkspace.tsx');
   assert.match(workspace,/<StaffDispatchReadinessPanel/);
   assert.match(workspace,/context\.permissions\.includes\('fulfilment\.dispatch'\)/);
