@@ -593,6 +593,19 @@ test('correlated order item and shipment RLS binds the OUTER row, not inner orde
  assert.doesNotMatch(sql,/where parent_order\.id\s*=\s*order_id\b/);
 });
 
+test('DHL tracking scheduler is retained while anonymous and staff EXECUTE is revoked',()=>{
+ const sql=read('supabase/migrations/20260922230000_restrict_dhl_tracking_cron_trigger.sql');
+ assert.match(sql,/revoke all on function public\.trigger_dhl_tracking_poll\(\) from public,anon,authenticated/);
+ assert.match(sql,/grant execute on function public\.trigger_dhl_tracking_poll\(\) to service_role/);
+ assert.match(sql,/has_function_privilege\('postgres'/);
+ assert.match(sql,/has_function_privilege\('anon'/);
+ assert.match(sql,/has_function_privilege\('authenticated'/);
+ const initial=read('supabase/migrations/20260814102710_20260814190000_add_dhl_tracking_poller_system.sql');
+ assert.match(initial,/cron\.schedule\(/);
+ assert.match(initial,/trigger_dhl_tracking_poll\(\)/);
+ assert.match(initial,/service_role_key/);
+});
+
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
