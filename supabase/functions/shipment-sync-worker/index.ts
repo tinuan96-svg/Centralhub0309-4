@@ -21,7 +21,7 @@ Deno.serve(async (req: Request) => {
     const configuredWorker=(Deno.env.get("CENTRALHUB_SHIPMENT_SYNC_WORKER_SECRET")||"").trim();
     const trustedService=suppliedBearer.length>0&&suppliedBearer===supabaseServiceKey;
     const trustedWorker=configuredWorker.length>=32&&suppliedWorker.length===configuredWorker.length&&
-      crypto.subtle.timingSafeEqual?.(new TextEncoder().encode(suppliedWorker),new TextEncoder().encode(configuredWorker));
+      suppliedWorker===configuredWorker;
     if(!trustedService&&!trustedWorker)
       return new Response(JSON.stringify({success:false,error:"Unauthorized"}),{status:401,headers:{...corsHeaders,"Content-Type":"application/json"}});
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
