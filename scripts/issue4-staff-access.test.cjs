@@ -291,6 +291,26 @@ test('picking completion requires real, consistent line evidence even when order
  assert.match(sql,/picking_json_lines_missing/);
  assert.match(sql,/picking_json_lines_incomplete/);
 });
+test('packing completion is verified, store-scoped, permissioned and audited',()=>{
+ const sql=read('supabase/migrations/20260922190000_staff_complete_packing_atomic.sql');
+ assert.match(sql,/permission_key='fulfilment\.pack'/);
+ assert.match(sql,/coalesce\(i\.verified_quantity,0\)<i\.quantity/);
+ assert.match(sql,/warehouse_status='packing'/);
+ assert.match(sql,/order_status='packing'/);
+ assert.match(sql,/payment_status='paid'/);
+ assert.match(sql,/insert into public\.ch_staff_activity_audit/);
+ assert.match(sql,/from public,anon,authenticated/);
+ assert.match(sql,/to service_role/);
+ assert.doesNotMatch(sql,/order_packaging_allocations/);
+ assert.doesNotMatch(sql,/packaging_materials/);
+ const route=read('app/api/staff/fulfilment/pack/route.ts');
+ assert.match(route,/requireStaffPermission\(context,'fulfilment\.pack',storeId\)/);
+ assert.match(route,/\.rpc\('ch_staff_complete_packing'/);
+ const ui=read('components/StaffWorkspace.tsx');
+ assert.match(ui,/context\.permissions\.includes\('fulfilment\.pack'\)/);
+ assert.match(ui,/\/api\/staff\/fulfilment\/pack/);
+});
+
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
