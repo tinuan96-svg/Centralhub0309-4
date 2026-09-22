@@ -8,7 +8,10 @@ const resources={
   customer_care:{permission:'support.view',table:'support_tickets',columns:'id,store_id,subject,description,status,created_at'},
   billing:{permission:'billing.view',table:'finance_documents',columns:'id,store_id,invoice_number,subject,created_at'},
   finance:{permission:'finance.view',table:'bank_transactions',columns:'id,store_id,description,amount,created_at'},
-  marketing:{permission:'marketing.view',table:'marketing_campaigns',columns:'id,store_id,name,status,created_at'}
+  marketing:{permission:'marketing.view',table:'marketing_campaigns',columns:'id,store_id,name,status,created_at'},
+  inventory:{permission:'inventory.view',table:'inventory_logs',columns:'id,store_id,product_id,sku,old_quantity,new_quantity,change,created_at'},
+  fulfilment:{permission:'fulfilment.view',table:'orders',columns:'id,store_id,order_number,order_status,created_at'},
+  procurement:{permission:'procurement.view',table:'purchase_orders',columns:'id,supplier_id,status,order_date,created_at'}
 } as const;
 type Resource=keyof typeof resources;
 export async function GET(request:Request){
@@ -26,12 +29,16 @@ export async function GET(request:Request){
     const context=await requireStaffContext(request);
     const resource=resources[section as Resource];
     requireStaffPermission(context,resource.permission,storeId);
-    // No select(*), client-controlled table names, client-provided column lists
-    // or unscoped queries. More complex business actions have separate routes.
-    const {data,error,count}=await context.admin.from(resource.table)
-      .select(resource.columns,{count:'exact'})
-      .eq('store_id',storeId)
-      .order('created_at',{ascending:false})
+    // No select(*), client-controlled tables/columns, or unrestricted queries.
+    // Purchase orders are presently network-global, with no store_id column;
+    // only explicit All Stores staff may read them. All other resources use an
+    // actual store_id filter before the service-role query executes.
+    if(section==='procurement'&&!context.allStores)
+      throw new StaffAccessDenied('Purchase orders are not separated by store yet. All Stores access is required.',403);
+    let query=context.admin.from(resource.table)
+      .select(resource.columns,{count:'exact'});
+    if(section!=='procurement')query=query.eq('store_id',storeId);
+    const {data,error,count}=await query.order('created_at',{ascending:false})
       .range((rawPage-1)*50,rawPage*50-1);
     if(error)throw error;
     return Response.json({section,store_id:storeId,page:rawPage,total:count||0,rows:data||[]},
