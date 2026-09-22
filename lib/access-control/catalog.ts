@@ -41,6 +41,12 @@ const catalog = new Set<string>(PERMISSION_KEYS);
 export function isStaffPermission(value: unknown): value is string {
   return typeof value === 'string' && catalog.has(value);
 }
+export const SUPER_ADMIN_ONLY_PERMISSION_KEYS = new Set<string>([
+  'users.view', 'users.manage', 'security.manage', 'settings.manage'
+]);
+export function isStaffAssignablePermission(value: unknown): value is string {
+  return isStaffPermission(value) && !SUPER_ADMIN_ONLY_PERMISSION_KEYS.has(value);
+}
 export function isStaffRole(value: unknown): value is StaffRole {
   return typeof value === 'string' && STAFF_ROLES.some(role => role.key === value);
 }
