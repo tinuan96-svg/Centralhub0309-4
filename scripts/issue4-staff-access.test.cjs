@@ -141,7 +141,7 @@ test('current administrator RLS privilege requires live auth and active profile,
 test('support status action checks live staff scope and writes status plus audit atomically',()=>{
   const sql=read('supabase/migrations/20260922180000_staff_support_status_atomic.sql');
   assert.match(sql,/create or replace function public\.ch_staff_change_support_status/);
-  assert.match(sql,/s\.status='active'/);
+  assert.match(sql,/a\.status='active'/);
   assert.match(sql,/u\.raw_app_meta_data->>'role'='staff'/);
   assert.match(sql,/o\.permission_key='support\.edit'/);
   assert.match(sql,/o\.permission_key='support\.view'/);
@@ -471,7 +471,7 @@ test('shipping booking stays ready-to-ship until explicit audited physical hando
  assert.match(service,/shipment_status: 'label_created'/);
  assert.doesNotMatch(service,/order_status: 'shipment_booked',[\s\S]{0,120}warehouse_status: 'dispatched'/);
  const handover=read('app/api/staff/shipping/handover/route.ts');
- assert.match(handover,/\['fulfilment\.view','fulfilment\.dispatch','shipping\.view','shipping\.edit'\]/);
+ assert.match(handover,/for\(const permission of \['fulfilment\.view','fulfilment\.dispatch','shipping\.view','shipping\.edit'\]\)/);
  assert.match(handover,/requireStaffPermission\(context,permission,storeId\)/);
  assert.match(handover,/physical_handover_confirmed!==true/);
  assert.match(handover,/ch_staff_confirm_courier_handover/);
