@@ -51,6 +51,7 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
   const [status, setStatus] = useState('Listening · say “Hi Shruthi, this is Tinu”');
   const [heard, setHeard] = useState('');
   const [fallbackVisible, setFallbackVisible] = useState(false);
+  const [staffLoginSelected, setStaffLoginSelected] = useState(false);
   const verifyTimerRef = useRef<number | null>(null);
   const identityArmedUntilRef = useRef(0);
   const router = useRouter();
@@ -218,9 +219,15 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
     setError('');
     setIsLoading(true);
     try {
-      await AuthService.signIn(email, password);
-      try { sessionStorage.setItem('centralhub:shruthi-security-unlocked-at', String(Date.now())); } catch { }
-      setStatus('Login verified · unlocking CentralHub');
+      const signedIn = await AuthService.signIn(email, password);
+      const staffLogin = signedIn.user?.app_metadata?.role === 'staff';
+      if (!staffLogin) {
+        try { sessionStorage.setItem('centralhub:shruthi-security-unlocked-at', String(Date.now())); } catch { }
+      } else {
+        // Staff passwords do not satisfy the Super Admin's voice/biometric gate.
+        try { sessionStorage.removeItem('centralhub:shruthi-security-unlocked-at'); } catch { }
+      }
+      setStatus(staffLogin ? 'Staff login verified · checking assigned access' : 'Login verified · unlocking CentralHub');
       router.replace('/dashboard');
     } catch (err: any) {
       setError(err.message || 'Login ID or password did not verify.');
@@ -296,6 +303,17 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
             <button type="button" onClick={() => void completeReturningUserUnlock()} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-cyan-300/20 bg-cyan-300/10 px-4 py-3 text-sm font-semibold text-cyan-100"><Fingerprint className="h-4 w-4" /> Verify this device</button>
             <button type="button" onClick={() => setFallbackVisible((value) => !value)} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm font-semibold text-slate-200"><KeyRound className="h-4 w-4" /> Login ID & password</button>
           </div>
+
+          <button type="button" onClick={() => {
+            setStaffLoginSelected(true);
+            setFallbackVisible(true);
+            setMode('password');
+            setError('');
+            setStatus('Staff login · enter your work email and temporary or personal password');
+          }} className="mt-3 w-full rounded-xl border border-cyan-400/40 bg-cyan-950/40 px-4 py-3 text-sm font-semibold text-cyan-100">
+            <KeyRound className="mr-2 inline h-4 w-4" /> Staff login
+          </button>
+          {staffLoginSelected&&<p className="mt-2 text-xs text-slate-300">Staff accounts use their own email and password. Your Super Admin must activate the account before you can access assigned work sections.</p>}
 
           {fallbackVisible && (
             <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4 text-left">
