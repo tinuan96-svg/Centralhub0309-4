@@ -360,6 +360,26 @@ test('packing cannot finish with missing, unmatched, skipped or partially scanne
  assert.match(sql,/coalesce\(i\.verified_quantity,0\)<>i\.quantity/);
  assert.match(sql,/nullif\(pg_catalog\.btrim\(i\.skip_reason\)/);
 });
+test('dispatch readiness exposes only store-scoped shipment evidence and never mutates shipping state',()=>{
+  const route=read('app/api/staff/fulfilment/dispatch-readiness/route.ts');
+  assert.match(route,/requireStaffContext\(request\)/);
+  assert.match(route,/requireStaffPermission\(context,'fulfilment\.view',storeId\)/);
+  assert.match(route,/requireStaffPermission\(context,'shipping\.view',storeId\)/);
+  assert.match(route,/requireStaffPermission\(context,'fulfilment\.dispatch',storeId\)/);
+  assert.match(route,/\.eq\('id',orderId\)\.eq\('store_id',storeId\)/);
+  assert.match(route,/\.eq\('order_id',orderId\)/);
+  assert.match(route,/ready_for_handover:issues\.length===0/);
+  assert.match(route,/dispatch_action_available:false/);
+  assert.doesNotMatch(route,/\.update\(|\.insert\(|\.delete\(|\.rpc\(|\.invoke\(/);
+  assert.doesNotMatch(route,/recipient_name|recipient_address|shipping_cost|label_url/);
+  const panel=read('components/StaffDispatchReadinessPanel.tsx');
+  assert.match(panel,/\/api\/staff\/fulfilment\/dispatch-readiness/);
+  assert.doesNotMatch(panel,/method:'POST'/);
+  const workspace=read('components/StaffWorkspace.tsx');
+  assert.match(workspace,/<StaffDispatchReadinessPanel/);
+  assert.match(workspace,/context\.permissions\.includes\('fulfilment\.dispatch'\)/);
+});
+
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
