@@ -471,8 +471,8 @@ test('shipping booking stays ready-to-ship until explicit audited physical hando
  assert.match(service,/shipment_status: 'label_created'/);
  assert.doesNotMatch(service,/order_status: 'shipment_booked',[\s\S]{0,120}warehouse_status: 'dispatched'/);
  const handover=read('app/api/staff/shipping/handover/route.ts');
- for(const p of ['fulfilment.view','fulfilment.dispatch','shipping.view','shipping.edit'])
-  assert.match(handover,new RegExp(`requireStaffPermission\\(context,'${p.replace('.','\\.')}',storeId\\)`));
+ assert.match(handover,/\['fulfilment\.view','fulfilment\.dispatch','shipping\.view','shipping\.edit'\]/);
+ assert.match(handover,/requireStaffPermission\(context,permission,storeId\)/);
  assert.match(handover,/physical_handover_confirmed!==true/);
  assert.match(handover,/ch_staff_confirm_courier_handover/);
  const readiness=read('app/api/staff/fulfilment/dispatch-readiness/route.ts');
