@@ -14,7 +14,7 @@ const sections:Section[]=[
   {key:'finance',permission:'finance.view',label:'Accounts',columns:['description','amount','created_at']},
   {key:'marketing',permission:'marketing.view',label:'Marketing',columns:['name','status','created_at']},
   {key:'inventory',permission:'inventory.view',label:'Inventory movements',columns:['sku','old_quantity','new_quantity','change','created_at']},
-  {key:'fulfilment',permission:'fulfilment.view',label:'Picking & packing queue',columns:['order_number','order_status','created_at']},
+  {key:'fulfilment',permission:'fulfilment.view',label:'Picking & packing queue',columns:['order_number','order_status','warehouse_status','created_at']},
   {key:'procurement',permission:'procurement.view',label:'Purchase orders (All Stores only)',columns:['supplier_id','status','order_date','created_at']}
 ];
 function displayCell(value:unknown):string{
@@ -37,6 +37,7 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
   const [total,setTotal]=useState(0);
   const [reloadCounter,setReloadCounter]=useState(0);
   const [updatingTicket,setUpdatingTicket]=useState('');
+  const [claimingOrder,setClaimingOrder]=useState('');
   const [error,setError]=useState('');
   const [busy,setBusy]=useState(true);
   const bearer=session.access_token;
@@ -93,6 +94,25 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
       setReloadCounter(n=>n+1);
     }finally{setUpdatingTicket('');}
   };
+  const claimPicking=async(orderId:string)=>{
+    if(!context?.permissions.includes('fulfilment.pick')||section!=='fulfilment'||!storeId||claimingOrder)return;
+    setClaimingOrder(orderId);setError('');
+    try{
+      const response=await fetch('/api/staff/fulfilment/claim',{
+        method:'POST',cache:'no-store',
+        headers:{'Content-Type':'application/json',Authorization:`Bearer ${bearer}`},
+        body:JSON.stringify({order_id:orderId,store_id:storeId})
+      });
+      const result=await response.json();
+      if(!response.ok)throw new Error(result.error||'Unable to claim this order');
+      setRows([]);
+      setReloadCounter(n=>n+1);
+    }catch(error){
+      setRows([]);
+      setError(error instanceof Error?error.message:'Picking claim failed');
+      setReloadCounter(n=>n+1);
+    }finally{setClaimingOrder('');}
+  };
   const selected=sections.find(s=>s.key===section);
   return <main className="min-h-[100dvh] bg-slate-950 p-4 text-slate-100 sm:p-6">
     <div className="mx-auto max-w-7xl space-y-5">
@@ -135,11 +155,22 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
                 <table className="min-w-full divide-y divide-slate-700 text-left text-sm">
                   <thead className="bg-slate-800 text-slate-100"><tr>
                     {selected?.columns.map(column=><th className="px-3 py-3 font-bold" key={column}>{column.replace(/_/g,' ')}</th>)}
-                    {section==='customer_care'&&context.permissions.includes('support.edit')&&<th className="px-3 py-3 font-bold">Action</th>}
+                    {((section==='customer_care'&&context.permissions.includes('support.edit'))||
+                      (section==='fulfilment'&&context.permissions.includes('fulfilment.pick')))&&
+                      <th className="px-3 py-3 font-bold">Action</th>}
                   </tr></thead>
                   <tbody className="divide-y divide-slate-800">
                     {rows.map((row,index)=><tr key={String(row.id||index)} className="align-top">
                       {selected?.columns.map(column=><td key={column} className="max-w-xs break-words px-3 py-3 text-slate-200">{displayCell(row[column])}</td>)}
+                      {section==='fulfilment'&&context.permissions.includes('fulfilment.pick')&&<td className="px-3 py-3">
+                        {typeof row.id==='string'&&row.payment_status==='paid'&&
+                          (row.order_status==='paid'||row.order_status==='confirmed')&&
+                          row.warehouse_status==='pending'&&!row.locked_by&&
+                          <button className={button} disabled={busy||Boolean(claimingOrder)}
+                            onClick={()=>void claimPicking(String(row.id))}>
+                            {claimingOrder===row.id?'Claiming…':'Claim for picking'}
+                          </button>}
+                      </td>}
                       {section==='customer_care'&&context.permissions.includes('support.edit')&&<td className="px-3 py-3">
                         {typeof row.id==='string'&&typeof row.status==='string'&&(
                           row.status==='open'||row.status==='in_progress'||row.status==='resolved'||row.status==='closed'
@@ -161,7 +192,7 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
               <button className={button} disabled={busy||page*50>=total} onClick={()=>setPage(n=>n+1)}>Next</button>
             </div>
           </section>}
-        <p className="text-xs text-slate-400">Only the explicitly assigned Customer Care ticket-status action is available here. Refunds, order approval, payment changes and other sensitive actions require separate verified permissions and are unavailable in this workspace.</p>
+        <p className="text-xs text-slate-400">Customer Care ticket status and warehouse picking claims are available only when individually assigned. Completing picking, changing stock, refunds, order approval, payment changes and other sensitive operations require separately verified workflows.</p>
       </div>}
     </div>
   </main>;
