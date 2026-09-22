@@ -6,6 +6,7 @@ import StaffPickingPanel from '@/components/StaffPickingPanel';
 import StaffPackingPanel from '@/components/StaffPackingPanel';
 import StaffDispatchReadinessPanel from '@/components/StaffDispatchReadinessPanel';
 import StaffFinancialActionPanel from '@/components/StaffFinancialActionPanel';
+import StaffExactReconciliationPanel from '@/components/StaffExactReconciliationPanel';
 
 type Store={id:string;name:string;slug:string};
 type StaffContext={full_name:string;role:string;permissions:string[];stores:Store[]};
@@ -15,7 +16,7 @@ const sections:Section[]=[
   {key:'customers',permission:'customers.view',label:'Customers',columns:['name','email','phone','created_at']},
   {key:'customer_care',permission:'support.view',label:'Customer Care',columns:['subject','description','status','created_at']},
   {key:'billing',permission:'billing.view',label:'Billing',columns:['invoice_number','document_type','amount_gross','posting_status','created_at']},
-  {key:'finance',permission:'finance.view',label:'Accounts',columns:['description','amount','accounting_category','classification_status','created_at']},
+  {key:'finance',permission:'finance.view',label:'Accounts',columns:['description','reference','amount','accounting_category','classification_status','created_at']},
   {key:'marketing',permission:'marketing.view',label:'Marketing',columns:['name','status','created_at']},
   {key:'inventory',permission:'inventory.view',label:'Inventory movements',columns:['sku','old_quantity','new_quantity','change','created_at']},
   {key:'fulfilment',permission:'fulfilment.view',label:'Picking & packing queue',columns:['order_number','order_status','warehouse_status','created_at']},
@@ -46,6 +47,7 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
   const [activePackingOrder,setActivePackingOrder]=useState('');
   const [readinessOrder,setReadinessOrder]=useState('');
   const [financialAction,setFinancialAction]=useState<{kind:'billing'|'finance';recordId:string}|null>(null);
+  const [reconcilingId,setReconcilingId]=useState('');
   const [error,setError]=useState('');
   const [busy,setBusy]=useState(true);
   const bearer=session.access_token;
@@ -140,7 +142,7 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
       {context&&<div className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-[minmax(0,280px)_1fr]">
           <label className="text-sm font-semibold text-white">Assigned store
-            <select value={storeId} onChange={e=>{setStoreId(e.target.value);setPage(1);setActivePickingOrder('');setActivePackingOrder('');setReadinessOrder('');setFinancialAction(null);setRows([]);}}
+            <select value={storeId} onChange={e=>{setStoreId(e.target.value);setPage(1);setActivePickingOrder('');setActivePackingOrder('');setReadinessOrder('');setFinancialAction(null);setReconcilingId('');setRows([]);}}
               className="mt-2 block w-full rounded-xl border border-slate-600 bg-slate-900 px-3 py-3 text-white">
               {context.stores.map(store=><option key={store.id} value={store.id}>{store.name}</option>)}
             </select>
@@ -171,6 +173,10 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
           kind={financialAction.kind} recordId={financialAction.recordId} storeId={storeId}
           token={bearer} onClose={()=>setFinancialAction(null)}
           onSaved={()=>{setFinancialAction(null);setRows([]);setReloadCounter(n=>n+1);}}/>}
+        {reconcilingId&&section==='finance'&&context.permissions.includes('finance.reconcile')&&
+          <StaffExactReconciliationPanel key={reconcilingId} transactionId={reconcilingId}
+           storeId={storeId} token={bearer} onClose={()=>setReconcilingId('')}
+           onSaved={()=>{setReconcilingId('');setRows([]);setReloadCounter(n=>n+1);}}/>}
         {granted.length===0?<p className="rounded-xl border border-amber-700 p-4 text-amber-200">No verified work sections are assigned to this account. Ask your Super Admin to review your permissions.</p>:
           <section className="overflow-hidden rounded-2xl border border-slate-700 bg-slate-900/70">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-700 p-4">
@@ -186,7 +192,7 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
                     {selected?.columns.map(column=><th className="px-3 py-3 font-bold" key={column}>{column.replace(/_/g,' ')}</th>)}
                     {((section==='customer_care'&&context.permissions.includes('support.edit'))||
                       (section==='billing'&&context.permissions.includes('billing.edit'))||
-                      (section==='finance'&&context.permissions.includes('finance.edit'))||
+                      (section==='finance'&&(context.permissions.includes('finance.edit')||context.permissions.includes('finance.reconcile')))||
                       (section==='fulfilment'&&(context.permissions.includes('fulfilment.pick')||context.permissions.includes('fulfilment.pack')||
                         (context.permissions.includes('fulfilment.dispatch')&&context.permissions.includes('shipping.view')))))&&
                       <th className="px-3 py-3 font-bold">Action</th>}
@@ -223,12 +229,18 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
                           <button className={button} disabled={busy} onClick={()=>
                             setFinancialAction({kind:'billing',recordId:String(row.id)})}>Review document</button>}
                       </td>}
-                      {section==='finance'&&context.permissions.includes('finance.edit')&&<td className="px-3 py-3">
-                        {typeof row.id==='string'&&row.is_reconciled!==true&&
+                      {section==='finance'&&(context.permissions.includes('finance.edit')||context.permissions.includes('finance.reconcile'))&&
+                       <td className="px-3 py-3 space-y-2">
+                        {context.permissions.includes('finance.edit')&&typeof row.id==='string'&&row.is_reconciled!==true&&
                           !['ignored','reconciled'].includes(String(row.classification_status))&&
                           <button className={button} disabled={busy} onClick={()=>
                             setFinancialAction({kind:'finance',recordId:String(row.id)})}>Classify transaction</button>}
-                      </td>}
+                        {context.permissions.includes('finance.reconcile')&&typeof row.id==='string'&&
+                          row.type==='credit'&&row.is_reconciled!==true&&
+                          !['ignored','reconciled'].includes(String(row.classification_status))&&
+                          <button className={button} disabled={busy} onClick={()=>
+                            setReconcilingId(String(row.id))}>Exact order reconciliation</button>}
+                       </td>}
                       {section==='customer_care'&&context.permissions.includes('support.edit')&&<td className="px-3 py-3">
                         {typeof row.id==='string'&&typeof row.status==='string'&&(
                           row.status==='open'||row.status==='in_progress'||row.status==='resolved'||row.status==='closed'
