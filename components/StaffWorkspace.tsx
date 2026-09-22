@@ -4,6 +4,7 @@ import {useCallback,useEffect,useState} from 'react';
 import type {Session} from '@supabase/supabase-js';
 import StaffPickingPanel from '@/components/StaffPickingPanel';
 import StaffPackingPanel from '@/components/StaffPackingPanel';
+import StaffDispatchReadinessPanel from '@/components/StaffDispatchReadinessPanel';
 
 type Store={id:string;name:string;slug:string};
 type StaffContext={full_name:string;role:string;permissions:string[];stores:Store[]};
@@ -42,6 +43,7 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
   const [claimingOrder,setClaimingOrder]=useState('');
   const [activePickingOrder,setActivePickingOrder]=useState('');
   const [activePackingOrder,setActivePackingOrder]=useState('');
+  const [readinessOrder,setReadinessOrder]=useState('');
   const [error,setError]=useState('');
   const [busy,setBusy]=useState(true);
   const bearer=session.access_token;
@@ -136,7 +138,7 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
       {context&&<div className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-[minmax(0,280px)_1fr]">
           <label className="text-sm font-semibold text-white">Assigned store
-            <select value={storeId} onChange={e=>{setStoreId(e.target.value);setPage(1);setActivePickingOrder('');setActivePackingOrder('');setRows([]);}}
+            <select value={storeId} onChange={e=>{setStoreId(e.target.value);setPage(1);setActivePickingOrder('');setActivePackingOrder('');setReadinessOrder('');setRows([]);}}
               className="mt-2 block w-full rounded-xl border border-slate-600 bg-slate-900 px-3 py-3 text-white">
               {context.stores.map(store=><option key={store.id} value={store.id}>{store.name}</option>)}
             </select>
@@ -155,6 +157,10 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
           <StaffPackingPanel key={activePackingOrder} orderId={activePackingOrder} storeId={storeId}
             token={bearer} onClose={()=>{setActivePackingOrder('');setReloadCounter(n=>n+1);}}
             onFinished={()=>{setActivePackingOrder('');setReloadCounter(n=>n+1);}}/>}
+        {readinessOrder&&section==='fulfilment'&&context.permissions.includes('fulfilment.dispatch')&&
+          context.permissions.includes('shipping.view')&&
+          <StaffDispatchReadinessPanel key={readinessOrder} orderId={readinessOrder}
+            storeId={storeId} token={bearer} onClose={()=>setReadinessOrder('')}/>}
         {granted.length===0?<p className="rounded-xl border border-amber-700 p-4 text-amber-200">No verified work sections are assigned to this account. Ask your Super Admin to review your permissions.</p>:
           <section className="overflow-hidden rounded-2xl border border-slate-700 bg-slate-900/70">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-700 p-4">
@@ -169,13 +175,15 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
                   <thead className="bg-slate-800 text-slate-100"><tr>
                     {selected?.columns.map(column=><th className="px-3 py-3 font-bold" key={column}>{column.replace(/_/g,' ')}</th>)}
                     {((section==='customer_care'&&context.permissions.includes('support.edit'))||
-                      (section==='fulfilment'&&(context.permissions.includes('fulfilment.pick')||context.permissions.includes('fulfilment.pack'))))&&
+                      (section==='fulfilment'&&(context.permissions.includes('fulfilment.pick')||context.permissions.includes('fulfilment.pack')||
+                        (context.permissions.includes('fulfilment.dispatch')&&context.permissions.includes('shipping.view')))))&&
                       <th className="px-3 py-3 font-bold">Action</th>}
                   </tr></thead>
                   <tbody className="divide-y divide-slate-800">
                     {rows.map((row,index)=><tr key={String(row.id||index)} className="align-top">
                       {selected?.columns.map(column=><td key={column} className="max-w-xs break-words px-3 py-3 text-slate-200">{displayCell(row[column])}</td>)}
-                      {section==='fulfilment'&&(context.permissions.includes('fulfilment.pick')||context.permissions.includes('fulfilment.pack'))&&<td className="px-3 py-3">
+                      {section==='fulfilment'&&(context.permissions.includes('fulfilment.pick')||context.permissions.includes('fulfilment.pack')||
+                          (context.permissions.includes('fulfilment.dispatch')&&context.permissions.includes('shipping.view')))&&<td className="px-3 py-3">
                         {context.permissions.includes('fulfilment.pick')&&typeof row.id==='string'&&row.payment_status==='paid'&&
                           (row.order_status==='paid'||row.order_status==='confirmed')&&row.warehouse_status==='pending'&&!row.locked_by&&
                           <button className={button} disabled={busy||Boolean(claimingOrder)}
@@ -187,6 +195,13 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
                           <button className={button} disabled={busy||Boolean(claimingOrder)}
                             onClick={()=>setActivePackingOrder(String(row.id))}>
                             Verify packing
+                          </button>}
+                        {context.permissions.includes('fulfilment.dispatch')&&context.permissions.includes('shipping.view')&&
+                          typeof row.id==='string'&&row.payment_status==='paid'&&
+                          (row.warehouse_status==='packed'||row.warehouse_status==='ready_to_ship')&&
+                          <button className={button} disabled={busy}
+                            onClick={()=>setReadinessOrder(String(row.id))}>
+                            Check courier readiness
                           </button>}
                       </td>}
                       {section==='customer_care'&&context.permissions.includes('support.edit')&&<td className="px-3 py-3">
@@ -210,7 +225,7 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
               <button className={button} disabled={busy||page*50>=total} onClick={()=>setPage(n=>n+1)}>Next</button>
             </div>
           </section>}
-        <p className="text-xs text-slate-400">Customer Care ticket updates and owner-only barcode picking are available only when explicitly assigned. Stock, refunds, packing approval, shipping and financial operations require separate audited workflows.</p>
+        <p className="text-xs text-slate-400">Customer Care ticket updates and owner-only barcode picking are available only when explicitly assigned. Actual dispatch, stock changes, refunds, payment and financial operations require separate audited workflows; courier readiness is read-only.</p>
       </div>}
     </div>
   </main>;
