@@ -550,6 +550,16 @@ test('privileged worker Bearer parsers accept whitespace but never a literal bac
  }
 });
 
+test('shipment queue worker preserves verified Super Admin manual sync while refusing staff callers',()=>{
+ const src=read('supabase/functions/shipment-sync-worker/index.ts');
+ assert.match(src,/verifiedAdmin=!identityError&&!profileError&&!staffError/);
+ assert.match(src,/identity\.user\?\.app_metadata\?\.role==='admin'/);
+ assert.match(src,/profile\?\.profile_role==='admin'/);
+ assert.match(src,/profile\.is_active===true&&!staffRecord/);
+ assert.match(src,/if\(!trustedService&&!trustedWorker&&!verifiedAdmin\)/);
+ assert.match(src,/status:401/);
+});
+
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
