@@ -57,6 +57,9 @@ jobs:
       - name: Order sync contract audit
         run: npm run audit:order-sync
 
+      - name: Staff access foundation security regression tests
+        run: npm run audit:staff
+
       - name: Typecheck
         run: npx tsc --noEmit
 
