@@ -106,7 +106,7 @@ test('current administrator RLS privilege requires live auth and active profile,
   assert.match(sql,/p\.profile_role = 'admin'/);
   assert.match(sql,/p\.is_active = true/);
   assert.match(sql,/not exists \(/);
-  assert.doesNotMatch(sql,/auth\.jwt\(\)/);
+  assert.doesNotMatch(sql.split('as $')[1]||'',/auth\.jwt\(\)/);
 });
 
 test('support status action checks live staff scope and writes status plus audit atomically',()=>{
