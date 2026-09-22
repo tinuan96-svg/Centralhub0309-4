@@ -219,7 +219,7 @@ test('remote order-status synchronisation cannot be run by staff with orders.edi
 test('warehouse claiming requires active staff, two fulfilment permissions and one assigned store',()=>{
   const sql=read('supabase/migrations/20260922183000_staff_claim_picking_atomic.sql');
   assert.match(sql,/create or replace function public\.ch_staff_claim_picking/);
-  assert.match(sql,/s\.status='active'/);
+  assert.match(sql,/[as]\.status='active'/);
   assert.match(sql,/permission_key='fulfilment\.view'/);
   assert.match(sql,/permission_key='fulfilment\.pick'/);
   assert.match(sql,/a\.store_id=p_store_id/);
