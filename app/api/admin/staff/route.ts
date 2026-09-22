@@ -41,29 +41,58 @@ async function verifyStores(admin: any, ids: string[]) {
   const { data, error } = await admin.from('stores').select('id').in('id', ids);
   if (error || data?.length !== ids.length) throw new AccessDenied('Unknown store selection', 400);
 }
+/**
+ * Every checkbox is authoritative, including UNCHECKED role defaults.
+ * Without a denied override, a preset role silently re-grants a feature that
+ * the Super Admin has explicitly unticked in Users & Permissions.
+ */
+async function explicitPermissionOverrides(admin:any,userId:string,roleKey:StaffRole,chosen:string[]) {
+  const {data:grants,error}=await admin.from('ch_staff_permissions')
+    .select('permission_key').eq('role_key',roleKey);
+  if(error)throw new AccessDenied('Unable to verify role permission defaults',503);
+  const selected=new Set(chosen);
+  const keys=new Set<string>([...chosen,...(grants||[]).map((g:any)=>g.permission_key)]);
+  return [...keys].filter(isStaffAssignablePermission).map(permission_key=>({
+    user_id:userId,permission_key,allowed:selected.has(permission_key)
+  }));
+}
 function handleError(error: unknown) {
   if (error instanceof AccessDenied) return respond(error.message, error.status);
   console.error('Staff directory request failed', error instanceof Error ? error.message : 'Unknown error');
   return respond('Staff directory could not complete the request', 500);
 }
 async function readDirectory(admin: any) {
-  const [users, profiles, stores, scopes, overrides] = await Promise.all([
+  const [users, profiles, stores, scopes, overrides, roleGrants] = await Promise.all([
     admin.from('ch_staff_accounts').select('user_id,role_key,full_name,status,all_stores,created_at').order('created_at',{ ascending: false }),
     admin.from('user_profiles').select('id,email,full_name,is_active,profile_role'),
     admin.from('stores').select('id,name,slug').order('name'),
     admin.from('ch_staff_store_access').select('user_id,store_id'),
-    admin.from('ch_staff_permission_overrides').select('user_id,permission_key,allowed')
+    admin.from('ch_staff_permission_overrides').select('user_id,permission_key,allowed'),
+    admin.from('ch_staff_permissions').select('role_key,permission_key')
   ]);
-  for (const response of [users,profiles,stores,scopes,overrides]) {
+  for (const response of [users,profiles,stores,scopes,overrides,roleGrants]) {
     if (response.error) throw new AccessDenied('Staff database not ready: migration is required', 503);
   }
   const profilesById = new Map<string,string>((profiles.data || []).map((p:any): [string,string] => [p.id,p.email || '']));
+  const grantsByRole = new Map<string,Set<string>>();
+  for(const grant of roleGrants.data||[]){
+    if(!isStaffAssignablePermission(grant.permission_key))continue;
+    if(!grantsByRole.has(grant.role_key))grantsByRole.set(grant.role_key,new Set());
+    grantsByRole.get(grant.role_key)!.add(grant.permission_key);
+  }
   return {
-    staff: (users.data || []).map((user:any) => ({
-      ...user, email: profilesById.get(user.user_id) || '',
-      store_ids: (scopes.data || []).filter((scope:any) => scope.user_id===user.user_id).map((scope:any)=>scope.store_id),
-      permissions: (overrides.data || []).filter((permission:any) => permission.user_id===user.user_id && permission.allowed).map((permission:any)=>permission.permission_key),
-    })),
+    staff: (users.data || []).map((user:any) => {
+      const effective=new Set(grantsByRole.get(user.role_key)||[]);
+      for(const override of overrides.data||[]){
+        if(override.user_id!==user.user_id||!isStaffAssignablePermission(override.permission_key))continue;
+        if(override.allowed)effective.add(override.permission_key);
+        else effective.delete(override.permission_key);
+      }
+      return {...user,email:profilesById.get(user.user_id)||'',
+        store_ids:(scopes.data||[]).filter((scope:any)=>scope.user_id===user.user_id).map((scope:any)=>scope.store_id),
+        permissions:[...effective].sort()
+      };
+    }),
     administrators: (profiles.data || []).filter((p:any)=>p.profile_role==='admin')
       .map((p:any)=>({id:p.id,email:p.email,full_name:p.full_name,is_active:p.is_active})),
     stores: stores.data || [],
@@ -119,9 +148,10 @@ export async function POST(request: Request) {
           assignment.storeIds.map(store_id => ({user_id:invitedId,store_id})));
         if(error) throw error;
       }
-      if (assignment.permissions.length) {
-        const {error} = await admin.from('ch_staff_permission_overrides').insert(
-          assignment.permissions.map(permission_key => ({user_id:invitedId,permission_key,allowed:true})));
+      const explicitOverrides=await explicitPermissionOverrides(
+        admin,invitedId,assignment.roleKey,assignment.permissions);
+      if(explicitOverrides.length) {
+        const {error} = await admin.from('ch_staff_permission_overrides').insert(explicitOverrides);
         if(error) throw error;
       }
       const {error: auditError} = await admin.from('ch_staff_access_audit').insert({
@@ -185,9 +215,10 @@ export async function PATCH(request: Request) {
         assignment.storeIds.map(store_id=>({user_id:userId,store_id})));
       if(error) throw error;
     }
-    if(assignment.permissions.length) {
-      const {error} = await admin.from('ch_staff_permission_overrides').insert(
-        assignment.permissions.map(permission_key=>({user_id:userId,permission_key,allowed:true})));
+    const explicitOverrides=await explicitPermissionOverrides(
+      admin,userId,assignment.roleKey,assignment.permissions);
+    if(explicitOverrides.length) {
+      const {error} = await admin.from('ch_staff_permission_overrides').insert(explicitOverrides);
       if(error) throw error;
     }
     const {error: profileError} = await admin.from('user_profiles')
