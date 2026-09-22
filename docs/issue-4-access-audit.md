@@ -30,6 +30,12 @@ No production Supabase migration is applied by this branch.
   without verifying staff role/active status, route permissions or assigned
   store, and `components/ClassifiedSidebar.tsx` is the desktop navigation.
 
+### Supabase Security Advisor findings (read-only review, 22 Sep 2026)
+- 9 callable-by-anonymous `SECURITY DEFINER` functions and 24 callable-by-authenticated `SECURITY DEFINER` functions were flagged; some may be intentional, but every privileged RPC needs an explicit permission audit before staff login activation.
+- `product_expiry_product_summary` is a security-definer view. Review whether it can bypass product/store policies.
+- Some tables have RLS enabled with no policies: this is deny-by-default, but may block a proposed staff workflow.
+- Security advisor reference: https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable
+
 ## Mandatory release checks
 1. Inventory every client-side Supabase table query, RPC, storage path, realtime
    subscription, Next API/Netlify function, Supabase Edge Function and store API.
