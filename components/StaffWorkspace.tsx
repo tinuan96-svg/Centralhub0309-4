@@ -12,7 +12,10 @@ const sections:Section[]=[
   {key:'customer_care',permission:'support.view',label:'Customer Care',columns:['subject','description','status','created_at']},
   {key:'billing',permission:'billing.view',label:'Billing',columns:['invoice_number','subject','created_at']},
   {key:'finance',permission:'finance.view',label:'Accounts',columns:['description','amount','created_at']},
-  {key:'marketing',permission:'marketing.view',label:'Marketing',columns:['name','status','created_at']}
+  {key:'marketing',permission:'marketing.view',label:'Marketing',columns:['name','status','created_at']},
+  {key:'inventory',permission:'inventory.view',label:'Inventory movements',columns:['sku','old_quantity','new_quantity','change','created_at']},
+  {key:'fulfilment',permission:'fulfilment.view',label:'Picking & packing queue',columns:['order_number','order_status','created_at']},
+  {key:'procurement',permission:'procurement.view',label:'Purchase orders (All Stores only)',columns:['supplier_id','status','order_date','created_at']}
 ];
 function displayCell(value:unknown):string{
   if(value===null||value===undefined||value==='')return '—';
