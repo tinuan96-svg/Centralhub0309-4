@@ -36,6 +36,35 @@ test('role templates are valid and have no super-admin actions',()=>{
   assert.ok(!catalog.isStaffAssignablePermission('security.manage'));
   assert.ok(catalog.isStaffAssignablePermission('orders.view'));
 });
+test('EXECUTED staff permission guard denies cross-store and reserved actions',()=>{
+  // Exercise the actual TypeScript helper, not merely a regex against its source.
+  const staffModule={exports:{}};
+  const compiled=ts.transpileModule(read('lib/access-control/staff.ts'),{
+    compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}
+  }).outputText;
+  vm.runInNewContext(compiled,{
+    module:staffModule,exports:staffModule.exports,
+    require(id){
+      if(id==='./catalog')return catalog;
+      if(id==='@supabase/supabase-js')return {createClient:()=>{throw new Error('Unexpected network call in guard test')}};
+      throw new Error('Unknown import in guard test: '+id);
+    },
+    process:{env:{}},console
+  });
+  const guard=staffModule.exports.requireStaffPermission;
+  const assignedStore='00000000-0000-4000-8000-000000000001';
+  const otherStore='00000000-0000-4000-8000-000000000002';
+  const scope={permissions:['orders.view','fulfilment.dispatch'],allStores:false,storeIds:[assignedStore]};
+  assert.doesNotThrow(()=>guard(scope,'orders.view',assignedStore));
+  assert.throws(()=>guard(scope,'orders.view',otherStore),e=>e.status===403);
+  assert.throws(()=>guard(scope,'orders.delete',assignedStore),e=>e.status===403);
+  assert.throws(()=>guard({...scope,permissions:['users.manage']},'users.manage',assignedStore),e=>e.status===403);
+  assert.throws(()=>guard({...scope,storeIds:[]},'orders.view',assignedStore),e=>e.status===403);
+  assert.throws(()=>guard({...scope,allStores:true},'finance.view',otherStore),e=>e.status===403);
+  assert.doesNotThrow(()=>guard({...scope,allStores:true},'orders.view',otherStore));
+  assert.throws(()=>guard(scope,'orders.view',''),e=>e.status===403);
+});
+
 test('manual staff login is server-created, pending and not an invitation',()=>{
   const route=read('app/api/admin/staff/route.ts');
   assert.match(route,/requireVerifiedSuperAdmin\(request\)/);
