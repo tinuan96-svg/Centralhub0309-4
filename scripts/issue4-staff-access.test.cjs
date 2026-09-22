@@ -31,6 +31,10 @@ test('role templates are valid and have no super-admin actions',()=>{
   }
   assert.ok(!catalog.isStaffPermission('superadmin'));
   assert.ok(!catalog.isStaffRole('admin'));
+  assert.ok(!catalog.isStaffAssignablePermission('users.manage'));
+  assert.ok(!catalog.isStaffAssignablePermission('users.view'));
+  assert.ok(!catalog.isStaffAssignablePermission('security.manage'));
+  assert.ok(catalog.isStaffAssignablePermission('orders.view'));
 });
 test('manual staff login is server-created, pending and not an invitation',()=>{
   const route=read('app/api/admin/staff/route.ts');
