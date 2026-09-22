@@ -212,6 +212,23 @@ test('warehouse claiming requires active staff, two fulfilment permissions and o
   assert.match(ui,/\/api\/staff\/fulfilment\/claim/);
 });
 
+test('private order-sync and cross-store sync status endpoints reject anonymous and staff callers',()=>{
+  const api=read('app/api/sync-orders/route.ts');
+  const client=read('lib/services/orderSyncClient.ts');
+  const status=read('app/api/sync-orders/status/route.ts');
+  const remoteStatus=read('app/api/orders/update-status/route.ts');
+  assert.match(api,/async function requireSyncCaller\(req: Request\)/);
+  assert.match(api,/requireVerifiedSuperAdmin\(req\)/);
+  assert.match(api,/CENTRALHUB_ORDER_SYNC_API_SECRET/);
+  assert.match(api,/const callerDenied = await requireSyncCaller\(req\)/);
+  assert.match(client,/const token = await getAccessToken\(\)/);
+  assert.match(client,/Authorization: `Bearer \$\{token\}`/);
+  assert.match(status,/await requireVerifiedSuperAdmin\(req\)/);
+  assert.doesNotMatch(status,/getUserFromRequest/);
+  assert.match(remoteStatus,/await requireVerifiedSuperAdmin\(req\)/);
+  assert.doesNotMatch(remoteStatus,/await requireAdmin\(\)/);
+});
+
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
