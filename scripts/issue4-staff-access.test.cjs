@@ -80,6 +80,25 @@ test('staff workspace requires authoritative active access and assigned route pe
   assert.match(routes,/return required\.length>0/);
 });
 
+test('only server-verified active Super Admin can mount the legacy admin workspace',()=>{
+  const auth=read('components/AuthProvider.tsx');
+  const endpoint=read('app/api/auth/admin-session/route.ts');
+  assert.match(auth,/verifiedAdminSessionToken===session\?\.access_token/);
+  assert.match(auth,/fetch\('\/api\/auth\/admin-session'/);
+  assert.match(auth,/user&&!isAdmin\?</);
+  assert.match(endpoint,/requireVerifiedSuperAdmin\(request\)/);
+  assert.match(endpoint,/Cache-Control': 'no-store, private'/);
+});
+
+test('staff records API uses allowlisted columns and scoped server-side queries',()=>{
+  const route=read('app/api/staff/records/route.ts');
+  assert.match(route,/requireStaffContext\(request\)/);
+  assert.match(route,/requireStaffPermission\(context,resource\.permission,storeId\)/);
+  assert.match(route,/if\(section==='procurement'&&!context\.allStores\)/);
+  assert.match(route,/if\(section!=='procurement'\)query=query\.eq\('store_id',storeId\)/);
+  assert.doesNotMatch(route,/\.select\('\*'\)/);
+});
+
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
