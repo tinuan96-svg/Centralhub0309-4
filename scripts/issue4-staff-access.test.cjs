@@ -229,6 +229,18 @@ test('private order-sync and cross-store sync status endpoints reject anonymous 
   assert.doesNotMatch(remoteStatus,/await requireAdmin\(\)/);
 });
 
+test('administrator push endpoints cannot enroll unassigned staff for global notifications',()=>{
+  for(const path of [
+    'app/api/push/native/route.ts',
+    'app/api/push/subscribe/route.ts',
+    'app/api/push/test/route.ts',
+    'app/api/push/event/route.ts'
+  ]){
+    const src=read(path);
+    assert.match(src,/requireVerifiedSuperAdmin\(req\)/,path);
+  }
+});
+
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
