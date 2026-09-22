@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireVerifiedSuperAdmin } from '@/lib/access-control/admin';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -10,6 +11,27 @@ function getSyncHeaders() {
     Authorization: `Bearer ${secret}`,
     "Content-Type": "application/json",
   };
+}
+
+/**
+ * This endpoint forwards an INTERNAL order-sync secret, so it must never act as
+ * an anonymous gateway to the order ingestion worker. Keep scheduled/internal
+ * callers working only when they send the configured secret explicitly.
+ */
+async function requireSyncCaller(req: Request) {
+  const authorization = req.headers.get('authorization') || '';
+  const token = authorization.match(/^Bearer\\s+(\\S+)$/i)?.[1] || '';
+  if (!token) return NextResponse.json({ success:false,error:'Sign in required' },{status:401});
+  const scheduledSecret = process.env.CENTRALHUB_ORDER_SYNC_API_SECRET?.trim();
+  const legacySchedulerSecret = getSyncHeaders()?.Authorization.slice('Bearer '.length);
+  if ((scheduledSecret && token === scheduledSecret) ||
+      (legacySchedulerSecret && token === legacySchedulerSecret)) return null;
+  try {
+    await requireVerifiedSuperAdmin(req);
+    return null;
+  } catch {
+    return NextResponse.json({ success:false,error:'Verified Super Admin access required' },{status:403});
+  }
 }
 
 function shouldUseCanonicalSync(input: Record<string, unknown>) {
@@ -54,6 +76,9 @@ export async function GET(req: Request) {
     return new Response('Not available in static export', { status: 404 });
   }
 
+  const callerDenied = await requireSyncCaller(req);
+  if (callerDenied) return callerDenied;
+
   try {
     const syncHeaders = getSyncHeaders();
     if (!syncHeaders) {
@@ -92,6 +117,9 @@ export async function POST(req: Request) {
   if (process.env.NEXT_OUTPUT?.trim() === 'export') {
     return new Response('Not available in static export', { status: 404 });
   }
+
+  const callerDenied = await requireSyncCaller(req);
+  if (callerDenied) return callerDenied;
 
   try {
     const syncHeaders = getSyncHeaders();
