@@ -137,9 +137,11 @@ async function runOrderSync(request: OrderSyncRequest): Promise<OrderSyncRespons
   let response: Response;
 
   try {
+    const token = await getAccessToken();
+    if (!token) throw new Error('Sign in to CentralHub before syncing orders.');
     response = await fetch('/api/sync-orders', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify(request),
       cache: 'no-store',
     });
