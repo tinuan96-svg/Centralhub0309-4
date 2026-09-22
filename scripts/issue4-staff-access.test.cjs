@@ -187,6 +187,31 @@ test('remote order-status synchronisation cannot be run by staff with orders.edi
   assert.doesNotMatch(edge,/callerStaffContext/);
 });
 
+test('warehouse claiming requires active staff, two fulfilment permissions and one assigned store',()=>{
+  const sql=read('supabase/migrations/20260922183000_staff_claim_picking_atomic.sql');
+  assert.match(sql,/create or replace function public\.ch_staff_claim_picking/);
+  assert.match(sql,/s\.status='active'/);
+  assert.match(sql,/permission_key='fulfilment\.view'/);
+  assert.match(sql,/permission_key='fulfilment\.pick'/);
+  assert.match(sql,/a\.store_id=p_store_id/);
+  assert.match(sql,/payment_status='paid'/);
+  assert.match(sql,/warehouse_status='pending'/);
+  assert.match(sql,/locked_by is null/);
+  assert.match(sql,/and is_deleted=false/);
+  assert.match(sql,/insert into public\.ch_staff_activity_audit/);
+  assert.match(sql,/from public,anon,authenticated/);
+  assert.match(sql,/to service_role/);
+  assert.doesNotMatch(sql,/set order_status\s*=/);
+  assert.doesNotMatch(sql,/set payment_status\s*=/);
+  const route=read('app/api/staff/fulfilment/claim/route.ts');
+  assert.match(route,/requireStaffContext\(request\)/);
+  assert.match(route,/requireStaffPermission\(context,'fulfilment\.pick',storeId\)/);
+  assert.match(route,/\.rpc\('ch_staff_claim_picking'/);
+  const ui=read('components/StaffWorkspace.tsx');
+  assert.match(ui,/context\.permissions\.includes\('fulfilment\.pick'\)/);
+  assert.match(ui,/\/api\/staff\/fulfilment\/claim/);
+});
+
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
