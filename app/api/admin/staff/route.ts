@@ -56,10 +56,10 @@ async function readDirectory(admin: any) {
   for (const response of [users,profiles,stores,scopes,overrides]) {
     if (response.error) throw new AccessDenied('Staff database not ready: migration is required', 503);
   }
-  const profilesById = new Map((profiles.data || []).map((p:any) => [p.id,p]));
+  const profilesById = new Map<string,string>((profiles.data || []).map((p:any): [string,string] => [p.id,p.email || '']));
   return {
     staff: (users.data || []).map((user:any) => ({
-      ...user, email: profilesById.get(user.user_id)?.email || '',
+      ...user, email: profilesById.get(user.user_id) || '',
       store_ids: (scopes.data || []).filter((scope:any) => scope.user_id===user.user_id).map((scope:any)=>scope.store_id),
       permissions: (overrides.data || []).filter((permission:any) => permission.user_id===user.user_id && permission.allowed).map((permission:any)=>permission.permission_key),
     })),
