@@ -106,16 +106,25 @@ Deno.serve(async (req: Request) => {
     if (userError || !user) return reply({ success: false, error: "Unauthorized" }, 401);
 
     const metadataRole = String(user.app_metadata?.role || "").toLowerCase();
-    let allowed = ["admin", "superadmin", "administrator"].includes(metadataRole);
-    if (!allowed) {
-      const { data: profile } = await central
-        .from("user_profiles")
-        .select("profile_role,is_active")
-        .eq("id", user.id)
-        .maybeSingle();
+    const isAdminRole = ["admin", "superadmin", "administrator"].includes(metadataRole);
+    let allowed = isAdminRole;
+    let staffContext: { allStores: boolean; storeIds: string[] } | null = null;
+    if (!allowed && metadataRole === "staff") {
+      const [{ data: profile }, { data: account }, { data: permission }, { data: stores }] = await Promise.all([
+        central.from("user_profiles").select("is_active").eq("id", user.id).maybeSingle(),
+        central.from("ch_staff_accounts").select("status,all_stores").eq("user_id", user.id).maybeSingle(),
+        central.from("ch_staff_permission_overrides").select("allowed").eq("user_id", user.id).eq("permission_key", "orders.edit").maybeSingle(),
+        central.from("ch_staff_store_access").select("store_id").eq("user_id", user.id),
+      ]);
+      allowed = profile?.is_active === true && account?.status === "active" && permission?.allowed === true &&
+        user.app_metadata?.must_change_password === false;
+      if (allowed) staffContext = { allStores: account?.all_stores === true, storeIds: (stores || []).map((row: any) => row.store_id) };
+    } else if (!allowed) {
+      const { data: profile } = await central.from("user_profiles").select("profile_role,is_active").eq("id", user.id).maybeSingle();
       allowed = profile?.is_active !== false && ["admin", "superadmin", "administrator"].includes(String(profile?.profile_role || "").toLowerCase());
     }
-    if (!allowed) return reply({ success: false, error: "Forbidden: admin only" }, 403);
+    if (!allowed) return reply({ success: false, error: "Forbidden" }, 403);
+    (req as any).__centralhubStaffContext = staffContext;
   }
 
   let orderId: string | undefined;
@@ -139,6 +148,10 @@ Deno.serve(async (req: Request) => {
       .eq("id", orderId)
       .single();
     if (orderError || !order) return reply({ success: false, error: "Order not found" }, 404);
+    const staffContext = (req as any).__centralhubStaffContext as { allStores:boolean; storeIds:string[] } | null;
+    if (staffContext && !staffContext.allStores && !staffContext.storeIds.includes(order.store_id)) {
+      return reply({ success: false, error: "Forbidden for this store" }, 403);
+    }
 
     // CentralHub-only manual/accounting records do not exist on any storefront.
     // Do not push their lifecycle or mark a missing remote order as an integration failure.
