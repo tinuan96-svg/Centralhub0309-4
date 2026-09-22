@@ -44,6 +44,8 @@ export async function GET(request:Request){
     if(active.length>1||shipments?.length===20)
       issues.push('Multiple shipment records need manager review before handover.');
     const shipment=active.length===1?active[0]:null;
+    if(shipment&&shipment.status!=='label_created')
+      issues.push('Shipment booking is not complete; a created shipping label is required.');
     if(shipment&&!shipment.tracking_number?.trim())
       issues.push('The booked shipment has no tracking number.');
     if(shipment&&shipment.label_printed!==true)
