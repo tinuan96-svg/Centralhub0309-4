@@ -746,7 +746,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     public void setTaraSpeaking(boolean speaking) {
-        if (speaking && !noraConversationActive) {
+        if (speaking && !noraConversationActive && (nativeBridge == null || !nativeBridge.isPickingVoiceActive())) {
             taraSpeaking = false;
             taraSpeechEndedAt = System.currentTimeMillis();
             updateTaraWebAudioGuard(false);
