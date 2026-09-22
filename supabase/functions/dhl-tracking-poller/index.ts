@@ -143,7 +143,7 @@ Deno.serve(async (req: Request) => {
     const url = Deno.env.get("SUPABASE_URL");
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!url || !serviceKey) throw new Error("Supabase server credentials are missing");
-    const suppliedBearer=(req.headers.get("Authorization")||"").replace(/^Bearer\\s+/i,"").trim();
+    const suppliedBearer=(req.headers.get("Authorization")||"").replace(/^Bearer\s+/i,"").trim();
     const suppliedWorker=(req.headers.get("X-CentralHub-Worker-Secret")||"").trim();
     const configuredWorker=(Deno.env.get("CENTRALHUB_DHL_TRACKING_WORKER_SECRET")||"").trim();
     const trustedService=suppliedBearer.length>0&&suppliedBearer===serviceKey;
