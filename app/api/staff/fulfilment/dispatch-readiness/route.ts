@@ -39,7 +39,7 @@ export async function GET(request:Request){
     if(order.payment_status!=='paid')issues.push('Payment has not been verified as paid.');
     if(order.warehouse_status==='dispatched'||order.order_status==='shipment_booked')
       issues.push('The existing shipment workflow has already advanced the order at booking. A manager must verify physical courier handover; staff dispatch cannot be recorded here.');
-    else if(order.warehouse_status!=='packed'||
+    else if(!['packed','ready_to_ship'].includes(order.warehouse_status)||
        !['packed','ready_to_ship'].includes(order.order_status))
       issues.push('Picking and barcode-verified packing must be completed.');
     if(!active.length)issues.push('No active booked shipment or shipping label is recorded.');
