@@ -464,6 +464,45 @@ test('accounting categorization cannot change balance, transaction amount or set
  assert.match(api,/amount_changed:false,reconciled:false/);
  assert.doesNotMatch(api,/\.update\(|\.insert\(/);
 });
+test('shipping booking stays ready-to-ship until explicit audited physical handover',()=>{
+ const service=read('lib/services/shipping/shippingService.ts');
+ assert.match(service,/order_status: 'ready_to_ship'/);
+ assert.match(service,/warehouse_status: 'ready_to_ship'/);
+ assert.match(service,/shipment_status: 'label_created'/);
+ assert.doesNotMatch(service,/order_status: 'shipment_booked',[\s\S]{0,120}warehouse_status: 'dispatched'/);
+ const handover=read('app/api/staff/shipping/handover/route.ts');
+ for(const p of ['fulfilment.view','fulfilment.dispatch','shipping.view','shipping.edit'])
+  assert.match(handover,new RegExp(`requireStaffPermission\\(context,'${p.replace('.','\\.')}',storeId\\)`));
+ assert.match(handover,/physical_handover_confirmed!==true/);
+ assert.match(handover,/ch_staff_confirm_courier_handover/);
+ const readiness=read('app/api/staff/fulfilment/dispatch-readiness/route.ts');
+ assert.match(readiness,/dispatch_action_available:issues\.length===0/);
+ const panel=read('components/StaffDispatchReadinessPanel.tsx');
+ assert.match(panel,/physical_handover_confirmed:true/);
+ assert.match(panel,/\/api\/staff\/shipping\/handover/);
+});
+
+test('billing and accounting staff writes remain bounded, store-scoped and service-role only',()=>{
+ const sql=read('supabase/migrations/20260922204000_staff_billing_and_accounting_review.sql');
+ assert.match(sql,/permission_key=required\.permission/);
+ assert.match(sql,/where id=p_document_id and store_id=p_store_id for update/);
+ assert.match(sql,/where id=p_bank_transaction_id and store_id=p_store_id for update/);
+ assert.match(sql,/billing\.view','billing\.edit/);
+ assert.match(sql,/finance\.view','finance\.edit/);
+ assert.match(sql,/insert into public\.ch_staff_activity_audit/g);
+ assert.match(sql,/from public,anon,authenticated/g);
+ assert.match(sql,/to service_role/g);
+ const billing=read('app/api/staff/billing/review/route.ts');
+ assert.match(billing,/requireStaffPermission\(context,'billing\.edit',storeId\)/);
+ const accounting=read('app/api/staff/accounting/classify/route.ts');
+ assert.match(accounting,/requireStaffPermission\(context,'finance\.edit',storeId\)/);
+ const revoke=read('supabase/migrations/20260922211000_revoke_legacy_finance_client_mutators.sql');
+ assert.match(revoke,/reconcile_bank_transaction/);
+ assert.match(revoke,/record_supplier_invoice_payment/);
+ assert.match(revoke,/trigger_gmail_finance_reconcile/);
+ assert.match(revoke,/revoke execute on function/);
+});
+
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
