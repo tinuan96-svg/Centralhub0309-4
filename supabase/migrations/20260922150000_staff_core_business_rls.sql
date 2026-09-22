@@ -8,15 +8,12 @@ $$;
 revoke all on function public.staff_has_all_stores() from public,anon;
 grant execute on function public.staff_has_all_stores() to authenticated;
 
--- Legacy central_inventory had no RLS. Protect it before any staff identity is activated.
-alter table public.central_inventory enable row level security;
-create policy "central_inventory_admin_all" on public.central_inventory for all to authenticated
-using (public.is_admin()) with check (public.is_admin());
-create policy "staff_central_inventory_select" on public.central_inventory for select to authenticated
-using (public.staff_has_permission('inventory.view') and public.staff_has_all_stores());
-create policy "staff_central_inventory_update" on public.central_inventory for update to authenticated
-using (public.staff_has_permission('inventory.edit') and public.staff_has_all_stores())
-with check (public.staff_has_permission('inventory.edit') and public.staff_has_all_stores());
+-- central_inventory is a security_invoker view over products, so its access is
+-- governed by products RLS. Restrict authenticated staff reads of products
+-- unless they have an inventory/product view permission. Anonymous storefront
+-- catalog reads remain unchanged.
+create policy "staff_products_read_gate" on public.products as restrictive for select to authenticated
+using ((not public.ch_is_staff_identity()) or public.staff_has_permission('products.view') or public.staff_has_permission('inventory.view'));
 
 create policy "staff_inventory_logs_select" on public.inventory_logs for select to authenticated
 using (public.staff_has_permission('inventory.view') and public.staff_has_store_access(store_id));
