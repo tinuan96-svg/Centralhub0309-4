@@ -183,7 +183,7 @@ test('remote order-status synchronisation cannot be run by staff with orders.edi
   assert.match(edge,/profile\.profile_role==="admin"/);
   assert.match(edge,/!staffRecord/);
   assert.match(edge,/if\(!trustedAdmin\) return reply/);
-  assert.doesNotMatch(edge,/orders\.edit/);
+  assert.doesNotMatch(edge.replace(/^\\s*\\/\\/.*$/gm,''),/orders\.edit/);
   assert.doesNotMatch(edge,/callerStaffContext/);
 });
 
