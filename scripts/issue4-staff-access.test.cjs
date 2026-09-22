@@ -514,6 +514,32 @@ test('privileged shipping workers reject anonymous invocation in source',()=>{
  }
 });
 
+test('exact bank credit reconciliation is explicitly confirmed, store-scoped, single-order and auditable',()=>{
+ const sql=read('supabase/migrations/20260922213000_staff_exact_credit_reconciliation.sql');
+ const route=read('app/api/staff/accounting/reconcile-exact/route.ts');
+ const panel=read('components/StaffExactReconciliationPanel.tsx');
+ const workspace=read('components/StaffWorkspace.tsx');
+ assert.match(sql,/permission_key=required\.permission/);
+ assert.match(sql,/finance\.view','finance\.reconcile/);
+ assert.match(sql,/where id=p_transaction_id and store_id=p_store_id for update/);
+ assert.match(sql,/o\.payment_status<>'paid'/);
+ assert.match(sql,/round\(o\.total,2\)<>round\(b\.amount,2\)/);
+ assert.match(sql,/btrim\(b\.reference\)/);
+ assert.match(sql,/order_already_reconciled/);
+ assert.match(sql,/insert into public\.ch_staff_activity_audit/);
+ assert.match(sql,/to service_role/);
+ assert.match(route,/confirm_exact_single_order_match!==true/);
+ assert.match(route,/requireStaffPermission\(context,'finance\.reconcile',storeId\)/);
+ assert.match(panel,/\/api\/staff\/accounting\/reconcile-exact/);
+ assert.match(workspace,/<StaffExactReconciliationPanel/);
+});
+test('live admin finance controls restored without allowing staff to call them',()=>{
+ const sql=read('supabase/migrations/20260922211500_restore_admin_finance_ui_with_live_role_guards.sql');
+ assert.match(sql,/public\.reconcile_bank_transaction/);
+ assert.match(sql,/public\.set_bank_transaction_reserve_allocation/);
+ assert.match(sql,/if not public\.is_admin\(\) then raise exception/);
+ assert.match(sql,/to authenticated/);
+});
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
