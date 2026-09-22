@@ -3,6 +3,7 @@
 import {useCallback,useEffect,useState} from 'react';
 import type {Session} from '@supabase/supabase-js';
 import StaffPickingPanel from '@/components/StaffPickingPanel';
+import StaffPackingPanel from '@/components/StaffPackingPanel';
 
 type Store={id:string;name:string;slug:string};
 type StaffContext={full_name:string;role:string;permissions:string[];stores:Store[]};
@@ -41,6 +42,7 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
   const [claimingOrder,setClaimingOrder]=useState('');
   const [packingOrder,setPackingOrder]=useState('');
   const [activePickingOrder,setActivePickingOrder]=useState('');
+  const [activePackingOrder,setActivePackingOrder]=useState('');
   const [error,setError]=useState('');
   const [busy,setBusy]=useState(true);
   const bearer=session.access_token;
@@ -167,6 +169,10 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
           <StaffPickingPanel key={activePickingOrder} orderId={activePickingOrder} storeId={storeId}
             token={bearer} onClose={()=>{setActivePickingOrder('');setReloadCounter(n=>n+1);}}
             onFinished={()=>{setActivePickingOrder('');setReloadCounter(n=>n+1);}}/>}
+        {activePackingOrder&&section==='fulfilment'&&context.permissions.includes('fulfilment.pack')&&
+          <StaffPackingPanel key={activePackingOrder} orderId={activePackingOrder} storeId={storeId}
+            token={bearer} onClose={()=>{setActivePackingOrder('');setReloadCounter(n=>n+1);}}
+            onFinished={()=>{setActivePackingOrder('');setReloadCounter(n=>n+1);}}/>}
         {granted.length===0?<p className="rounded-xl border border-amber-700 p-4 text-amber-200">No verified work sections are assigned to this account. Ask your Super Admin to review your permissions.</p>:
           <section className="overflow-hidden rounded-2xl border border-slate-700 bg-slate-900/70">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-700 p-4">
@@ -197,8 +203,8 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
                         {context.permissions.includes('fulfilment.pack')&&typeof row.id==='string'&&row.payment_status==='paid'&&
                           row.order_status==='packing'&&row.warehouse_status==='packing'&&
                           <button className={button} disabled={busy||Boolean(claimingOrder)||Boolean(packingOrder)}
-                            onClick={()=>void completePacking(String(row.id))}>
-                            {packingOrder===row.id?'Checking…':'Complete packing'}
+                            onClick={()=>setActivePackingOrder(String(row.id))}>
+                            {packingOrder===row.id?'Checking…':'Verify packing'}
                           </button>}
                       </td>}
                       {section==='customer_care'&&context.permissions.includes('support.edit')&&<td className="px-3 py-3">
