@@ -36,6 +36,13 @@ No production Supabase migration is applied by this branch.
 - Some tables have RLS enabled with no policies: this is deny-by-default, but may block a proposed staff workflow.
 - Security advisor reference: https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable
 
+### User-confirmed account workflow (22 Sep 2026)
+- **Manual staff login creation**: the Super Admin enters the staff name, personal work email, role, section/action permissions, and permitted stores. A verified admin-only endpoint uses Supabase Auth Admin `createUser` and a cryptographically random temporary password; no invitation email is sent. The one-time password is returned only to the authenticated Super Admin over a no-store response and displayed until dismissed, not persisted to application storage, audit logs or account tables.
+- First login requires the staff member to replace the temporary password through the authenticated `/api/staff/first-login` route. Password rotation does NOT grant permissions or activate the account; the old session is signed out. The changed-password flag is stored in trusted Auth app metadata by the server, not accepted from client input.
+- **Manual activation**: the Super Admin must explicitly select `Active` after checking the assigned stores and capabilities. The PATCH endpoint verifies the password-change flag and full security rollout switch, and denies activation if it is not satisfied. Changing permissions and suspending an account are also Super Admin-only.
+- Current implementation intentionally shows ALL staff accounts only the password setup / pending access screen, even when a public frontend flag is toggled. This is not yet functional staff access and cannot be released as complete until the backend enforcement project is finished.
+- Reserved actions `users.view`, `users.manage`, `security.manage`, `settings.manage` are not staff-assignable even by direct POST/PATCH.
+
 ## Mandatory release checks
 1. Inventory every client-side Supabase table query, RPC, storage path, realtime
    subscription, Next API/Netlify function, Supabase Edge Function and store API.
