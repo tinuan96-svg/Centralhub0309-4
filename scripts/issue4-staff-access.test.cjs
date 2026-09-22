@@ -411,6 +411,59 @@ test('dispatch readiness exposes only store-scoped shipment evidence and never m
   assert.match(workspace,/context\.permissions\.includes\('fulfilment\.dispatch'\)/);
 });
 
+test('handover requires a live staff identity and four permissions and changes one booked shipment',()=>{
+ const sql=read('supabase/migrations/20260922202000_staff_courier_handover_atomic.sql');
+ const api=read('app/api/staff/shipping/handover/route.ts');
+ const panel=read('components/StaffDispatchReadinessPanel.tsx');
+ for(const permission of ['fulfilment.view','fulfilment.dispatch','shipping.view','shipping.edit']){
+  assert.ok(sql.includes("'"+permission+"'"));
+  assert.ok(api.includes("'"+permission+"'"));
+ }
+ assert.match(sql,/s\.status='active'/);
+ assert.match(sql,/x\.store_id=p_store_id/);
+ assert.match(sql,/where id=p_shipment_id and order_id=p_order_id for update/);
+ assert.match(sql,/s\.label_printed is distinct from true/);
+ assert.match(sql,/v_active<>1/);
+ assert.match(sql,/s\.status<>'label_created'/);
+ assert.match(sql,/insert into public\.ch_staff_activity_audit/);
+ assert.match(sql,/insert into public\.shipment_events/);
+ assert.match(sql,/to service_role/);
+ assert.match(api,/physical_handover_confirmed!==true/);
+ assert.match(panel,/onChange=\{e=>setConfirmed\(e\.target\.checked\)\}/);
+ assert.match(panel,/\/api\/staff\/shipping\/handover/);
+ assert.doesNotMatch(api,/DHLService|createShipment|shipping_cost|\.from\('orders'\)\.update/);
+});
+test('billing review is non-posting, store-scoped, audited, and requires explicit billing rights',()=>{
+ const sql=read('supabase/migrations/20260922204000_staff_billing_and_accounting_review.sql');
+ const api=read('app/api/staff/billing/review/route.ts');
+ const client=read('components/StaffFinancialActionPanel.tsx');
+ for(const permission of ['billing.view','billing.edit']){
+  assert.ok(sql.includes("'"+permission+"'"));assert.ok(api.includes("'"+permission+"'"));
+ }
+ assert.match(sql,/create table if not exists public\.ch_staff_billing_reviews/);
+ assert.match(sql,/where id=p_document_id and store_id=p_store_id for update/);
+ assert.match(sql,/p_decision='reviewed'/);
+ assert.match(sql,/insert into public\.ch_staff_billing_reviews/);
+ assert.match(sql,/insert into public\.ch_staff_activity_audit/);
+ assert.match(sql,/to service_role/);
+ assert.match(api,/posting_changed:false,invoice_issued:false/);
+ assert.match(client,/\/api\/staff\/billing\/review/);
+ assert.doesNotMatch(api,/posting_status:'posted'|createInvoice|payment_status:'paid'/);
+});
+test('accounting categorization cannot change balance, transaction amount or settled flags',()=>{
+ const sql=read('supabase/migrations/20260922204000_staff_billing_and_accounting_review.sql');
+ const api=read('app/api/staff/accounting/classify/route.ts');
+ for(const permission of ['finance.view','finance.edit']){
+  assert.ok(sql.includes("'"+permission+"'")); assert.ok(api.includes("'"+permission+"'"));
+ }
+ assert.match(sql,/where id=p_bank_transaction_id and store_id=p_store_id for update/);
+ assert.match(sql,/v_row\.is_reconciled is true/);
+ assert.match(sql,/classification_status='classified'/);
+ assert.match(sql,/insert into public\.ch_staff_activity_audit/);
+ assert.match(sql,/to service_role/);
+ assert.match(api,/amount_changed:false,reconciled:false/);
+ assert.doesNotMatch(api,/\.update\(|\.insert\(/);
+});
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
