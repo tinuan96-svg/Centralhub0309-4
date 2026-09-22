@@ -606,6 +606,19 @@ test('DHL tracking scheduler is retained while anonymous and staff EXECUTE is re
  assert.match(initial,/service_role_key/);
 });
 
+test('repeatable release DB preflight asserts auth table/view and staff mutator boundaries without data writes',()=>{
+  const sql=read('scripts/issue4-release-database-preflight.sql');
+  assert.match(sql,/issue4_unprotected_authenticated_tables/);
+  assert.match(sql,/issue4_authenticated_owner_privilege_views/);
+  assert.match(sql,/security_invoker=true/);
+  assert.match(sql,/issue4_cross_store_correlation_regressed/);
+  assert.match(sql,/issue4_unbounded_staff_child_writes/);
+  assert.match(sql,/issue4_staff_mutator_execute_grant_invalid/);
+  assert.match(sql,/ch_staff_complete_packing/);
+  assert.match(sql,/has_function_privilege\('authenticated'/);
+  assert.doesNotMatch(sql,/\b(?:insert\s+into|update\s+public\.|delete\s+from|alter\s+(?:table|policy)|drop\s+(?:table|policy)|create\s+(?:table|policy))\b/i);
+});
+
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
