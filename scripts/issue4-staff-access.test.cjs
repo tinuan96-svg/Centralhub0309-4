@@ -308,7 +308,9 @@ test('packing completion is verified, store-scoped, permissioned and audited',()
  assert.match(route,/\.rpc\('ch_staff_complete_packing'/);
  const ui=read('components/StaffWorkspace.tsx');
  assert.match(ui,/context\.permissions\.includes\('fulfilment\.pack'\)/);
- assert.match(ui,/\/api\/staff\/fulfilment\/pack/);
+ const panel=read('components/StaffPackingPanel.tsx');
+ assert.match(panel,/\/api\/staff\/fulfilment\/pack/);
+ assert.match(panel,/\/api\/staff\/fulfilment\/verify/);
 });
 
 test('packing cannot mark empty or incompletely verified orders as packed',()=>{
