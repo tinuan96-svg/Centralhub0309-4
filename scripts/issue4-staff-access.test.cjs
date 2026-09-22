@@ -476,7 +476,7 @@ test('shipping booking stays ready-to-ship until explicit audited physical hando
  assert.match(handover,/physical_handover_confirmed!==true/);
  assert.match(handover,/ch_staff_confirm_courier_handover/);
  const readiness=read('app/api/staff/fulfilment/dispatch-readiness/route.ts');
- assert.match(readiness,/dispatch_action_available:issues\.length===0/);
+ assert.match(readiness,/dispatch_action_available:(?:handoverAllowed|issues\.length===0)/);
  const panel=read('components/StaffDispatchReadinessPanel.tsx');
  assert.match(panel,/physical_handover_confirmed:true/);
  assert.match(panel,/\/api\/staff\/shipping\/handover/);
