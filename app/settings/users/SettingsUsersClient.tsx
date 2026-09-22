@@ -15,7 +15,8 @@ type Store = {id:string; name:string; slug:string};
 type Directory = {
   staff: StaffRecord[];
   administrators: Array<{id:string; email:string; full_name:string; is_active:boolean}>;
-  stores:Store[]; invitesEnabled:boolean; activationEnabled:boolean;
+  stores:Store[]; creationEnabled:boolean; activationEnabled:boolean;
+  activationMode:'manual'; accountCreationMode:'manual';
 };
 type Editor = {
   user_id?:string; email:string; full_name:string; role_key:StaffRole;
@@ -37,6 +38,8 @@ export default function SettingsUsersClient({params,searchParams}:{params:any;se
   const [notice,setNotice] = useState('');
   const [editing,setEditing] = useState<Editor|null>(null);
   const [saving,setSaving] = useState(false);
+  const [oneTimeCredentials,setOneTimeCredentials] = useState<{email:string; password:string}|null>(null);
+  const [credentialsCopied,setCredentialsCopied] = useState(false);
   const load = useCallback(async()=>{
     if(!isSuperAdmin){setLoading(false);return;}
     setLoading(true);setError('');
@@ -68,7 +71,13 @@ export default function SettingsUsersClient({params,searchParams}:{params:any;se
       });
       const result=await response.json();
       if(!response.ok)throw new Error(result.error||'Could not save permissions');
-      setEditing(null);setNotice(editing.user_id?'Staff permissions saved':'Invitation created; account is pending activation');
+      if(!editing.user_id){
+        if(typeof result.temporary_password !== 'string' || !result.password_change_required)
+          throw new Error('Account creation response did not contain one-time credentials; contact administrator.');
+        setOneTimeCredentials({email:editing.email,password:result.temporary_password});
+        setCredentialsCopied(false);
+      }
+      setEditing(null);setNotice(editing.user_id?'Staff permissions saved':'Login created. Give the temporary password privately to the staff member. Activate separately after review.');
       await load();
     }catch(err){setError(err instanceof Error?err.message:'Unable to save staff account');}
     finally{setSaving(false);}
@@ -96,11 +105,11 @@ export default function SettingsUsersClient({params,searchParams}:{params:any;se
       <div><h1 className="text-2xl font-black text-white">Users & Permissions</h1>
       <p className="mt-1 text-sm text-slate-300">Assign individual section actions and store access to each staff login.</p></div>
       <button className="rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-bold text-slate-950 disabled:opacity-40"
-        disabled={!directory?.invitesEnabled} onClick={()=>setEditing(emptyEditor())}>+ Invite staff</button>
+        disabled={!directory?.creationEnabled} onClick={()=>setEditing(emptyEditor())}>+ Create staff login</button>
     </div>
-    {!directory?.invitesEnabled&&<div className="rounded-xl border border-amber-600/50 bg-amber-950/40 p-4 text-sm text-amber-100">
-      Staff invitations remain disabled until the backend, database and store-isolation security tests are complete.
-      Your current Super Admin login is unchanged.
+    {!directory?.creationEnabled&&<div className="rounded-xl border border-amber-600/50 bg-amber-950/40 p-4 text-sm text-amber-100">
+      Staff login creation remains disabled until database, API and cross-store access security tests pass.
+      Existing Super Admin logins remain unchanged.
     </div>}
     {notice&&<p role="status" className="rounded-xl border border-emerald-700 bg-emerald-950/40 p-3 text-emerald-200">{notice}</p>}
     {error&&<p role="alert" className="rounded-xl border border-rose-700 bg-rose-950/40 p-3 text-rose-200">{error}</p>}
@@ -125,9 +134,26 @@ export default function SettingsUsersClient({params,searchParams}:{params:any;se
             </div>)}</div>}
       </div>
     </>}
+    {oneTimeCredentials&&<div className="fixed inset-0 z-[140] overflow-y-auto bg-black/90 p-4">
+      <div className="mx-auto my-8 max-w-lg space-y-4 rounded-2xl border border-cyan-600 bg-slate-950 p-5 text-slate-100">
+        <h2 className="text-xl font-bold text-white">Login created — temporary password</h2>
+        <p className="text-sm text-amber-200">Shown only once. Share privately with the staff member. Never put this password in email or a shared chat. They must change it on first sign-in, and you must activate the account separately.</p>
+        <p className="break-all rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm text-white">Login: {oneTimeCredentials.email}</p>
+        <div className="rounded-xl border border-slate-700 bg-slate-900 p-3">
+          <p className="text-xs font-bold text-slate-300">Temporary password</p>
+          <p className="mt-2 break-all font-mono text-sm text-white">{oneTimeCredentials.password}</p>
+        </div>
+        <button className={buttonClass} onClick={async()=>{
+          try{await navigator.clipboard.writeText(oneTimeCredentials.password);setCredentialsCopied(true);}
+          catch{setError('Clipboard unavailable. Copy the temporary password manually.');}
+        }}>{credentialsCopied?'Copied':'Copy temporary password'}</button>
+        <button className="w-full rounded-xl bg-cyan-500 px-4 py-3 font-bold text-slate-950"
+          onClick={()=>{setOneTimeCredentials(null);setCredentialsCopied(false);}}>I have saved it securely — close</button>
+      </div>
+    </div>}
     {editing&&directory&&<div className="fixed inset-0 z-[120] overflow-y-auto bg-black/80 p-3 md:p-8">
       <div className="mx-auto my-3 max-w-4xl space-y-5 rounded-2xl border border-slate-600 bg-slate-950 p-4 shadow-2xl md:p-6">
-        <div className="flex items-center justify-between gap-3"><h2 className="text-xl font-bold text-white">{editing.user_id?'Edit staff access':'Invite staff member'}</h2>
+        <div className="flex items-center justify-between gap-3"><h2 className="text-xl font-bold text-white">{editing.user_id?'Edit staff access':'Create staff login manually'}</h2>
           <button className={buttonClass} onClick={()=>setEditing(null)} disabled={saving}>Close</button></div>
         <div className="grid gap-4 md:grid-cols-2">
           <label className="text-sm text-slate-200">Full name<input className={inputClass+' mt-2'} value={editing.full_name}
@@ -173,8 +199,8 @@ export default function SettingsUsersClient({params,searchParams}:{params:any;se
         <div className="sticky bottom-0 flex flex-wrap justify-end gap-3 border-t border-slate-700 bg-slate-950 py-3">
           <button className={buttonClass} disabled={saving} onClick={()=>setEditing(null)}>Cancel</button>
           <button className="rounded-xl bg-cyan-500 px-5 py-2.5 font-bold text-slate-950 disabled:opacity-40"
-            disabled={saving||(!editing.all_stores&&!editing.store_ids.length)||(!editing.user_id&&!directory.invitesEnabled)}
-            onClick={()=>void send()}>{saving?'Saving…':editing.user_id?'Save permissions':'Send invitation'}</button>
+            disabled={saving||(!editing.all_stores&&!editing.store_ids.length)||(!editing.user_id&&!directory.creationEnabled)}
+            onClick={()=>void send()}>{saving?'Saving…':editing.user_id?'Save permissions':'Create pending login'}</button>
         </div>
       </div>
     </div>}
