@@ -16,7 +16,7 @@ Deno.serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const suppliedBearer=(req.headers.get("Authorization")||"").replace(/^Bearer\\s+/i,"").trim();
+    const suppliedBearer=(req.headers.get("Authorization")||"").replace(/^Bearer\s+/i,"").trim();
     const suppliedWorker=(req.headers.get("X-CentralHub-Worker-Secret")||"").trim();
     const configuredWorker=(Deno.env.get("CENTRALHUB_SHIPMENT_SYNC_WORKER_SECRET")||"").trim();
     const trustedService=suppliedBearer.length>0&&suppliedBearer===supabaseServiceKey;
