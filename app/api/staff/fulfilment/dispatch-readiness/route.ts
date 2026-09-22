@@ -6,7 +6,7 @@ const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]
 /**
  * Read-only pre-dispatch evidence check. This endpoint never contacts DHL,
  * books a shipment, changes order/stock/status, or sends store notifications.
- * A separate reviewed and audited action is needed for physical handover.
+ * Physical handover itself is performed by the separate audited handover endpoint.
  */
 export async function GET(request:Request){
   try{
