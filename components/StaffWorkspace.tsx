@@ -40,7 +40,6 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
   const [reloadCounter,setReloadCounter]=useState(0);
   const [updatingTicket,setUpdatingTicket]=useState('');
   const [claimingOrder,setClaimingOrder]=useState('');
-  const [packingOrder,setPackingOrder]=useState('');
   const [activePickingOrder,setActivePickingOrder]=useState('');
   const [activePackingOrder,setActivePackingOrder]=useState('');
   const [error,setError]=useState('');
@@ -119,23 +118,6 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
       setReloadCounter(n=>n+1);
     }finally{setClaimingOrder('');}
   };
-  const completePacking=async(orderId:string)=>{
-    if(!context?.permissions.includes('fulfilment.pack')||section!=='fulfilment'||!storeId||packingOrder)return;
-    setPackingOrder(orderId);setError('');
-    try{
-      const response=await fetch('/api/staff/fulfilment/pack',{
-        method:'POST',cache:'no-store',
-        headers:{'Content-Type':'application/json',Authorization:`Bearer ${bearer}`},
-        body:JSON.stringify({order_id:orderId,store_id:storeId})
-      });
-      const result=await response.json();
-      if(!response.ok)throw new Error(result.error||'Unable to complete packing');
-      setRows([]);setReloadCounter(n=>n+1);
-    }catch(error){
-      setRows([]);setError(error instanceof Error?error.message:'Packing completion failed');
-      setReloadCounter(n=>n+1);
-    }finally{setPackingOrder('');}
-  };
   const selected=sections.find(s=>s.key===section);
   return <main className="min-h-[100dvh] bg-slate-950 p-4 text-slate-100 sm:p-6">
     <div className="mx-auto max-w-7xl space-y-5">
@@ -154,7 +136,7 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
       {context&&<div className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-[minmax(0,280px)_1fr]">
           <label className="text-sm font-semibold text-white">Assigned store
-            <select value={storeId} onChange={e=>{setStoreId(e.target.value);setPage(1);}}
+            <select value={storeId} onChange={e=>{setStoreId(e.target.value);setPage(1);setActivePickingOrder('');setActivePackingOrder('');setRows([]);}}
               className="mt-2 block w-full rounded-xl border border-slate-600 bg-slate-900 px-3 py-3 text-white">
               {context.stores.map(store=><option key={store.id} value={store.id}>{store.name}</option>)}
             </select>
@@ -196,15 +178,15 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
                       {section==='fulfilment'&&(context.permissions.includes('fulfilment.pick')||context.permissions.includes('fulfilment.pack'))&&<td className="px-3 py-3">
                         {context.permissions.includes('fulfilment.pick')&&typeof row.id==='string'&&row.payment_status==='paid'&&
                           (row.order_status==='paid'||row.order_status==='confirmed')&&row.warehouse_status==='pending'&&!row.locked_by&&
-                          <button className={button} disabled={busy||Boolean(claimingOrder)||Boolean(packingOrder)}
+                          <button className={button} disabled={busy||Boolean(claimingOrder)}
                             onClick={()=>void claimPicking(String(row.id))}>
                             {claimingOrder===row.id?'Claiming…':'Claim for picking'}
                           </button>}
                         {context.permissions.includes('fulfilment.pack')&&typeof row.id==='string'&&row.payment_status==='paid'&&
                           row.order_status==='packing'&&row.warehouse_status==='packing'&&
-                          <button className={button} disabled={busy||Boolean(claimingOrder)||Boolean(packingOrder)}
+                          <button className={button} disabled={busy||Boolean(claimingOrder)}
                             onClick={()=>setActivePackingOrder(String(row.id))}>
-                            {packingOrder===row.id?'Checking…':'Verify packing'}
+                            Verify packing
                           </button>}
                       </td>}
                       {section==='customer_care'&&context.permissions.includes('support.edit')&&<td className="px-3 py-3">
