@@ -132,6 +132,15 @@ test('support status action checks live staff scope and writes status plus audit
   assert.match(workspace,/\/api\/staff\/support\/status/);
 });
 
+test('sensitive staff writes require audited server actions, not unrestricted PostgREST updates',()=>{
+  const sql=read('supabase/migrations/20260922181500_deny_unbounded_staff_direct_writes.sql');
+  assert.match(sql,/policyname in \(/);
+  assert.match(sql,/'ch_staff_strict_insert','ch_staff_strict_update','ch_staff_strict_delete'/);
+  assert.match(sql,/with check \(not public\.ch_is_staff_identity\(\)\)/);
+  assert.match(sql,/using \(not public\.ch_is_staff_identity\(\)\)/);
+  assert.doesNotMatch(sql,/drop policy .*admin/i);
+});
+
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
