@@ -349,8 +349,14 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
       if (nativeBridge?.setTaraEnabled) {
         try {
           nativeBridge.setTaraEnabled(false);
+          // The installed Android bridge only permits speakTara() while its Nora
+          // conversation flag is active. Pausing the wake listener above clears
+          // that flag AND mutes WebView speech. Restore voice output for this
+          // picking-only session without re-enabling the competing recognizer.
+          // Keep this compatibility path for already-installed Android builds.
+          nativeBridge.setNoraConversationActive?.(true);
           nativePickingExclusiveRef.current = true;
-          console.log('[Voice] Native wake listener paused for active picking');
+          console.log('[Voice] Native wake listener paused; picking speech output enabled');
         } catch (nativeError) {
           console.warn('[Voice] Could not pause native wake listener:', nativeError);
         }
@@ -386,6 +392,8 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
         try { window.speechSynthesis?.cancel(); } catch (e) {}
         try { (window as any).CentralHubNative?.stopTaraTts?.(); } catch (e) {}
         if (nativePickingExclusiveRef.current) {
+          // Leave no residual voice-assistant session after leaving picking.
+          try { (window as any).CentralHubNative?.setNoraConversationActive?.(false); } catch (e) {}
           try { (window as any).CentralHubNative?.setTaraEnabled?.(true); } catch (e) {}
           nativePickingExclusiveRef.current = false;
         }
