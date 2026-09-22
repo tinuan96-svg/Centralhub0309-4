@@ -579,6 +579,20 @@ test('direct DHL Edge booking denies suspended and staff identities using live A
  assert.doesNotMatch(src,/if \(\["admin", "superadmin", "administrator"\]\.includes\(metadataRole\)\) return true/);
 });
 
+test('correlated order item and shipment RLS binds the OUTER row, not inner orders.order_id',()=>{
+ const sql=read('supabase/migrations/20260922223000_staff_correlated_order_scope_fix.sql');
+ for(const table of ['order_items','shipments']){
+  assert.match(sql,new RegExp('parent_order\\.id = public\\.'+table+'\\.order_id'));
+  assert.match(sql,new RegExp('alter policy ch_staff_strict_select on public\\.'+table));
+  assert.match(sql,new RegExp('alter policy staff_'+(table==='order_items'?'order_items':'shipments')+'_select on public\\.'+table));
+ }
+ assert.match(sql,/staff_has_store_access\(parent_order\.store_id\)/);
+ assert.match(sql,/drop policy if exists staff_order_items_update/);
+ assert.match(sql,/drop policy if exists staff_shipments_update/);
+ assert.match(sql,/staff_store_scope_policy_not_correlated/);
+ assert.doesNotMatch(sql,/where parent_order\.id\s*=\s*order_id\b/);
+});
+
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
