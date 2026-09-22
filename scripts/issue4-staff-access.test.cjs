@@ -163,6 +163,19 @@ test('staff login is discoverable and cannot self-assert the Super Admin voice u
   assert.match(login,/sessionStorage\.removeItem\('centralhub:shruthi-security-unlocked-at'\)/);
 });
 
+test('role presets cannot silently re-grant unchecked Super Admin feature boxes',()=>{
+  const route=read('app/api/admin/staff/route.ts');
+  assert.match(route,/async function explicitPermissionOverrides\(/);
+  assert.match(route,/new Set<string>\(\[\.\.\.chosen,\.\.\.\(grants\|\|\[\]\)/);
+  assert.match(route,/allowed:selected\.has\(permission_key\)/);
+  assert.match(route,/const explicitOverrides=await explicitPermissionOverrides\(/);
+  assert.match(route,/if\(override\.allowed\)effective\.add\(override\.permission_key\)/);
+  assert.match(route,/else effective\.delete\(override\.permission_key\)/);
+  const db=read('supabase/migrations/20260922163500_staff_authoritative_activation_role_grants.sql');
+  assert.match(db,/coalesce\(/);
+  assert.match(db,/ch_staff_permission_overrides/);
+});
+
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
