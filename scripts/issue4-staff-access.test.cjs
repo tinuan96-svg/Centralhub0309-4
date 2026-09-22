@@ -571,6 +571,14 @@ test('privileged order sync uses valid Bearer parsing and DHL webhook denies mis
  assert.doesNotMatch(dhl,/Received DHL Webhook:|console\.log\(.*payload/);
 });
 
+test('direct DHL Edge booking denies suspended and staff identities using live Auth and profile',()=>{
+ const src=read('supabase/functions/dhl-ecommerce/index.ts');
+ assert.match(src,/auth\.admin\.getUserById\(user\.id\)/);
+ assert.match(src,/profile\.is_active===true&&!staffRecord/);
+ assert.match(src,/identity\.user\?\.app_metadata\?\.role==="admin"/);
+ assert.doesNotMatch(src,/if \(\["admin", "superadmin", "administrator"\]\.includes\(metadataRole\)\) return true/);
+});
+
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
