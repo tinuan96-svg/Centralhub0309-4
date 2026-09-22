@@ -540,6 +540,16 @@ test('live admin finance controls restored without allowing staff to call them',
  assert.match(sql,/if not public\.is_admin\(\) then raise exception/);
  assert.match(sql,/to authenticated/);
 });
+test('privileged worker Bearer parsers accept whitespace but never a literal backslash-s',()=>{
+ for(const path of ['supabase/functions/shipment-sync-worker/index.ts',
+  'supabase/functions/dhl-tracking-poller/index.ts',
+  'supabase/functions/sync-bank-statements/index.ts']){
+  const src=read(path);
+  assert.ok(src.includes(String.raw`/^Bearer\s+`),path);
+  assert.ok(!src.includes(String.raw`/^Bearer\\s+`),path);
+ }
+});
+
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
