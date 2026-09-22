@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireStaffContext, requireStaffPermission, type StaffContext } from '@/lib/access-control/staff';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -28,14 +29,19 @@ export async function POST(req: Request) {
   if (authError || !user) return fail('Invalid session', 401);
   const centralAdmin = createClient(centralUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
   const { data: authoritativeUser, error: adminAuthError } = await centralAdmin.auth.admin.getUserById(user.id);
-  if (adminAuthError || !authoritativeUser.user || authoritativeUser.user.app_metadata?.role !== 'admin') {
-    return fail('Insufficient privileges', 403);
-  }
-  const { data: profile, error: profileError } = await centralAdmin.from('user_profiles')
-    .select('is_active,profile_role').eq('id', user.id).maybeSingle();
-  if (profileError || !profile || !profile.is_active || profile.profile_role !== 'admin') {
-    return fail('Inactive or unauthorized account', 403);
-  }
+  if (adminAuthError || !authoritativeUser.user) return fail('Insufficient privileges', 403);
+  const identityRole=authoritativeUser.user.app_metadata?.role;
+  let staffContext: StaffContext | null = null;
+  if(identityRole==='admin'){
+    const { data: profile, error: profileError } = await centralAdmin.from('user_profiles')
+      .select('is_active,profile_role').eq('id', user.id).maybeSingle();
+    if (profileError || !profile || !profile.is_active || profile.profile_role !== 'admin') {
+      return fail('Inactive or unauthorized account', 403);
+    }
+  } else if(identityRole==='staff'){
+    try { staffContext=await requireStaffContext(req); }
+    catch { return fail('Insufficient privileges',403); }
+  } else return fail('Insufficient privileges',403);
   let payload: { orderId?: unknown; storeSlug?: unknown };
   try { payload = await req.json(); } catch { return fail('Invalid JSON', 400); }
   const orderId = typeof payload.orderId === 'string' ? payload.orderId : '';
@@ -53,6 +59,10 @@ export async function POST(req: Request) {
   // remote lookup by ID: however there is no trustworthy store binding then.
   // Fail closed instead of allowing deletion of an arbitrary remote order.
   if (!order || !store || order.store_id !== store.id) return fail('Order/store verification failed', 409);
+  if(staffContext){
+    try { requireStaffPermission(staffContext,'orders.delete',store.id); }
+    catch { return fail('Order deletion is not assigned for this store',403); }
+  }
 
   const [urlKey, tokenKey] = storeEnvironment[storeSlug];
   const remoteUrl = process.env[urlKey] || (storeSlug.startsWith('kerala') ? process.env.KERALA_SUPABASE_URL : undefined);
