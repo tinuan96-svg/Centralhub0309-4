@@ -2,6 +2,7 @@
 
 import {useCallback,useEffect,useState} from 'react';
 import type {Session} from '@supabase/supabase-js';
+import StaffPickingPanel from '@/components/StaffPickingPanel';
 
 type Store={id:string;name:string;slug:string};
 type StaffContext={full_name:string;role:string;permissions:string[];stores:Store[]};
@@ -38,6 +39,7 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
   const [reloadCounter,setReloadCounter]=useState(0);
   const [updatingTicket,setUpdatingTicket]=useState('');
   const [claimingOrder,setClaimingOrder]=useState('');
+  const [activePickingOrder,setActivePickingOrder]=useState('');
   const [error,setError]=useState('');
   const [busy,setBusy]=useState(true);
   const bearer=session.access_token;
@@ -106,6 +108,7 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
       const result=await response.json();
       if(!response.ok)throw new Error(result.error||'Unable to claim this order');
       setRows([]);
+      setActivePickingOrder(orderId);
       setReloadCounter(n=>n+1);
     }catch(error){
       setRows([]);
@@ -142,6 +145,10 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
               onClick={()=>{setSection(s.key);setPage(1);}}>{s.label}</button>)}
           </nav>
         </div>
+        {activePickingOrder&&section==='fulfilment'&&context.permissions.includes('fulfilment.pick')&&
+          <StaffPickingPanel key={activePickingOrder} orderId={activePickingOrder} storeId={storeId}
+            token={bearer} onClose={()=>{setActivePickingOrder('');setReloadCounter(n=>n+1);}}
+            onFinished={()=>{setActivePickingOrder('');setReloadCounter(n=>n+1);}}/>}
         {granted.length===0?<p className="rounded-xl border border-amber-700 p-4 text-amber-200">No verified work sections are assigned to this account. Ask your Super Admin to review your permissions.</p>:
           <section className="overflow-hidden rounded-2xl border border-slate-700 bg-slate-900/70">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-700 p-4">
@@ -170,6 +177,10 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
                             onClick={()=>void claimPicking(String(row.id))}>
                             {claimingOrder===row.id?'Claiming…':'Claim for picking'}
                           </button>}
+                        {typeof row.id==='string'&&row.warehouse_status==='picking'&&
+                         row.locked_by===session.user.id&&
+                         <button className={button} disabled={busy||Boolean(claimingOrder)}
+                           onClick={()=>setActivePickingOrder(String(row.id))}>Continue picking</button>}
                       </td>}
                       {section==='customer_care'&&context.permissions.includes('support.edit')&&<td className="px-3 py-3">
                         {typeof row.id==='string'&&typeof row.status==='string'&&(
@@ -192,7 +203,7 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
               <button className={button} disabled={busy||page*50>=total} onClick={()=>setPage(n=>n+1)}>Next</button>
             </div>
           </section>}
-        <p className="text-xs text-slate-400">Customer Care ticket status and warehouse picking claims are available only when individually assigned. Completing picking, changing stock, refunds, order approval, payment changes and other sensitive operations require separately verified workflows.</p>
+        <p className="text-xs text-slate-400">Customer Care ticket updates and owner-only barcode picking are available only when explicitly assigned. Stock, refunds, packing approval, shipping and financial operations require separate audited workflows.</p>
       </div>}
     </div>
   </main>;
