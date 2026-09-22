@@ -560,6 +560,17 @@ test('shipment queue worker preserves verified Super Admin manual sync while ref
  assert.match(src,/status:401/);
 });
 
+test('privileged order sync uses valid Bearer parsing and DHL webhook denies missing signatures',()=>{
+ const orderSync=read('app/api/sync-orders/route.ts');
+ assert.ok(orderSync.includes(String.raw`/^Bearer\s+(\S+)$/i`));
+ assert.ok(!orderSync.includes(String.raw`/^Bearer\\s+(\\S+)$/i`));
+ const dhl=read('app/api/webhooks/dhl/route.ts');
+ assert.match(dhl,/if \(!secret\?\.trim\(\)\)/);
+ assert.match(dhl,/status:503/);
+ assert.match(dhl,/!signature \|\| !verifyHmacSignature\(body,signature,secret\)/);
+ assert.doesNotMatch(dhl,/Received DHL Webhook:|console\.log\(.*payload/);
+});
+
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
