@@ -157,8 +157,19 @@ export async function PATCH(request: Request) {
     if(status!=='pending' && status!=='active' && status!=='suspended') {
       throw new AccessDenied('Invalid staff status',400);
     }
-    if(status==='active' && process.env.CENTRALHUB_STAFF_ACCESS_VERIFIED!=='true') {
-      throw new AccessDenied('Staff activation blocked until full access-control verification',403);
+    if(status==='active') {
+      if(process.env.CENTRALHUB_STAFF_ACCESS_VERIFIED!=='true') {
+        throw new AccessDenied('Staff activation blocked until full access-control verification',403);
+      }
+      // Activation is an explicit Super Admin choice, never inferred from
+      // password setup or account creation. Reject unchanged temporary logins.
+      const {data:identity,error:identityError}=await admin.auth.admin.getUserById(userId);
+      if(identityError || identity.user?.app_metadata?.role!=='staff' ||
+         identity.user.app_metadata?.must_change_password!==false) {
+        throw new AccessDenied('Staff must complete temporary password change before manual activation',403);
+      }
+      if(assignment.permissions.length===0)
+        throw new AccessDenied('Assign at least one permitted feature before activating staff',400);
     }
     // Suspend while updating scope so old permissions cannot be used mid-change.
     const { error: suspendError } = await admin.from('ch_staff_accounts')
@@ -192,7 +203,11 @@ export async function PATCH(request: Request) {
       after_state:{role_key:assignment.roleKey,permissions:assignment.permissions,
         store_ids:assignment.storeIds,all_stores:assignment.allStores,status}
     });
-    if(auditError) console.error('Staff audit log write failed; manual review required');
+    if(auditError) {
+      await admin.from('ch_staff_accounts').update({status:'suspended'}).eq('user_id',userId);
+      await admin.from('user_profiles').update({is_active:false}).eq('id',userId);
+      throw new Error('Audit log failed; staff was suspended pending manual review');
+    }
     return NextResponse.json({success:true});
   } catch(error) { return handleError(error); }
 }
