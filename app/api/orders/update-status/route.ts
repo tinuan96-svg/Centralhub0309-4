@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { requireAdmin, forbiddenResponse, unauthorizedResponse } from "@/lib/utils/auth-helpers";
+import { requireVerifiedSuperAdmin, AccessDenied } from '@/lib/access-control/admin';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -18,11 +18,13 @@ export async function POST(req: Request) {
   }
 
   try {
-    // SECURITY: Enforce Admin access
-    await requireAdmin();
-  } catch (err: any) {
-    if (err.message === 'Unauthorized') return unauthorizedResponse();
-    return forbiddenResponse(err.message);
+    // Validate this request's bearer token against live trusted identity and
+    // active profile; an unassigned staff login is never a Super Admin.
+    await requireVerifiedSuperAdmin(req);
+  } catch (error) {
+    const status = error instanceof AccessDenied ? error.status : 503;
+    return NextResponse.json({success:false,error:'Verified Super Admin access required'},
+      {status,headers:{'Cache-Control':'no-store'}});
   }
 
   try {
