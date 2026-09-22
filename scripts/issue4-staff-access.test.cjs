@@ -259,6 +259,38 @@ test('picking completion is actor-owned, line-complete, permissioned and audited
  assert.match(route,/duration>43200/);
 });
 
+test('staff picking scan validates barcode, ownership and synchronized item counters atomically',()=>{
+ const sql=read('supabase/migrations/20260922191000_staff_scan_picking_item_atomic.sql');
+ assert.match(sql,/create or replace function public\.ch_staff_scan_picking_item/);
+ assert.match(sql,/s\.status='active'/);
+ assert.match(sql,/o\.store_id=p_store_id/);
+ assert.match(sql,/o\.locked_by=p_actor and o\.picked_by_user=p_actor/);
+ assert.match(sql,/permission_key='fulfilment\.pick'/);
+ assert.match(sql,/where oi\.id=p_order_item_id and oi\.order_id=p_order_id/);
+ assert.match(sql,/p\.gtin/);
+ assert.match(sql,/p\.sku/);
+ assert.match(sql,/v_matches<>1/);
+ assert.match(sql,/v_old\+1/);
+ assert.match(sql,/jsonb_set\(v_items/);
+ assert.match(sql,/insert into public\.ch_staff_activity_audit/);
+ assert.match(sql,/from public,anon,authenticated/);
+ assert.match(sql,/to service_role/);
+ const route=read('app/api/staff/fulfilment/scan/route.ts');
+ assert.match(route,/requireStaffPermission\(context,'fulfilment\.pick',storeId\)/);
+ assert.match(route,/\.eq\('locked_by'/ .test(route)? /\.eq\('locked_by'/ : /order\.locked_by!==context\.userId/);
+ assert.match(route,/\.rpc\('ch_staff_scan_picking_item'/);
+ const panel=read('components/StaffPickingPanel.tsx');
+ assert.match(panel,/\/api\/staff\/fulfilment\/scan/);
+ assert.match(panel,/\/api\/staff\/fulfilment\/complete/);
+});
+test('picking completion requires real, consistent line evidence even when order_items is empty',()=>{
+ const sql=read('supabase/migrations/20260922190000_picking_completion_requires_all_lines.sql');
+ assert.match(sql,/if not exists\(select 1 from public\.order_items/);
+ assert.match(sql,/picking_lines_missing/);
+ assert.match(sql,/jsonb_array_elements/);
+ assert.match(sql,/picking_json_lines_missing/);
+ assert.match(sql,/picking_json_lines_incomplete/);
+});
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
