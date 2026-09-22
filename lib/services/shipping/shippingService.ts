@@ -306,7 +306,7 @@ export class ShippingService {
           });
         }
 
-        pushOrderStatusToStore(params.order_id, 'ready_to_ship',
+        await pushOrderStatusToStore(params.order_id, 'ready_to_ship',
           `Shipment ${shipmentNumber} booked; awaiting courier handover`);
       }
 
