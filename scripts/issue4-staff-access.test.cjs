@@ -176,6 +176,17 @@ test('role presets cannot silently re-grant unchecked Super Admin feature boxes'
   assert.match(db,/ch_staff_permission_overrides/);
 });
 
+test('remote order-status synchronisation cannot be run by staff with orders.edit',()=>{
+  const edge=read('supabase/functions/update-order-status/index.ts');
+  assert.match(edge,/getUserById\(user\.id\)/);
+  assert.match(edge,/identity\.user\.app_metadata\?\.role==="admin"/);
+  assert.match(edge,/profile\.profile_role==="admin"/);
+  assert.match(edge,/!staffRecord/);
+  assert.match(edge,/if\(!trustedAdmin\) return reply/);
+  assert.doesNotMatch(edge,/orders\.edit/);
+  assert.doesNotMatch(edge,/callerStaffContext/);
+});
+
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
