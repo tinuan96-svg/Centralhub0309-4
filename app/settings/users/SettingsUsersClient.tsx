@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { supabase } from '@/lib/supabase';
-import { STAFF_ROLES, STAFF_ROLE_PRESETS, STAFF_SECTIONS, type StaffRole } from '@/lib/access-control/catalog';
+import { STAFF_ROLES, STAFF_ROLE_PRESETS, STAFF_SECTIONS, SUPER_ADMIN_ONLY_PERMISSION_KEYS, type StaffRole } from '@/lib/access-control/catalog';
 import { userService, type UserProfile } from '@/lib/services/userService';
 
 type StaffRecord = {
@@ -191,7 +191,7 @@ export default function SettingsUsersClient({params,searchParams}:{params:any;se
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{section.actions.map(action=>{
                 const permission=`${section.key}.${action}`;
                 return <label key={permission} className="flex items-center gap-2 text-sm capitalize text-slate-200">
-                  <input type="checkbox" checked={editing.permissions.includes(permission)} onChange={()=>togglePermission(permission)}/>{action}
+                  <input type="checkbox" checked={editing.permissions.includes(permission)} disabled={SUPER_ADMIN_ONLY_PERMISSION_KEYS.has(permission)} onChange={()=>togglePermission(permission)}/>{action}{SUPER_ADMIN_ONLY_PERMISSION_KEYS.has(permission)?' (Super Admin only)':''}
                 </label>;
               })}</div>
             </div>)}</div>
