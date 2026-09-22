@@ -155,6 +155,14 @@ test('bank reconciliation edge preserves trusted automation and denies arbitrary
   assert.match(src,/return reject\(403,"An authorised CentralHub account is required"\)/);
 });
 
+test('staff login is discoverable and cannot self-assert the Super Admin voice unlock',()=>{
+  const login=read('app/login/LoginClient.tsx');
+  assert.match(login,/Staff login/);
+  assert.match(login,/const staffLogin = signedIn\.user\?\.app_metadata\?\.role === 'staff'/);
+  assert.match(login,/if \(!staffLogin\)/);
+  assert.match(login,/sessionStorage\.removeItem\('centralhub:shruthi-security-unlocked-at'\)/);
+});
+
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
