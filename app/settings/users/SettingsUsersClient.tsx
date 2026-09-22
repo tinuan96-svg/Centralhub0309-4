@@ -1,207 +1,182 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { userService, UserProfile } from '@/lib/services/userService';
+import { useCallback, useEffect, useState } from 'react';
+import { useAuth } from '@/components/AuthProvider';
+import { supabase } from '@/lib/supabase';
+import { STAFF_ROLES, STAFF_ROLE_PRESETS, STAFF_SECTIONS, type StaffRole } from '@/lib/access-control/catalog';
+import { userService, type UserProfile } from '@/lib/services/userService';
 
-export default function UsersManagementPage({ params, searchParams }: { params: any; searchParams: any }) {
-  const [profiles, setProfiles] = useState<UserProfile[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [editingProfile, setEditingProfile] = useState<UserProfile | null>(null);
-  const [formData, setFormData] = useState({
-    full_name: '',
-    profile_role: 'user' as 'admin' | 'user',
-    is_active: true
+type StaffRecord = {
+  user_id: string; email: string; full_name: string; role_key: StaffRole;
+  status: 'pending'|'active'|'suspended'; all_stores: boolean;
+  store_ids: string[]; permissions: string[];
+};
+type Store = {id:string; name:string; slug:string};
+type Directory = {
+  staff: StaffRecord[];
+  administrators: Array<{id:string; email:string; full_name:string; is_active:boolean}>;
+  stores:Store[]; invitesEnabled:boolean; activationEnabled:boolean;
+};
+type Editor = {
+  user_id?:string; email:string; full_name:string; role_key:StaffRole;
+  status:'pending'|'active'|'suspended'; all_stores:boolean;
+  store_ids:string[]; permissions:string[];
+};
+const emptyEditor = (): Editor => ({email:'',full_name:'',role_key:'custom',status:'pending',all_stores:false,store_ids:[],permissions:[]});
+const inputClass='w-full rounded-xl border border-slate-600 bg-slate-900 px-3 py-2.5 text-white placeholder:text-slate-500 outline-none focus:border-cyan-400';
+const buttonClass='rounded-xl border border-slate-600 bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-100 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40';
+
+export default function SettingsUsersClient({params,searchParams}:{params:any;searchParams:any}) {
+  void params; void searchParams;
+  const {user} = useAuth();
+  const isSuperAdmin = user?.app_metadata?.role === 'admin';
+  const [directory,setDirectory] = useState<Directory|null>(null);
+  const [oldProfiles,setOldProfiles] = useState<UserProfile[]>([]);
+  const [loading,setLoading] = useState(true);
+  const [error,setError] = useState('');
+  const [notice,setNotice] = useState('');
+  const [editing,setEditing] = useState<Editor|null>(null);
+  const [saving,setSaving] = useState(false);
+  const load = useCallback(async()=>{
+    if(!isSuperAdmin){setLoading(false);return;}
+    setLoading(true);setError('');
+    try {
+      const {data:{session}} = await supabase.auth.getSession();
+      if(!session?.access_token) throw new Error('Please sign in again.');
+      const response=await fetch('/api/admin/staff',{headers:{Authorization:`Bearer ${session.access_token}`},cache:'no-store'});
+      const result=await response.json();
+      if(!response.ok) throw new Error(result.error || 'Cannot load staff directory');
+      setDirectory(result as Directory);
+    } catch(err) {
+      setError(err instanceof Error?err.message:'Staff directory unavailable');
+      // Preserve visibility of legacy user management while the migration is pending.
+      setOldProfiles(await userService.getAllProfiles());
+    } finally {setLoading(false);}
+  },[isSuperAdmin]);
+  useEffect(()=>{void load();},[load]);
+
+  const send=async()=>{
+    if(!editing || !directory)return;
+    setSaving(true);setError('');setNotice('');
+    try {
+      const {data:{session}}=await supabase.auth.getSession();
+      if(!session?.access_token) throw new Error('Please sign in again');
+      const response=await fetch('/api/admin/staff',{
+        method:editing.user_id?'PATCH':'POST',
+        headers:{'Content-Type':'application/json',Authorization:`Bearer ${session.access_token}`},
+        body:JSON.stringify(editing)
+      });
+      const result=await response.json();
+      if(!response.ok)throw new Error(result.error||'Could not save permissions');
+      setEditing(null);setNotice(editing.user_id?'Staff permissions saved':'Invitation created; account is pending activation');
+      await load();
+    }catch(err){setError(err instanceof Error?err.message:'Unable to save staff account');}
+    finally{setSaving(false);}
+  };
+  const edit=(staff:StaffRecord)=>setEditing({
+    user_id:staff.user_id,email:staff.email,full_name:staff.full_name,
+    role_key:staff.role_key,status:staff.status,all_stores:staff.all_stores,
+    store_ids:[...staff.store_ids],permissions:[...staff.permissions]
   });
-
-  useEffect(() => {
-    loadProfiles();
-  }, []);
-
-  const loadProfiles = async () => {
-    setLoading(true);
-    const data = await userService.getAllProfiles();
-    setProfiles(data);
-    setLoading(false);
+  const changeRole=(role:StaffRole)=>{
+    setEditing(prev=>prev?{...prev,role_key:role,permissions:[...STAFF_ROLE_PRESETS[role]]}:prev);
+  };
+  const togglePermission=(permission:string)=>{
+    setEditing(prev=>prev?{...prev,permissions:prev.permissions.includes(permission)
+      ?prev.permissions.filter(p=>p!==permission):[...prev.permissions,permission]}:prev);
+  };
+  const toggleStore=(storeId:string)=>{
+    setEditing(prev=>prev?{...prev,store_ids:prev.store_ids.includes(storeId)
+      ?prev.store_ids.filter(id=>id!==storeId):[...prev.store_ids,storeId]}:prev);
   };
 
-  const handleEdit = (profile: UserProfile) => {
-    setEditingProfile(profile);
-    setFormData({
-      full_name: profile.full_name || '',
-      profile_role: profile.profile_role,
-      is_active: profile.is_active
-    });
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingProfile) return;
-
-    const success = await userService.updateProfile(editingProfile.id, formData);
-    if (success) {
-      setEditingProfile(null);
-      loadProfiles();
-    }
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="sticky top-14 fold-inner:static z-20 bg-slate-950/80 backdrop-blur-md fold-inner:bg-transparent -mx-4 px-4 py-3 border-b fold-inner:border-0 border-slate-800/50">
-        <h2 className="text-xl font-bold text-white uppercase tracking-tighter">User Management</h2>
-        <p className="text-slate-500 text-[10px] uppercase font-black tracking-widest mt-0.5">Admin & Access Control</p>
-      </div>
-
-      {loading ? (
-        <div className="text-center py-12">
-          <div className="inline-block w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-        </div>
-      ) : (
-        <div className="space-y-4">
-           {/* Desktop Table */}
-           <div className="hidden fold-inner:block bg-slate-900/50 rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
-             <table className="w-full text-left">
-               <thead>
-                 <tr className="bg-slate-800/50 text-slate-500 text-[10px] font-black uppercase tracking-widest border-b border-slate-800">
-                   <th className="px-6 py-4">User</th>
-                   <th className="px-6 py-4">Role</th>
-                   <th className="px-6 py-4">Status</th>
-                   <th className="px-6 py-4 text-right">Actions</th>
-                 </tr>
-               </thead>
-               <tbody className="divide-y divide-slate-800/50">
-                 {profiles.map((profile) => (
-                   <tr key={profile.id} className="hover:bg-slate-800/30 transition-colors">
-                     <td className="px-6 py-4">
-                       <div className="font-bold text-slate-100 uppercase tracking-tight">{profile.full_name || 'No Name'}</div>
-                       <div className="text-[10px] text-slate-500 font-mono">{profile.email}</div>
-                     </td>
-                     <td className="px-6 py-4">
-                       <span className={`px-2 py-0.5 text-[9px] uppercase font-black rounded border ${
-                         profile.profile_role === 'admin' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-slate-800 text-slate-400 border-slate-700'
-                       }`}>
-                         {profile.profile_role}
-                       </span>
-                     </td>
-                     <td className="px-6 py-4">
-                       <span className={`px-2 py-0.5 text-[9px] font-black uppercase rounded-full border ${
-                         profile.is_active ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-                       }`}>
-                         {profile.is_active ? 'Active' : 'Inactive'}
-                       </span>
-                     </td>
-                     <td className="px-6 py-4 text-right">
-                       <button
-                         onClick={() => handleEdit(profile)}
-                         className="text-cyan-400 hover:text-cyan-300 text-[10px] font-black uppercase tracking-widest px-3 py-1.5 bg-slate-800 rounded-lg border border-slate-700 transition-all active:scale-95"
-                       >
-                         Manage
-                       </button>
-                     </td>
-                   </tr>
-                 ))}
-               </tbody>
-             </table>
-           </div>
-
-           {/* Mobile Cards */}
-           <div className="fold-inner:hidden space-y-3">
-              {profiles.map((profile) => (
-                 <div key={profile.id} className="bg-slate-900/40 backdrop-blur-xl border border-slate-800 p-5 rounded-2xl shadow-lg space-y-4">
-                    <div className="flex justify-between items-start">
-                       <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center font-black text-white text-lg">
-                             {profile.full_name?.[0]?.toUpperCase() || profile.email?.[0]?.toUpperCase()}
-                          </div>
-                          <div className="min-w-0">
-                             <p className="font-bold text-slate-100 uppercase tracking-tight truncate">{profile.full_name || 'No Name'}</p>
-                             <p className="text-[10px] text-slate-500 font-mono truncate">{profile.email}</p>
-                          </div>
-                       </div>
-                       <span className={`px-2 py-0.5 text-[8px] font-black uppercase rounded border ${
-                         profile.is_active ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-                       }`}>
-                         {profile.is_active ? 'Active' : 'Inactive'}
-                       </span>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-4 border-t border-slate-800/50">
-                       <div className="flex flex-col">
-                          <span className="text-[8px] text-slate-500 font-black uppercase tracking-widest mb-1">Access Level</span>
-                          <span className={`w-fit px-2 py-0.5 text-[9px] uppercase font-black rounded border ${
-                            profile.profile_role === 'admin' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-slate-800 text-slate-400 border-slate-700'
-                          }`}>
-                            {profile.profile_role}
-                          </span>
-                       </div>
-                       <button
-                         onClick={() => handleEdit(profile)}
-                         className="px-6 py-2.5 bg-slate-800 text-cyan-400 rounded-xl text-[10px] font-black uppercase tracking-widest border border-slate-700 active:scale-95 transition-all"
-                       >
-                         Manage Permissions
-                       </button>
-                    </div>
-                 </div>
-              ))}
-           </div>
-        </div>
-      )}
-
-      {editingProfile && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl w-full max-w-md">
-            <h3 className="text-lg font-bold text-white mb-4">Edit User Permissions</h3>
-            <p className="text-sm text-slate-400 mb-4">Updating permissions for {editingProfile.email}</p>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">Full Name</label>
-                <input
-                  type="text"
-                  value={formData.full_name}
-                  onChange={e => setFormData({ ...formData, full_name: e.target.value })}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">Role</label>
-                <select
-                  value={formData.profile_role}
-                  onChange={e => setFormData({ ...formData, profile_role: e.target.value as 'admin' | 'user' })}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
-                >
-                  <option value="user">User</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </div>
-              <div className="flex items-center">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.is_active}
-                    onChange={e => setFormData({ ...formData, is_active: e.target.checked })}
-                    className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-blue-500 focus:ring-blue-500"
-                  />
-                  <span className="text-sm text-slate-300">Active Account</span>
-                </label>
-              </div>
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setEditingProfile(null)}
-                  className="flex-1 px-4 py-2 bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  Save Changes
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+  if(!isSuperAdmin)return <section className="p-6 text-slate-100"><h1 className="text-xl font-bold">Users & Permissions</h1><p className="mt-3 text-amber-300">Only the verified Super Admin may manage staff access.</p></section>;
+  return <section className="mx-auto max-w-7xl space-y-5 p-4 text-slate-100 md:p-6">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div><h1 className="text-2xl font-black text-white">Users & Permissions</h1>
+      <p className="mt-1 text-sm text-slate-300">Assign individual section actions and store access to each staff login.</p></div>
+      <button className="rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-bold text-slate-950 disabled:opacity-40"
+        disabled={!directory?.invitesEnabled} onClick={()=>setEditing(emptyEditor())}>+ Invite staff</button>
     </div>
-  );
+    {!directory?.invitesEnabled&&<div className="rounded-xl border border-amber-600/50 bg-amber-950/40 p-4 text-sm text-amber-100">
+      Staff invitations remain disabled until the backend, database and store-isolation security tests are complete.
+      Your current Super Admin login is unchanged.
+    </div>}
+    {notice&&<p role="status" className="rounded-xl border border-emerald-700 bg-emerald-950/40 p-3 text-emerald-200">{notice}</p>}
+    {error&&<p role="alert" className="rounded-xl border border-rose-700 bg-rose-950/40 p-3 text-rose-200">{error}</p>}
+    {loading?<p className="p-8 text-center text-slate-300">Loading users…</p>:<>
+      <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+        <h2 className="mb-3 text-lg font-bold text-white">Existing Administrators</h2>
+        {(directory?.administrators || oldProfiles.filter(p=>p.profile_role==='admin').map(p=>({id:p.id,email:p.email,full_name:p.full_name,is_active:p.is_active}))).map(p=>
+          <div key={p.id} className="flex flex-wrap justify-between gap-3 border-t border-slate-700 py-3 text-sm">
+            <div><p className="font-semibold text-white">{p.full_name||'Administrator'}</p><p className="break-all text-slate-300">{p.email}</p></div>
+            <span className="text-amber-300">{p.is_active?'Administrator · Active':'Administrator · Disabled'}</span>
+          </div>)}
+        <p className="mt-2 text-xs text-slate-400">Existing administrator identities are protected from staff-role editing.</p>
+      </div>
+      <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+        <h2 className="mb-3 text-lg font-bold text-white">Staff accounts</h2>
+        {!directory?.staff?.length?<p className="text-sm text-slate-300">No staff accounts are configured.</p>:
+          <div className="space-y-2">{directory.staff.map(staff=>
+            <div key={staff.user_id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-700 p-3">
+              <div className="min-w-0"><p className="font-semibold text-white">{staff.full_name}</p><p className="break-all text-sm text-slate-300">{staff.email}</p>
+              <p className="text-xs text-slate-400">{STAFF_ROLES.find(r=>r.key===staff.role_key)?.label||staff.role_key} · {staff.status} · {staff.all_stores?'All stores':`${staff.store_ids.length} assigned stores`}</p></div>
+              <button className={buttonClass} onClick={()=>edit(staff)}>Edit access</button>
+            </div>)}</div>}
+      </div>
+    </>}
+    {editing&&directory&&<div className="fixed inset-0 z-[120] overflow-y-auto bg-black/80 p-3 md:p-8">
+      <div className="mx-auto my-3 max-w-4xl space-y-5 rounded-2xl border border-slate-600 bg-slate-950 p-4 shadow-2xl md:p-6">
+        <div className="flex items-center justify-between gap-3"><h2 className="text-xl font-bold text-white">{editing.user_id?'Edit staff access':'Invite staff member'}</h2>
+          <button className={buttonClass} onClick={()=>setEditing(null)} disabled={saving}>Close</button></div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="text-sm text-slate-200">Full name<input className={inputClass+' mt-2'} value={editing.full_name}
+            disabled={!!editing.user_id} maxLength={120} onChange={e=>setEditing({...editing,full_name:e.target.value})}/></label>
+          <label className="text-sm text-slate-200">Work email<input className={inputClass+' mt-2'} type="email" value={editing.email}
+            disabled={!!editing.user_id} onChange={e=>setEditing({...editing,email:e.target.value})}/></label>
+          <label className="text-sm text-slate-200">Staff role
+            <select className={inputClass+' mt-2'} value={editing.role_key} onChange={e=>changeRole(e.target.value as StaffRole)}>
+              {STAFF_ROLES.map(role=><option key={role.key} value={role.key}>{role.label}</option>)}
+            </select>
+          </label>
+          <label className="text-sm text-slate-200">Account status
+            <select className={inputClass+' mt-2'} value={editing.status}
+              disabled={!editing.user_id} onChange={e=>setEditing({...editing,status:e.target.value as Editor['status']})}>
+              <option value="pending">Pending</option><option value="suspended">Suspended</option>
+              <option value="active" disabled={!directory.activationEnabled}>Active (after security verification)</option>
+            </select>
+          </label>
+        </div>
+        <div className="rounded-xl border border-slate-700 p-4">
+          <h3 className="font-bold text-white">Permitted stores</h3>
+          <label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={editing.all_stores}
+            onChange={e=>setEditing({...editing,all_stores:e.target.checked,store_ids:e.target.checked?[]:editing.store_ids})}/>All Stores</label>
+          {!editing.all_stores&&<div className="mt-3 grid gap-2 sm:grid-cols-2">{directory.stores.map(store=>
+            <label key={store.id} className="flex items-center gap-2 rounded-lg border border-slate-700 p-2 text-sm text-slate-100">
+              <input type="checkbox" checked={editing.store_ids.includes(store.id)} onChange={()=>toggleStore(store.id)}/>{store.name}
+            </label>)}</div>}
+        </div>
+        <div className="rounded-xl border border-slate-700 p-4">
+          <h3 className="text-lg font-bold text-white">Section & feature permissions</h3>
+          <p className="mb-4 text-sm text-slate-300">Each action is independent. Refunds, approvals, deletion and export are not implied by Edit.</p>
+          <div className="space-y-3">{STAFF_SECTIONS.map(section=>
+            <div key={section.key} className="rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+              <p className="mb-3 font-semibold text-white">{section.label}</p>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{section.actions.map(action=>{
+                const permission=`${section.key}.${action}`;
+                return <label key={permission} className="flex items-center gap-2 text-sm capitalize text-slate-200">
+                  <input type="checkbox" checked={editing.permissions.includes(permission)} onChange={()=>togglePermission(permission)}/>{action}
+                </label>;
+              })}</div>
+            </div>)}</div>
+        </div>
+        <div className="sticky bottom-0 flex flex-wrap justify-end gap-3 border-t border-slate-700 bg-slate-950 py-3">
+          <button className={buttonClass} disabled={saving} onClick={()=>setEditing(null)}>Cancel</button>
+          <button className="rounded-xl bg-cyan-500 px-5 py-2.5 font-bold text-slate-950 disabled:opacity-40"
+            disabled={saving||(!editing.all_stores&&!editing.store_ids.length)||(!editing.user_id&&!directory.invitesEnabled)}
+            onClick={()=>void send()}>{saving?'Saving…':editing.user_id?'Save permissions':'Send invitation'}</button>
+        </div>
+      </div>
+    </div>}
+  </section>;
 }
