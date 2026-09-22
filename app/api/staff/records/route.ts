@@ -35,7 +35,10 @@ export async function GET(request:Request){
     // actual store_id filter before the service-role query executes.
     if(section==='procurement'&&!context.allStores)
       throw new StaffAccessDenied('Purchase orders are not separated by store yet. All Stores access is required.',403);
-    let query=context.admin.from(resource.table)
+    // Dynamic table/column names are selected only from the server-owned
+    // allowlist above. Widen the Supabase builder type here to avoid an
+    // exponential union across every generated database table.
+    let query=(context.admin as any).from(resource.table)
       .select(resource.columns,{count:'exact'});
     if(section!=='procurement')query=query.eq('store_id',storeId);
     const {data,error,count}=await query.order('created_at',{ascending:false})
