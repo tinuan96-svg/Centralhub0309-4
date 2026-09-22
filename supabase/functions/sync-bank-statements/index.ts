@@ -156,8 +156,30 @@ Deno.serve(async (req: Request) => {
     getGoogleCredentials();
 
     const supabase = createClient(url, role);
+    const authorization=req.headers.get("Authorization")||"";
+    if(!authorization.startsWith("Bearer ")) throw new Error("Authentication required");
+    const anon=Deno.env.get("SUPABASE_ANON_KEY")||"";
+    const userDb=createClient(url,anon,{global:{headers:{Authorization:authorization}},auth:{persistSession:false,autoRefreshToken:false}});
+    const {data:{user},error:userError}=await userDb.auth.getUser(authorization.slice(7));
+    if(userError||!user) throw new Error("Invalid session");
+    const roleName=String(user.app_metadata?.role||"").toLowerCase();
+    let isAdmin=["admin","superadmin","administrator"].includes(roleName);
+    let staffAllStores=false; let staffStoreIds:string[]=[];
+    if(!isAdmin && roleName==="staff"){
+      const [{data:profile},{data:account},{data:permission},{data:stores}]=await Promise.all([
+        supabase.from("user_profiles").select("is_active").eq("id",user.id).maybeSingle(),
+        supabase.from("ch_staff_accounts").select("status,all_stores").eq("user_id",user.id).maybeSingle(),
+        supabase.from("ch_staff_permission_overrides").select("allowed").eq("user_id",user.id).eq("permission_key","finance.reconcile").maybeSingle(),
+        supabase.from("ch_staff_store_access").select("store_id").eq("user_id",user.id),
+      ]);
+      if(profile?.is_active!==true||account?.status!=="active"||permission?.allowed!==true||user.app_metadata?.must_change_password!==false)
+        throw new Error("Finance reconciliation permission required");
+      staffAllStores=account?.all_stores===true; staffStoreIds=(stores||[]).map((row:any)=>row.store_id);
+    } else if(!isAdmin) throw new Error("Admin or finance reconciliation staff access required");
+
     const body = await req.json().catch(() => ({}));
     const accountId = body.bank_account_id as string | undefined;
+    if(roleName==="staff" && body.sync_all && !staffAllStores) throw new Error("All Stores access is required for sync_all");
 
     let q = supabase
       .from("store_bank_accounts")
@@ -170,6 +192,8 @@ Deno.serve(async (req: Request) => {
     const { data: accounts, error } = await q;
     if (error) throw error;
     if (!accounts?.length) throw new Error("No configured active bank account found");
+    if(roleName==="staff" && !staffAllStores && accounts.some((account:any)=>!account.store_id||!staffStoreIds.includes(account.store_id)))
+      throw new Error("Bank account is outside the assigned store scope");
 
     const results = [];
     for (const account of accounts) {
