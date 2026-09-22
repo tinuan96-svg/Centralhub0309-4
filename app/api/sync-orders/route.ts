@@ -20,7 +20,7 @@ function getSyncHeaders() {
  */
 async function requireSyncCaller(req: Request) {
   const authorization = req.headers.get('authorization') || '';
-  const token = authorization.match(/^Bearer\\s+(\\S+)$/i)?.[1] || '';
+  const token = authorization.match(/^Bearer\s+(\S+)$/i)?.[1] || '';
   if (!token) return NextResponse.json({ success:false,error:'Sign in required' },{status:401});
   const scheduledSecret = process.env.CENTRALHUB_ORDER_SYNC_API_SECRET?.trim();
   const legacySchedulerSecret = getSyncHeaders()?.Authorization.slice('Bearer '.length);
