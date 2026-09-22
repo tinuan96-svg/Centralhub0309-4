@@ -277,7 +277,7 @@ test('staff picking scan validates barcode, ownership and synchronized item coun
  assert.match(sql,/to service_role/);
  const route=read('app/api/staff/fulfilment/scan/route.ts');
  assert.match(route,/requireStaffPermission\(context,'fulfilment\.pick',storeId\)/);
- assert.match(route,/\.eq\('locked_by'/ .test(route)? /\.eq\('locked_by'/ : /order\.locked_by!==context\.userId/);
+ assert.match(route,/order\.locked_by!==context\.userId/);
  assert.match(route,/\.rpc\('ch_staff_scan_picking_item'/);
  const panel=read('components/StaffPickingPanel.tsx');
  assert.match(panel,/\/api\/staff\/fulfilment\/scan/);
