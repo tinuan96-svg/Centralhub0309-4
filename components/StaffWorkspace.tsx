@@ -162,7 +162,8 @@ export default function StaffWorkspace({session,signOut}:{session:Session;signOu
         {readinessOrder&&section==='fulfilment'&&context.permissions.includes('fulfilment.dispatch')&&
           context.permissions.includes('shipping.view')&&
           <StaffDispatchReadinessPanel key={readinessOrder} orderId={readinessOrder}
-            storeId={storeId} token={bearer} onClose={()=>setReadinessOrder('')}/>}
+            storeId={storeId} token={bearer} onClose={()=>setReadinessOrder('')}
+            onSaved={()=>setReloadCounter(n=>n+1)}/>}
         {financialAction&&section===financialAction.kind&&(
           (financialAction.kind==='billing'&&context.permissions.includes('billing.edit'))||
           (financialAction.kind==='finance'&&context.permissions.includes('finance.edit'))
