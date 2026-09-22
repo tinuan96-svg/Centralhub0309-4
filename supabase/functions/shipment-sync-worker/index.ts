@@ -22,9 +22,27 @@ Deno.serve(async (req: Request) => {
     const trustedService=suppliedBearer.length>0&&suppliedBearer===supabaseServiceKey;
     const trustedWorker=configuredWorker.length>=32&&suppliedWorker.length===configuredWorker.length&&
       suppliedWorker===configuredWorker;
-    if(!trustedService&&!trustedWorker)
+    const supabase = createClient(supabaseUrl, supabaseServiceKey,{auth:{persistSession:false,autoRefreshToken:false}});
+    // Existing Super Admin shipping UI directly invokes this worker after
+    // queueing a shipment. Keep that established workflow working, but verify
+    // the current Auth app role + ACTIVE profile + absence of staff identity.
+    let verifiedAdmin=false;
+    if(!trustedService&&!trustedWorker&&suppliedBearer){
+      const {data:{user},error:authError}=await supabase.auth.getUser(suppliedBearer);
+      if(!authError&&user){
+        const [{data:identity,error:identityError},{data:profile,error:profileError},
+          {data:staffRecord,error:staffError}]=await Promise.all([
+          supabase.auth.admin.getUserById(user.id),
+          supabase.from('user_profiles').select('profile_role,is_active').eq('id',user.id).maybeSingle(),
+          supabase.from('ch_staff_accounts').select('user_id').eq('user_id',user.id).maybeSingle()
+        ]);
+        verifiedAdmin=!identityError&&!profileError&&!staffError&&
+          identity.user?.app_metadata?.role==='admin'&&
+          profile?.profile_role==='admin'&&profile.is_active===true&&!staffRecord;
+      }
+    }
+    if(!trustedService&&!trustedWorker&&!verifiedAdmin)
       return new Response(JSON.stringify({success:false,error:"Unauthorized"}),{status:401,headers:{...corsHeaders,"Content-Type":"application/json"}});
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // 1. Fetch items that need retry or are pending
     // We only process items where (now - created_at) > interval based on retry_count
