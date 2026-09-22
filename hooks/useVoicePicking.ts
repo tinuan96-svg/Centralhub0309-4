@@ -354,7 +354,13 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
           // that flag AND mutes WebView speech. Restore voice output for this
           // picking-only session without re-enabling the competing recognizer.
           // Keep this compatibility path for already-installed Android builds.
-          nativeBridge.setNoraConversationActive?.(true);
+          // New Android builds use a dedicated picking TTS channel. On older
+          // builds retain the Nora-session compatibility fallback.
+          if (typeof nativeBridge.setPickingVoiceActive === 'function') {
+            nativeBridge.setPickingVoiceActive(true);
+          } else {
+            nativeBridge.setNoraConversationActive?.(true);
+          }
           nativePickingExclusiveRef.current = true;
           console.log('[Voice] Native wake listener paused; picking speech output enabled');
         } catch (nativeError) {
@@ -393,6 +399,7 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
         try { (window as any).CentralHubNative?.stopTaraTts?.(); } catch (e) {}
         if (nativePickingExclusiveRef.current) {
           // Leave no residual voice-assistant session after leaving picking.
+          try { (window as any).CentralHubNative?.setPickingVoiceActive?.(false); } catch (e) {}
           try { (window as any).CentralHubNative?.setNoraConversationActive?.(false); } catch (e) {}
           try { (window as any).CentralHubNative?.setTaraEnabled?.(true); } catch (e) {}
           nativePickingExclusiveRef.current = false;
@@ -473,12 +480,14 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
     // because Android WebView/Samsung devices can expose speech recognition while
     // silently refusing browser speechSynthesis playback.
     const nativeBridge = (window as any).CentralHubNative;
-    if (nativeBridge?.speakTara) {
+    if (nativeBridge?.speakPicking || nativeBridge?.speakTara) {
       try {
-        const accepted = Boolean(nativeBridge.speakTara(speech, 'en-GB'));
+        const accepted = Boolean(typeof nativeBridge.speakPicking === 'function'
+          ? nativeBridge.speakPicking(speech, 'en-GB')
+          : nativeBridge.speakTara(speech, 'en-GB'));
         if (accepted) {
           const wordCount = Math.max(1, speech.split(/\s+/).length);
-          const estimatedMs = Math.min(9000, Math.max(1800, Math.round((wordCount / 2.6) * 1000) + 900));
+          const estimatedMs = Math.min(11000, Math.max(3000, Math.round((wordCount / 2.6) * 1000) + 1500));
           speechCompletionTimerRef.current = setTimeout(finishSpeech, estimatedMs);
           return;
         }
