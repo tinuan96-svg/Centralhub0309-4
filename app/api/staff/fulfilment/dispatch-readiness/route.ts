@@ -37,11 +37,10 @@ export async function GET(request:Request){
     const issues:string[]=[];
     if(order.is_deleted)issues.push('This order is deleted.');
     if(order.payment_status!=='paid')issues.push('Payment has not been verified as paid.');
-    if(order.warehouse_status==='dispatched'||order.order_status==='shipment_booked')
-      issues.push('The existing shipment workflow has already advanced the order at booking. A manager must verify physical courier handover; staff dispatch cannot be recorded here.');
-    else if(!['packed','ready_to_ship'].includes(order.warehouse_status)||
-       !['packed','ready_to_ship'].includes(order.order_status))
-      issues.push('Picking and barcode-verified packing must be completed.');
+    const bookedLegacy=order.warehouse_status==='dispatched'&&order.order_status==='shipment_booked';
+    const readyToShip=order.warehouse_status==='ready_to_ship'&&order.order_status==='ready_to_ship';
+    if(!bookedLegacy&&!readyToShip)
+      issues.push('Order must be packed or have exactly one booked shipment awaiting physical collection.');
     if(!active.length)issues.push('No active booked shipment or shipping label is recorded.');
     if(active.length>1||shipments?.length===20)
       issues.push('Multiple shipment records need manager review before handover.');
@@ -53,6 +52,8 @@ export async function GET(request:Request){
     if(shipment&&shipment.label_printed!==true)
       issues.push('The shipping label has not been confirmed as printed.');
 
+    const handoverAllowed=issues.length===0 && shipment!==null &&
+      context.permissions.includes('shipping.edit');
     return Response.json({
       order_id:order.id,store_id:storeId,order_number:order.order_number,
       ready_for_handover:issues.length===0,
@@ -60,7 +61,7 @@ export async function GET(request:Request){
         id:shipment.id,carrier:shipment.carrier,status:shipment.status,
         tracking_number:shipment.tracking_number,label_printed:shipment.label_printed
       }:null,
-      dispatch_action_available:false
+      dispatch_action_available:handoverAllowed
     },{headers:{'Cache-Control':'no-store, private','Vary':'Authorization'}});
   }catch(error){return staffErrorResponse(error);}
 }
