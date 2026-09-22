@@ -311,6 +311,18 @@ test('packing completion is verified, store-scoped, permissioned and audited',()
  assert.match(ui,/\/api\/staff\/fulfilment\/pack/);
 });
 
+test('packing cannot mark empty or incompletely verified orders as packed',()=>{
+ const sql=read('supabase/migrations/20260922192500_staff_packing_nonempty_verified_lines.sql');
+ assert.match(sql,/for update/);
+ assert.match(sql,/packing_lines_missing/);
+ assert.match(sql,/i\.verified_quantity<>i\.quantity/);
+ assert.match(sql,/packing_json_lines_missing/);
+ assert.match(sql,/jsonb_array_elements/);
+ assert.match(sql,/packing_json_verification_incomplete/);
+ assert.match(sql,/insert into public\.ch_staff_activity_audit/);
+ assert.match(sql,/from public,anon,authenticated/);
+ assert.match(sql,/to service_role/);
+});
 test('staff schema remains private and default-deny',()=>{
   const sql=read('supabase/migrations/20260922133000_issue4_staff_rbac_foundation.sql');
   assert.match(sql,/revoke all on table public\.ch_staff_roles/);
