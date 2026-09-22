@@ -151,31 +151,72 @@ Deno.serve(async (req: Request) => {
     const role = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!url || !role) throw new Error("Missing Supabase service configuration");
 
-    // Validate Google configuration before reading the database so failures
-    // are explicit and do not partially mutate transaction data.
-    getGoogleCredentials();
-
     const supabase = createClient(url, role);
     const authorization=req.headers.get("Authorization")||"";
-    if(!authorization.startsWith("Bearer ")) throw new Error("Authentication required");
-    const anon=Deno.env.get("SUPABASE_ANON_KEY")||"";
-    const userDb=createClient(url,anon,{global:{headers:{Authorization:authorization}},auth:{persistSession:false,autoRefreshToken:false}});
-    const {data:{user},error:userError}=await userDb.auth.getUser(authorization.slice(7));
-    if(userError||!user) throw new Error("Invalid session");
-    const roleName=String(user.app_metadata?.role||"").toLowerCase();
-    let isAdmin=["admin","superadmin","administrator"].includes(roleName);
+    const bearer=authorization.replace(/^Bearer\\s+/i,"").trim();
+    const reject=(status:number,error:string)=>new Response(JSON.stringify({success:false,error}),{
+      status,headers:{...corsHeaders,"Content-Type":"application/json","Cache-Control":"no-store"}
+    });
+    if(!/^Bearer\\s+\\S+$/i.test(authorization)) return reject(401,"Authentication required");
+
+    // Preserve scheduled/service-role bank reconciliation. A caller holding
+    // any ordinary authenticated JWT must pass live, trusted authorization.
+    const internalServiceCall=Boolean(role)&&bearer===role;
+    let roleName="service_role";
     let staffAllStores=false; let staffStoreIds:string[]=[];
-    if(!isAdmin && roleName==="staff"){
-      const [{data:profile},{data:account},{data:permission},{data:stores}]=await Promise.all([
-        supabase.from("user_profiles").select("is_active").eq("id",user.id).maybeSingle(),
-        supabase.from("ch_staff_accounts").select("status,all_stores").eq("user_id",user.id).maybeSingle(),
-        supabase.from("ch_staff_permission_overrides").select("allowed").eq("user_id",user.id).eq("permission_key","finance.reconcile").maybeSingle(),
-        supabase.from("ch_staff_store_access").select("store_id").eq("user_id",user.id),
+    if(!internalServiceCall){
+      const anon=Deno.env.get("SUPABASE_ANON_KEY")||"";
+      if(!anon)return reject(503,"Authentication configuration unavailable");
+      const userDb=createClient(url,anon,{
+        global:{headers:{Authorization:authorization}},
+        auth:{persistSession:false,autoRefreshToken:false}
+      });
+      const {data:{user},error:userError}=await userDb.auth.getUser(bearer);
+      if(userError||!user)return reject(401,"Invalid session");
+      const [{data:identity,error:identityError},{data:profile,error:profileError}]=await Promise.all([
+        supabase.auth.admin.getUserById(user.id),
+        supabase.from("user_profiles").select("is_active,profile_role").eq("id",user.id).maybeSingle()
       ]);
-      if(profile?.is_active!==true||account?.status!=="active"||permission?.allowed!==true||user.app_metadata?.must_change_password!==false)
-        throw new Error("Finance reconciliation permission required");
-      staffAllStores=account?.all_stores===true; staffStoreIds=(stores||[]).map((row:any)=>row.store_id);
-    } else if(!isAdmin) throw new Error("Admin or finance reconciliation staff access required");
+      if(identityError||profileError||!identity.user||!profile||profile.is_active!==true)
+        return reject(403,"An active account is required");
+      roleName=String(identity.user.app_metadata?.role||"").toLowerCase();
+      if(roleName==="admin"){
+        if(profile.profile_role!=="admin")return reject(403,"Super Admin access required");
+        const {data:staffRecord}=await supabase.from("ch_staff_accounts")
+          .select("user_id").eq("user_id",user.id).maybeSingle();
+        if(staffRecord)return reject(403,"Staff identities cannot use the Super Admin bank sync");
+      }else if(roleName==="staff"){
+        if(Deno.env.get("CENTRALHUB_STAFF_ACCESS_VERIFIED")!=="true")
+          return reject(403,"Staff bank sync is not yet enabled");
+        if(profile.profile_role!=="user"||identity.user.app_metadata?.must_change_password!==false)
+          return reject(403,"Staff account is not ready for bank sync");
+        const [{data:account,error:accountError},{data:override,error:overrideError},
+          {data:stores,error:storeError}]=await Promise.all([
+          supabase.from("ch_staff_accounts").select("role_key,status,all_stores")
+            .eq("user_id",user.id).maybeSingle(),
+          supabase.from("ch_staff_permission_overrides").select("allowed")
+            .eq("user_id",user.id).eq("permission_key","finance.reconcile").maybeSingle(),
+          supabase.from("ch_staff_store_access").select("store_id").eq("user_id",user.id)
+        ]);
+        if(accountError||overrideError||storeError||account?.status!=="active")
+          return reject(403,"Finance reconciliation permission required");
+        const {data:roleGrant,error:grantError}=await supabase.from("ch_staff_permissions")
+          .select("permission_key").eq("role_key",account.role_key)
+          .eq("permission_key","finance.reconcile").maybeSingle();
+        if(grantError||!(override?.allowed??Boolean(roleGrant)))
+          return reject(403,"Finance reconciliation permission required");
+        staffAllStores=account.all_stores===true;
+        staffStoreIds=(stores||[]).map((row:{store_id:string})=>row.store_id);
+        if(!staffAllStores&&!staffStoreIds.length)
+          return reject(403,"No stores are assigned to this account");
+      }else{
+        return reject(403,"An authorised CentralHub account is required");
+      }
+    }
+
+    // Validate Google configuration only after authorization; otherwise
+    // unauthorised calls could trigger work or expose configuration errors.
+    getGoogleCredentials();
 
     const body = await req.json().catch(() => ({}));
     const accountId = body.bank_account_id as string | undefined;
