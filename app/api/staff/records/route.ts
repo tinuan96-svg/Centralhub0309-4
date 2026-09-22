@@ -10,7 +10,7 @@ const resources={
   finance:{permission:'finance.view',table:'bank_transactions',columns:'id,store_id,description,amount,created_at'},
   marketing:{permission:'marketing.view',table:'marketing_campaigns',columns:'id,store_id,name,status,created_at'},
   inventory:{permission:'inventory.view',table:'inventory_logs',columns:'id,store_id,product_id,sku,old_quantity,new_quantity,change,created_at'},
-  fulfilment:{permission:'fulfilment.view',table:'orders',columns:'id,store_id,order_number,order_status,created_at'},
+  fulfilment:{permission:'fulfilment.view',table:'orders',columns:'id,store_id,order_number,order_status,payment_status,warehouse_status,locked_by,created_at'},
   procurement:{permission:'procurement.view',table:'purchase_orders',columns:'id,supplier_id,status,order_date,created_at'}
 } as const;
 type Resource=keyof typeof resources;
