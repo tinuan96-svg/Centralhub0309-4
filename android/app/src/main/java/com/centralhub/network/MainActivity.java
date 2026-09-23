@@ -66,6 +66,7 @@ public class MainActivity extends BridgeActivity {
     private ShruthiAudioPipe taraAudioPipe;
     private ShruthiRealtimeVoiceClient shruthiRealtimeClient;
     private volatile boolean shruthiRealtimeActive = false;
+    private volatile boolean noraPickingRealtimeActive = false;
     private boolean taraEnabled = false;
     private boolean taraSpeaking = false;
     private boolean taraResumed = false;
@@ -950,7 +951,7 @@ public class MainActivity extends BridgeActivity {
     public boolean startNoraPickingRealtime(String accessToken, String supabaseUrl, String publishableKey) {
         if (accessToken == null || accessToken.trim().isEmpty() || supabaseUrl == null || supabaseUrl.trim().isEmpty() || !isShruthiRealtimeAvailable()) return false;
         try { Uri backend=Uri.parse(supabaseUrl.trim()); if(!"https".equalsIgnoreCase(backend.getScheme())||backend.getHost()==null||!backend.getHost().toLowerCase(Locale.ROOT).endsWith(".supabase.co"))return false; } catch(Exception ignored){return false;}
-        stopShruthiRealtime(); shruthiRealtimeActive=true; runOnUiThread(this::stopTaraRecognizer);
+        stopShruthiRealtime(); shruthiRealtimeActive=true; noraPickingRealtimeActive=true; runOnUiThread(this::stopTaraRecognizer);
         ShruthiRealtimeVoiceClient realtime=new ShruthiRealtimeVoiceClient(this,accessToken.trim(),supabaseUrl.trim(),publishableKey==null?"":publishableKey.trim(),"",true,new ShruthiRealtimeVoiceClient.Listener(){
             @Override public void onState(String state){dispatchShruthiRealtimeEvent("state","state",state);}
             @Override public void onUserTranscript(String text){dispatchShruthiRealtimeEvent("user-transcript","text",text);}
@@ -959,7 +960,9 @@ public class MainActivity extends BridgeActivity {
         });
         shruthiRealtimeClient=realtime; realtime.connect(); return true;
     }
-    public boolean noraPickingSay(String text){ShruthiRealtimeVoiceClient realtime=shruthiRealtimeClient;return realtime!=null&&realtime.speakInstruction(text);}
+    public boolean noraPickingSay(String text){ShruthiRealtimeVoiceClient realtime=shruthiRealtimeClient;return noraPickingRealtimeActive&&realtime!=null&&realtime.speakInstruction(text);}
+    public void noraPickingMic(boolean enabled){ShruthiRealtimeVoiceClient realtime=shruthiRealtimeClient;if(noraPickingRealtimeActive&&realtime!=null)realtime.setPickingMic(enabled);}
+    public void stopNoraPickingRealtime(){if(noraPickingRealtimeActive)stopShruthiRealtime();}
 
     public boolean startShruthiRealtime(String accessToken, String supabaseUrl, String publishableKey) {
         if (accessToken == null || accessToken.trim().isEmpty() || supabaseUrl == null || supabaseUrl.trim().isEmpty() || !isShruthiRealtimeAvailable()) return false;
@@ -991,6 +994,7 @@ public class MainActivity extends BridgeActivity {
         ShruthiRealtimeVoiceClient client = shruthiRealtimeClient;
         shruthiRealtimeClient = null;
         shruthiRealtimeActive = false;
+        noraPickingRealtimeActive = false;
         if (client != null) client.release();
         if (taraEnabled && taraResumed) runOnUiThread(() -> scheduleTaraRestart(180L));
     }

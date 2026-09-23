@@ -567,7 +567,7 @@ export default function CentralHubVoiceAssistant() {
     };
     const onUser = (event: Event) => {
       const text = String((event as CustomEvent<{ text?: string }>).detail?.text || '').trim();
-      if (!text) return;
+      if (!text || pathname.startsWith("/picking/active")) return;
       setTranscript(text);
       setSession(true);
       pendingRealtimeUserRef.current = text;
@@ -575,7 +575,7 @@ export default function CentralHubVoiceAssistant() {
     };
     const onAssistant = (event: Event) => {
       const text = String((event as CustomEvent<{ text?: string }>).detail?.text || '').trim();
-      if (!text) return;
+      if (!text || pathname.startsWith('/picking/active')) return;
       const local: AssistantReply = { success:true, reply:text, intent:'realtime_voice', mode:inferMode(pathname,text), risk_level:'read_only', requires_confirmation:false, speak:false, status:'completed' };
       setResponse(local);
       responseRef.current = local;
@@ -616,13 +616,13 @@ export default function CentralHubVoiceAssistant() {
   // Match Nivo exactly: opening the assistant starts the private Realtime
   // voice channel automatically. There is no separate Talk step on Android.
   useEffect(() => {
-    if (!open || realtimeActiveRef.current) return;
+    if (!open || realtimeActiveRef.current || pathname.startsWith("/picking/active")) return;
     const native = getNativeBridge();
     if (native?.getPlatform?.() !== 'android' || native?.isShruthiRealtimeAvailable?.() !== true) return;
     void startNativeRealtime().catch(() => {
       setError('Shruthi Live voice could not start. Text is still available.');
     });
-  }, [open, startNativeRealtime]);
+  }, [open, startNativeRealtime, pathname]);
 
   useEffect(() => {
     const bridge = getNativeBridge();
@@ -633,14 +633,14 @@ export default function CentralHubVoiceAssistant() {
       available = false;
     }
     setNativeWakeAvailable(available);
-    if (available) bridge?.setTaraEnabled?.(true);
+    if (available && !pathname.startsWith("/picking/active")) bridge?.setTaraEnabled?.(true);
 
     const onSpeechStart = () => {
       if (noraSessionRef.current) interruptPendingTurn();
     };
     const onTranscript = (event: Event) => {
       const text = String((event as NativeTranscriptEvent).detail?.text || '').trim();
-      if (text) handleNativeTranscript(text);
+      if (text && !pathname.startsWith("/picking/active")) handleNativeTranscript(text);
     };
     window.addEventListener('centralhub:tara-user-speech-start', onSpeechStart as EventListener);
     window.addEventListener('centralhub:tara-transcript', onTranscript as EventListener);
@@ -649,7 +649,7 @@ export default function CentralHubVoiceAssistant() {
       window.removeEventListener('centralhub:tara-transcript', onTranscript as EventListener);
       bridge?.setTaraEnabled?.(false);
     };
-  }, [handleNativeTranscript, interruptPendingTurn]);
+  }, [handleNativeTranscript, interruptPendingTurn, pathname]);
 
   const transcribeAndRun = useCallback(async (blob: Blob) => {
     setProcessing(true);

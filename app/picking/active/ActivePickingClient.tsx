@@ -43,8 +43,11 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [useAI, setUseAI] = useState(true);
+  const useAI = true;
   const [noraPicking, setNoraPicking] = useState(false);
+  const [noraStatus,setNoraStatus]=useState('idle');
+  const [noraMicEnabled,setNoraMicEnabled]=useState(true);
+  const [noraHeard,setNoraHeard]=useState('');
   const [isThinking, setIsThinking] = useState(false);
 
   // Correction features state
@@ -250,8 +253,7 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
 
     if (showSummary && isConfirm) {
       lastActionTimeRef.current = now;
-      speakRef.current('Finishing session. Good job.');
-      completePicking();
+      speakRef.current('Please review the summary and tap Confirm and Close to finish.');
       return;
     }
 
@@ -314,7 +316,7 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
         if (aiResult.message) speakRef.current(aiResult.message);
 
         switch (aiResult.action) {
-          case 'PICK': handlePicked(); break;
+          case 'PICK': speakRef.current('Please say picked or tap Picked to confirm the item.'); break;
           case 'NEXT': goToNext(); break;
           case 'BACK': goToPrev(); break;
           case 'REPEAT':
@@ -326,19 +328,12 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
           case 'PAUSE': setIsPaused(true); break;
           case 'RESUME': setIsPaused(false); break;
           case 'FINISH':
-            if (showSummary) completePicking();
-            else setShowSummary(true);
+            speakRef.current('Please review and tap Confirm and Close to finish.');
+            setShowSummary(true);
             break;
           case 'UPDATE_STOCK':
-            if (aiResult.value !== undefined) {
-              const val = Number(aiResult.value);
-              if (!isNaN(val)) saveStock(val);
-            }
-            break;
           case 'UPDATE_LOCATION':
-            if (aiResult.value) {
-              saveLocation(String(aiResult.value));
-            }
+            speakRef.current('Please use the on-screen correction form to confirm this change.');
             break;
           default:
             console.warn('[Voice] AI returned unknown action:', aiResult.action);
@@ -356,6 +351,12 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
   }, [handlePicked, goToNext, goToPrev, isPaused, currentItem, showSummary, completePicking, useAI, currentIndex, groupedItems.length, saveLocation, saveStock]);
 
   const { speak: legacySpeak, startListening, stopListening, isListening, error: voiceError, lastCommand } = useVoicePicking(handleVoiceCommand);
+  const commandRef=useRef(handleVoiceCommand);
+  const currentItemRef=useRef(currentItem);
+  const currentIndexRef=useRef(currentIndex);
+  const announcedNoraIndexRef=useRef(-1);
+  useEffect(()=>{commandRef.current=handleVoiceCommand;},[handleVoiceCommand]);
+  useEffect(()=>{currentItemRef.current=currentItem;currentIndexRef.current=currentIndex;},[currentItem,currentIndex]);
   const speak = useCallback((text: string) => {
     const native=typeof window!=='undefined'?(window as any).CentralHubNative:null;
     if(noraPicking&&native?.noraPickingSay?.(text)===true)return;
@@ -364,19 +365,55 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
 
   useEffect(()=>{
     let cancelled=false;
+    const native=(window as any).CentralHubNative;
     const startNora=async()=>{
-      const native=(window as any).CentralHubNative;
       if(native?.getPlatform?.()!=='android'||typeof native.startNoraPickingRealtime!=='function')return;
       const {data}=await supabase.auth.getSession();if(cancelled||!data.session?.access_token)return;
       const url=process.env.NEXT_PUBLIC_SUPABASE_URL||'',key=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY||'';if(!url||!key)return;
+      setNoraStatus('connecting');
       const started=native.startNoraPickingRealtime(data.session.access_token,url,key)===true;
-      if(!cancelled&&started){setNoraPicking(true);stopListening();}
+      if(cancelled){if(started)native.stopNoraPickingRealtime?.();return;}
+      if(started){stopListening();setNoraPicking(true);}
+      else setNoraStatus('error');
     };
+    const onNoraCommand=(event:Event)=>{
+      if(cancelled)return;
+      const text=String((event as CustomEvent<{text?:string}>).detail?.text||'').trim();
+      if(text){setNoraHeard(text);void commandRef.current(text);}
+    };
+    const onNoraState=(event:Event)=>{
+      if(cancelled)return;
+      const state=String((event as CustomEvent<{state?:string}>).detail?.state||'idle');
+      setNoraStatus(state);
+    };
+    const onNoraError=(event:Event)=>{
+      if(cancelled)return;
+      setNoraStatus('error');setNoraPicking(false);
+      console.warn('[Picking] NORA Live unavailable:',(event as CustomEvent<{message?:string}>).detail?.message);
+    };
+    window.addEventListener('centralhub:shruthi-realtime-user-transcript',onNoraCommand);
+    window.addEventListener('centralhub:shruthi-realtime-state',onNoraState);
+    window.addEventListener('centralhub:shruthi-realtime-error',onNoraError);
     void startNora();
-    const onNoraCommand=(event:Event)=>{if(cancelled)return;const text=String((event as CustomEvent<{text?:string}>).detail?.text||'').trim();if(text)void handleVoiceCommand(text);};
-    window.addEventListener('centralhub:shruthi-realtime-user-transcript',onNoraCommand as EventListener);
-    return()=>{cancelled=true;window.removeEventListener('centralhub:shruthi-realtime-user-transcript',onNoraCommand as EventListener);try{(window as any).CentralHubNative?.stopShruthiRealtime?.();}catch{}};
-  },[handleVoiceCommand,stopListening]);
+    return()=>{
+      cancelled=true;
+      window.removeEventListener('centralhub:shruthi-realtime-user-transcript',onNoraCommand);
+      window.removeEventListener('centralhub:shruthi-realtime-state',onNoraState);
+      window.removeEventListener('centralhub:shruthi-realtime-error',onNoraError);
+      try{native?.stopNoraPickingRealtime?.();}catch{}
+    };
+  },[stopListening]);
+
+  useEffect(()=>{
+    if(!noraPicking||noraStatus!=='listening'||!currentItem||announcedNoraIndexRef.current===currentIndex)return;
+    // The first product is read again with the actual NORA voice after connection.
+    // Subsequent items are already announced by the normal picking progress effect.
+    if(announcedNoraIndexRef.current===-1){
+      const phrase=`NORA ready. Pick ${currentItem.total_needed} ${currentItem.brand||''} ${currentItem.name}. ${currentItem.location?`Location ${currentItem.location}.`:''}`;
+      try{(window as any).CentralHubNative?.noraPickingSay?.(phrase);}catch{}
+    }
+    announcedNoraIndexRef.current=currentIndex;
+  },[noraPicking,noraStatus,currentIndex,currentItem]);
 
   // Sync speak ref
   useEffect(() => {
@@ -572,12 +609,12 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
               </div>
             ))}
           </div>
-          <div><p className="text-[9px] text-slate-500 font-black uppercase tracking-widest">Pick Progress</p><p className="text-sm font-black text-cyan-400">{currentIndex + 1} <span className="text-slate-700 mx-1">/</span> {groupedItems.length}</p></div>
+          <div><p className="text-[9px] text-cyan-300 font-black uppercase tracking-widest">NORA · PICKING ASSISTANT</p><p className="text-[9px] text-slate-500 font-black uppercase tracking-widest">Pick Progress</p><p className="text-sm font-black text-cyan-400">{currentIndex + 1} <span className="text-slate-700 mx-1">/</span> {groupedItems.length}</p></div>
         </div>
         <div className="flex items-center gap-2">
-          {lastCommand && isListening && (
+          {(noraPicking?noraHeard:lastCommand) && (noraPicking||isListening) && (
             <span className="text-[10px] bg-cyan-500/20 text-cyan-400 px-3 py-1.5 rounded-full border border-cyan-500/30 font-black uppercase animate-pulse shadow-lg max-w-[120px] truncate">
-              &quot;{lastCommand}&quot;
+              &quot;{noraPicking?noraHeard:lastCommand}&quot;
             </span>
           )}
           {voiceError && (
@@ -586,26 +623,24 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
             </span>
           )}
           <button
-            onClick={() => isListening ? stopListening() : startListening()}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all shadow-xl ${isListening ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500' : 'bg-slate-800 border-slate-700 text-slate-500'}`}
+            onClick={() => {
+              if(noraPicking){
+                const next=!noraMicEnabled;
+                try{(window as any).CentralHubNative?.noraPickingMic?.(next);}catch{}
+                setNoraMicEnabled(next);
+              }else if(isListening)stopListening();else startListening();
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all shadow-xl ${(noraPicking?noraMicEnabled:isListening) ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500' : 'bg-slate-800 border-slate-700 text-slate-500'}`}
           >
-            <span className={`w-2 h-2 rounded-full ${isListening ? 'bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.5)]' : 'bg-slate-600'}`} />
-            <span className="text-[9px] font-black uppercase tracking-wider">{isListening ? 'Listening' : 'Off'}</span>
+            <span className={`w-2 h-2 rounded-full ${(noraPicking?noraMicEnabled:isListening) ? 'bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.5)]' : 'bg-slate-600'}`} />
+            <span className="text-[9px] font-black uppercase tracking-wider">{noraPicking?(noraMicEnabled?'NORA Mic':'NORA Muted'):isListening?'Listening':'Off'}</span>
           </button>
           <button onClick={() => setIsPaused(!isPaused)} className="p-2.5 bg-slate-800 rounded-2xl border border-slate-700 shadow-lg active:scale-90 transition-transform">
              {isPaused ? '▶️' : '⏸️'}
           </button>
-          <button
-            onClick={() => setUseAI(!useAI)}
-            className={`px-3 py-1.5 rounded-full border transition-all text-[9px] font-black uppercase flex items-center gap-1 ${useAI ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.2)]' : 'bg-slate-800 border-slate-700 text-slate-500'}`}
-            title={noraPicking ? "NORA Picking Active" : useAI ? "AI Assistant Active (Smart Fallback)" : "Standard Mode (Fast)"}
-          >
-            {isThinking ? (
-              <span className="w-2 h-2 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <span>{noraPicking ? '✦ NORA' : useAI ? '🤖 AI' : '⚡ Std'}</span>
-            )}
-          </button>
+          <span className="rounded-full border border-cyan-400/40 bg-cyan-500/15 px-3 py-1.5 text-[10px] font-bold text-cyan-200" aria-label="NORA picking mode">
+            {noraPicking?'✦ NORA LIVE':noraStatus==='connecting'?'NORA CONNECTING':noraStatus==='error'?'LOCAL BACKUP':'VOICE PICKING'}
+          </span>
         </div>
       </header>
 
@@ -674,12 +709,18 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
         </div>
 
         <div className="mt-auto text-center pb-4">
+          <div className="mx-auto mb-3 flex max-w-sm items-center gap-3 rounded-2xl border border-cyan-300/25 bg-cyan-500/10 p-3 text-left" aria-label="NORA warehouse voice">
+            <span aria-hidden="true" className={`h-9 w-9 shrink-0 rounded-full border border-cyan-200/60 bg-[radial-gradient(circle_at_38%_36%,#e0f2fe,#22d3ee_30%,#164e63_65%,#020617_100%)] shadow-[0_0_22px_rgba(34,211,238,.45)] ${noraPicking&&noraMicEnabled?'animate-pulse':''}`} />
+            <div className="min-w-0"><p className="text-xs font-bold text-cyan-100">NORA · Warehouse picking</p>
+              <p className="text-[11px] text-slate-300">{noraPicking?`Live voice: ${noraStatus}`:noraStatus==='error'?'NORA Live unavailable · local voice backup':noraStatus==='connecting'?'Connecting live voice…':'Browser or local voice mode'}</p>
+            </div>
+          </div>
            <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border transition-colors ${isThinking ? 'bg-cyan-500/10 border-cyan-500/30' : 'bg-slate-900/50 border-slate-800/50'}`}>
              <span className={`${isThinking ? 'text-cyan-400 animate-spin' : 'text-cyan-400 animate-pulse'}`}>
                {isThinking ? '↻' : '●'}
              </span>
              <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest">
-               {isThinking ? 'NORA is processing...' : noraPicking ? 'NORA listening — say “Picked”, “Done” or “Next”' : isListening ? 'Say “Picked”, “Done” or “Next”' : 'Enable Microphone to Start'}
+               {isThinking ? 'NORA is processing...' : noraPicking ? (noraMicEnabled?'NORA listening — say “Picked”, “Done” or “Next”':'NORA microphone muted') : isListening ? 'Say “Picked”, “Done” or “Next”' : 'Enable Microphone to Start'}
              </p>
            </div>
         </div>

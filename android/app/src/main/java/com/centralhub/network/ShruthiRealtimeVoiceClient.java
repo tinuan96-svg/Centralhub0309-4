@@ -84,6 +84,8 @@ final class ShruthiRealtimeVoiceClient {
     private volatile double playbackRms=0d;
     private volatile boolean echoCancellationReady=false, responseGenerating=false;
     private volatile String activeResponseId="",audioEventType="",transcriptEventType="";
+    private volatile String pendingPickingInstruction="";
+    private volatile boolean pickingMicWanted=true;
 
     ShruthiRealtimeVoiceClient(Context c,String token,String url,String key,Listener l){
         this(c, token, url, key, "", l);
@@ -111,8 +113,32 @@ final class ShruthiRealtimeVoiceClient {
         scheduler.schedule(()->{if(running.get()&&!explicitlyClosed){resumeMicrophoneAfterPlayback();state("listening");}},MANUAL_INTERRUPT_GUARD_MS,TimeUnit.MILLISECONDS);
     }
     boolean speakInstruction(String text){
-        String clean=text==null?"":text.trim();WebSocket s=socket;if(clean.isEmpty()||s==null||!running.get())return false;
-        try{JSONObject response=new JSONObject().put("type","response.create").put("response",new JSONObject().put("output_modalities",new org.json.JSONArray().put("audio")).put("instructions","Speak exactly this warehouse-picking sentence and nothing else: "+clean));return s.send(response.toString());}catch(Exception ignored){return false;}
+        if(!pickingMode||!running.get()||text==null||text.trim().isEmpty())return false;
+        pendingPickingInstruction=text.trim().substring(0,Math.min(500,text.trim().length()));
+        flushPickingInstruction();
+        return true;
+    }
+    void setPickingMic(boolean enabled){
+        if(!pickingMode)return;
+        pickingMicWanted=enabled;
+        if(enabled&&!assistantAudioActive.get())resumeMicrophoneAfterPlayback();
+        else if(!enabled)hardPauseMicrophone(true);
+    }
+    private void flushPickingInstruction(){
+        WebSocket s=socket;String phrase=pendingPickingInstruction;
+        if(!pickingMode||s==null||phrase.isEmpty()||responseGenerating||assistantAudioActive.get())return;
+        pendingPickingInstruction="";
+        // The assistant's own spoken "pick" must never be transcribed as a pick confirmation.
+        hardPauseMicrophone(true);
+        try{
+            JSONObject response=new JSONObject().put("type","response.create").put("response",
+                new JSONObject().put("conversation","none").put("output_modalities",new org.json.JSONArray().put("audio"))
+                    .put("instructions","You are NORA. Say only the exact warehouse sentence supplied in the input. Do not report any unverified action.")
+                    .put("input",new org.json.JSONArray().put(new JSONObject().put("type","message").put("role","user")
+                        .put("content",new org.json.JSONArray().put(new JSONObject().put("type","input_text").put("text","Say exactly: "+phrase))))));
+            responseGenerating=true;
+            if(!s.send(response.toString()))listener.onError("NORA speaking request failed");
+        }catch(Exception e){listener.onError("NORA speaking request failed");}
     }
     void release(){disconnect();io.shutdownNow();scheduler.shutdownNow();http.dispatcher().executorService().shutdown();}
 
@@ -178,7 +204,7 @@ final class ShruthiRealtimeVoiceClient {
 
     private final class SocketListener extends WebSocketListener{
         private final int current;SocketListener(int c){current=c;}
-        @Override public void onOpen(WebSocket w,Response r){if(!isCurrent(current)){w.close(1000,"Stale Shruthi session");return;}reconnectScheduled.set(false);reconnectAttempt=0;try{startAudio(current);if(isCurrent(current))state("listening");}catch(Exception e){if(isCurrent(current))failOrReconnect(message(e,"Unable to start voice audio"));}}
+        @Override public void onOpen(WebSocket w,Response r){if(!isCurrent(current)){w.close(1000,"Stale Shruthi session");return;}reconnectScheduled.set(false);reconnectAttempt=0;try{startAudio(current);if(isCurrent(current)){state("listening");flushPickingInstruction();}}catch(Exception e){if(isCurrent(current))failOrReconnect(message(e,"Unable to start voice audio"));}}
         @Override public void onMessage(WebSocket w,String text){
             if(!isCurrent(current))return;
             try{
@@ -195,7 +221,9 @@ final class ShruthiRealtimeVoiceClient {
                          if(!id.isEmpty()&&blockedResponses.contains(id))return;}
                         if(!activeResponseId.isEmpty()&&!id.isEmpty()&&!id.equals(activeResponseId))return;
                         playbackQueue.offer(PlaybackItem.end(id.isEmpty()?activeResponseId:id));break;
-                    case "error":JSONObject er=e.optJSONObject("error");listener.onError(er==null?"Shruthi Realtime reported an error.":er.optString("message","Shruthi Realtime reported an error."));break;
+                    case "error":JSONObject er=e.optJSONObject("error");
+                        if(pickingMode && pendingPickingInstruction.isEmpty() && !assistantAudioActive.get()){responseGenerating=false;if(pickingMicWanted)resumeMicrophoneAfterPlayback();}
+                        listener.onError(er==null?"Shruthi Realtime reported an error.":er.optString("message","Shruthi Realtime reported an error."));break;
                 }
             }catch(Exception ignored){}
         }
@@ -272,7 +300,12 @@ final class ShruthiRealtimeVoiceClient {
         if(!isCurrent(current)||!assistantAudioActive.get())return;
         if(id!=null&&!id.isEmpty()&&!id.equals(activeResponseId))return;
         activeResponseId="";audioEventType="";transcriptEventType="";
-        playbackRms=0d;assistantAudioActive.set(false);state("listening");
+        playbackRms=0d;assistantAudioActive.set(false);
+        if(pickingMode){
+            if(pickingMicWanted)resumeMicrophoneAfterPlayback();
+            if(!pendingPickingInstruction.isEmpty()){flushPickingInstruction();return;}
+        }
+        state(pickingMicWanted?"listening":"idle");
     }
     private void sendAudio(byte[] pcm,int n){
         WebSocket s=socket;
