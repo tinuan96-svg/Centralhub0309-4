@@ -2,7 +2,8 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Fingerprint, KeyRound, LockKeyhole, MessageCircle, Mic, ShieldCheck } from 'lucide-react';
+import Link from 'next/link';
+import { Fingerprint, KeyRound, LockKeyhole, MessageCircle, Mic, PlayCircle, ShieldCheck } from 'lucide-react';
 import { AuthService } from '@/lib/services/authService';
 import { OTPService } from '@/lib/services/comm/otpService';
 import { supabase } from '@/lib/supabase';
@@ -314,6 +315,15 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
             <KeyRound className="mr-2 inline h-4 w-4" /> Staff login
           </button>
           {staffLoginSelected&&<p className="mt-2 text-xs text-slate-300">Staff accounts use their own email and password. Your Super Admin must activate the account before you can access assigned work sections.</p>}
+
+          <Link
+            href="/demo"
+            prefetch={false}
+            className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-cyan-300/30 bg-cyan-300/10 px-4 py-3 text-sm font-semibold text-cyan-100 transition hover:border-cyan-300/60 hover:bg-cyan-300/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
+          >
+            <PlayCircle className="h-4 w-4" aria-hidden="true" /> Try Demo Data
+          </Link>
+          <p className="mt-2 text-xs text-slate-500">Explore a sample CentralHub dashboard without logging in. No live business data or transactions.</p>
 
           {fallbackVisible && (
             <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4 text-left">
