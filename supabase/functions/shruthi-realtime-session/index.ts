@@ -7,7 +7,7 @@ Deno.serve(async(req:Request)=>{
  if(req.method!=="POST")return json({error:"method_not_allowed"},405);
  const requestBody=await req.json().catch(()=>({}));
  const liveWebSessionId=String((requestBody as any)?.live_web_session_id||"").trim();
- const pickingMode=String((requestBody as any)?.mode||"").trim().toLowerCase()==="picking";
+ const pickingOnly=String((requestBody as any)?.mode||"").trim().toLowerCase()==="picking";
  const supabaseUrl=Deno.env.get("SUPABASE_URL")||"",serviceRole=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")||"",authorization=req.headers.get("Authorization")||"";
  if(!supabaseUrl||!serviceRole||!authorization.startsWith("Bearer "))return json({error:"service_not_configured"},503);
  const admin=createClient(supabaseUrl,serviceRole,{auth:{persistSession:false,autoRefreshToken:false}});
@@ -21,6 +21,25 @@ Deno.serve(async(req:Request)=>{
  const sharedKey=(Deno.env.get("OPENAI_API_KEY")||"").trim();
  const serverKeys=[...new Set([realtimeKey,sharedKey].filter(Boolean))];
  if(!serverKeys.length)return json({error:"realtime_not_configured",retryable:false},503);
+ if(pickingOnly){
+  const model="gpt-realtime-1.5";
+  const instructions="You are NORA, CentralHub's hands-free warehouse picking voice. Speak only the exact product or status sentence explicitly provided in a client response.create instruction. Do not answer raw audio automatically, claim goods were picked, update records, create orders, or invent inventory facts. The authenticated picking UI alone validates commands and records picks. Speak warmly and clearly using the configured NORA voice.";
+  const session={type:"realtime",model,output_modalities:["audio"],instructions,max_output_tokens:170,
+   audio:{input:{format:{type:"audio/pcm",rate:24000},noise_reduction:{type:"near_field"},
+    transcription:{model:"gpt-4o-mini-transcribe",prompt:"Warehouse picking commands: next, picked, done, back, repeat, pause, resume, confirm. UK English and Malayalam grocery brand names."},
+    turn_detection:{type:"server_vad",threshold:.6,prefix_padding_ms:200,silence_duration_ms:380,create_response:false,interrupt_response:false}},
+    output:{format:{type:"audio/pcm",rate:24000},voice:"marin",speed:1.04}}};
+  let lastStatus=502;
+  for(const key of serverKeys){
+   let upstream:Response;
+   try{upstream=await fetch("https://api.openai.com/v1/realtime/client_secrets",{method:"POST",headers:{Authorization:`Bearer ${key}`,"Content-Type":"application/json"},body:JSON.stringify({session}),signal:AbortSignal.timeout(18000)});}
+   catch{return json({error:"upstream_network_failure",retryable:true},503);}
+   if(upstream.ok){const payload=await upstream.json().catch(()=>null);if(typeof payload?.value!=="string"||!payload.value.trim())return json({error:"invalid_realtime_response"},502);return json({...payload,model});}
+   lastStatus=upstream.status;if(upstream.status!==401&&upstream.status!==403)break;
+  }
+  return json({error:lastStatus===429?"upstream_rate_limited":lastStatus===401||lastStatus===403?"upstream_credentials_rejected":"upstream_request_rejected",upstream_status:lastStatus},lastStatus===429?429:502);
+ }
+
  const since24h=new Date(Date.now()-86400000).toISOString();
  const focusPromise=liveWebSessionId
   ? admin.from("nora_action_sessions").select("id,title,goal,target_system,target_url,status,current_step,awaiting_input,requires_approval,approval_reason,metadata,updated_at").eq("id",liveWebSessionId).eq("user_id",user.id).maybeSingle()
@@ -99,7 +118,7 @@ Deno.serve(async(req:Request)=>{
    contextText=JSON.stringify(sessionContext);
  }
  const model="gpt-realtime-1.5";
- const pickingInstructions=pickingMode?`\n\nPICKING MODE:\n- You are the same Shruthi/NORA assistant, now embedded in CentralHub warehouse picking.\n- Stay hands-free and concise. Understand short commands such as picked, done, next, skip, back, previous, repeat, pause and resume, including natural Malayalam/English code-switching.\n- The picking screen, not the model, is authoritative for recording quantities, advancing items and completing orders. Never claim an item was recorded unless the screen workflow confirms it.\n- For ordinary picking commands, respond with at most a few words. Do not start unrelated executive-assistant conversations while picking.\n- If the user asks an unrelated question, answer briefly, then return focus to the current pick.\n`:"";
+ const pickingInstructions=pickingOnly?`\n\nPICKING MODE:\n- You are the same Shruthi/NORA assistant, now embedded in CentralHub warehouse picking.\n- Stay hands-free and concise. Understand short commands such as picked, done, next, skip, back, previous, repeat, pause and resume, including natural Malayalam/English code-switching.\n- The picking screen, not the model, is authoritative for recording quantities, advancing items and completing orders. Never claim an item was recorded unless the screen workflow confirms it.\n- For ordinary picking commands, respond with at most a few words. Do not start unrelated executive-assistant conversations while picking.\n- If the user asks an unrelated question, answer briefly, then return focus to the current pick.\n`:"";
  const instructions=`You are Shruthi, the current user's private AI managing partner inside the CentralHub Android app.
 Speak naturally, warmly and concisely with highly responsive human-like timing. Use short conversational turns unless detail is requested. The user may speak English, Malayalam, Tamil, or switch between them; understand code-switching naturally and reply in the language/style the user is using.
 
@@ -139,7 +158,7 @@ CONVERSATION:
 ${pickingInstructions}
 CENTRALHUB CONTEXT:
 ${contextText}`
- const configuredSession={type:"realtime",model,output_modalities:["audio"],instructions,max_output_tokens:600,audio:{input:{format:{type:"audio/pcm",rate:24000},noise_reduction:{type:"near_field"},transcription:{model:"gpt-4o-mini-transcribe",prompt:pickingMode?"Warehouse picking speech. Prioritize short commands: picked, done, next, skip, back, previous, repeat, pause, resume. Malayalam and English code-switching; grocery product and shelf/location terms.":"Natural executive-assistant speech. Malayalam and English code-switching; UK business, grocery, Meta, Facebook, Instagram, Supabase, Netlify and CentralHub terms."},turn_detection:{type:"server_vad",threshold:.62,prefix_padding_ms:240,silence_duration_ms:520,create_response:true,interrupt_response:false}},output:{format:{type:"audio/pcm",rate:24000},voice:"marin",speed:1.04}}};
+ const configuredSession={type:"realtime",model,output_modalities:["audio"],instructions,max_output_tokens:600,audio:{input:{format:{type:"audio/pcm",rate:24000},noise_reduction:{type:"near_field"},transcription:{model:"gpt-4o-mini-transcribe",prompt:pickingOnly?"Warehouse picking speech. Prioritize short commands: picked, done, next, skip, back, previous, repeat, pause, resume. Malayalam and English code-switching; grocery product and shelf/location terms.":"Natural executive-assistant speech. Malayalam and English code-switching; UK business, grocery, Meta, Facebook, Instagram, Supabase, Netlify and CentralHub terms."},turn_detection:{type:"server_vad",threshold:.62,prefix_padding_ms:240,silence_duration_ms:520,create_response:true,interrupt_response:false}},output:{format:{type:"audio/pcm",rate:24000},voice:"marin",speed:1.04}}};
  // The session endpoint is distinct from the websocket connection: expose a
  // model name alongside a short-lived secret so Android uses the SAME model.
  // Never downgrade credentials/billing failures into a different model error.
