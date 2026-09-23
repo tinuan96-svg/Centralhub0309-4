@@ -35,6 +35,7 @@ public final class CentralHubNativeBridge {
     private volatile boolean taraTtsReady = false;
     // Independent voice channel for picking; do not require a Nora conversation.
     private volatile boolean pickingVoiceActive = false;
+    private volatile boolean pickingRecognitionRequested = false;
     private String pendingSpeech = "";
     private String pendingLanguageTag = "en-GB";
 
@@ -140,11 +141,25 @@ public final class CentralHubNativeBridge {
     @JavascriptInterface public boolean isTaraTtsReady() { return taraTtsReady && taraTts != null; }
 
     public boolean isPickingVoiceActive() { return pickingVoiceActive; }
+    public boolean isPickingRecognitionRequested() { return pickingRecognitionRequested; }
+    @JavascriptInterface public boolean isPickingVoiceRecognitionAvailable() { return activity.isTaraVoiceAvailable(); }
 
     @JavascriptInterface
     public void setPickingVoiceActive(boolean active) {
         pickingVoiceActive = active;
+        pickingRecognitionRequested = active;
+        activity.runOnUiThread(() -> {
+            if (active) activity.setNoraConversationActive(false);
+            activity.setTaraEnabled(active);
+        });
         if (!active) stopTaraTts();
+    }
+
+    @JavascriptInterface
+    public void setPickingRecognitionEnabled(boolean enabled) {
+        if (!pickingVoiceActive) return;
+        pickingRecognitionRequested = enabled;
+        activity.runOnUiThread(() -> activity.setTaraEnabled(enabled));
     }
 
     @JavascriptInterface

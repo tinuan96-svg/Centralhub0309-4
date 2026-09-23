@@ -26,6 +26,9 @@ function chooseBestPickingTranscript(result: any) {
   if (!result || typeof result.length !== 'number' || result.length === 0) return '';
 
   let bestText = String(result[0]?.transcript || '').trim();
+  // A correctly heard 'next' must never be overwritten by an alternative 'picked'.
+  const primary = normalizePickingTranscript(bestText);
+  if (PICKING_COMMAND_HINT.test(primary)) return primary;
   let bestScore = Number(result[0]?.confidence || 0);
 
   for (let index = 0; index < result.length; index += 1) {
@@ -35,8 +38,7 @@ function chooseBestPickingTranscript(result: any) {
 
     let score = Number(alternative?.confidence || 0);
     if (PICKING_COMMAND_HINT.test(text)) score += 2;
-    if (PICKED_HOMOPHONE_HINT.test(text)) score += 3;
-    if (/\b(?:picked|pick)\b/i.test(text)) score += 2;
+    if (PICKED_HOMOPHONE_HINT.test(text)) score += 0.25;
 
     if (score > bestScore) {
       bestScore = score;
@@ -68,6 +70,9 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
   const recognitionStartWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechCompletionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nativePickingExclusiveRef = useRef(false);
+  const nativePickingRecognitionRef = useRef(false);
+  const nativePickingListenersRef = useRef<(() => void) | null>(null);
+  const lastNativeTranscriptRef = useRef<{ text: string; at: number }>({ text: '', at: 0 });
   const wakeLockRef = useRef<any>(null);
 
   useEffect(() => {
@@ -110,6 +115,14 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
       if (appBackgroundedRef.current || (typeof document !== 'undefined' && document.visibilityState !== 'visible')) {
         recognitionActiveRef.current = false;
         setIsListening(false);
+        return;
+      }
+
+      if (nativePickingRecognitionRef.current) {
+        // NORA's Android recognizer is the only microphone owner in native picking.
+        try { (window as any).CentralHubNative?.setPickingRecognitionEnabled?.(true); } catch (e) {
+          console.warn('[Voice] Could not restart native picking recognition:', e);
+        }
         return;
       }
 
@@ -302,6 +315,9 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
         recognitionStartWatchdogRef.current = null;
       }
 
+      if (nativePickingRecognitionRef.current) {
+        try { (window as any).CentralHubNative?.setPickingRecognitionEnabled?.(false); } catch (e) {}
+      }
       if (recognitionRef.current) {
         try { recognitionRef.current.abort?.(); } catch (e) {
           try { recognitionRef.current.stop?.(); } catch (stopError) {}
@@ -326,7 +342,7 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
       // recognition object is what caused the red NETWORK ERROR / OFF state shown on
       // Samsung devices after returning to the picking screen.
       if (isListeningRef.current) {
-        if (returningFromBackground || !recognitionRef.current) initRecognition();
+        if (!nativePickingRecognitionRef.current && (returningFromBackground || !recognitionRef.current)) initRecognition();
         setIsListening(false);
         restartRecognitionAfterSpeech(returningFromBackground ? 850 : 500);
       }
@@ -346,7 +362,20 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
       // such as "picked" unreliable on Samsung devices. Pause the passive listener
       // for the picking session, then restore it when the user leaves picking.
       const nativeBridge = (window as any).CentralHubNative;
-      if (nativeBridge?.setTaraEnabled) {
+      if (nativeBridge?.isPickingVoiceRecognitionAvailable?.() === true
+        && typeof nativeBridge.setPickingRecognitionEnabled === 'function'
+        && typeof nativeBridge.setPickingVoiceActive === 'function') {
+        // Reuse NORA's continuous native speech engine instead of running two recognizers.
+        try {
+          nativePickingRecognitionRef.current = true;
+          nativeBridge.setPickingVoiceActive(true);
+          nativePickingExclusiveRef.current = true;
+        } catch (e) {
+          nativePickingRecognitionRef.current = false;
+          console.warn('[Voice] Native picking unavailable; using browser microphone:', e);
+        }
+      }
+      if (!nativePickingRecognitionRef.current && nativeBridge?.setTaraEnabled) {
         try {
           nativeBridge.setTaraEnabled(false);
           // The installed Android bridge only permits speakTara() while its Nora
@@ -368,6 +397,29 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
         }
       }
 
+      const onNativeTranscript = (event: Event) => {
+        if (!nativePickingRecognitionRef.current || !isListeningRef.current || isSpeakingRef.current
+          || appBackgroundedRef.current || document.visibilityState !== 'visible') return;
+        const transcript = normalizePickingTranscript(
+          String((event as CustomEvent<{ text?: string }>).detail?.text || ''),
+        );
+        if (!transcript) return;
+        const now = Date.now();
+        if (lastNativeTranscriptRef.current.text === transcript && now - lastNativeTranscriptRef.current.at < 1050) return;
+        lastNativeTranscriptRef.current = { text: transcript, at: now };
+        setLastCommand(transcript);
+        onCommandRef.current(transcript);
+        window.setTimeout(() => setLastCommand(current => current === transcript ? null : current), 3000);
+      };
+      const onNativeReady = () => {
+        if (nativePickingRecognitionRef.current && isListeningRef.current && !isSpeakingRef.current) setIsListening(true);
+      };
+      window.addEventListener('centralhub:tara-transcript', onNativeTranscript as EventListener);
+      window.addEventListener('centralhub:picking-recognizer-ready', onNativeReady);
+      nativePickingListenersRef.current = () => {
+        window.removeEventListener('centralhub:tara-transcript', onNativeTranscript as EventListener);
+        window.removeEventListener('centralhub:picking-recognizer-ready', onNativeReady);
+      };
       void requestScreenWakeLock();
       document.addEventListener('visibilitychange', handleVisibilityChange);
       window.addEventListener('focus', resumePickingAfterVisibility);
@@ -395,6 +447,8 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
         window.removeEventListener('focus', resumePickingAfterVisibility);
         window.removeEventListener('pageshow', resumePickingAfterVisibility);
         window.removeEventListener('pagehide', suspendPickingForBackground);
+        nativePickingListenersRef.current?.();
+        nativePickingListenersRef.current = null;
         try { window.speechSynthesis?.cancel(); } catch (e) {}
         try { (window as any).CentralHubNative?.stopTaraTts?.(); } catch (e) {}
         if (nativePickingExclusiveRef.current) {
@@ -427,6 +481,16 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
       return;
     }
 
+    if (nativePickingRecognitionRef.current) {
+      try { (window as any).CentralHubNative?.setPickingRecognitionEnabled?.(true); } catch (e) {
+        setError('Unable to start native microphone');
+        setIsListening(false);
+        return;
+      }
+      setIsListening(!isSpeakingRef.current);
+      return;
+    }
+
     // Do not open the recognizer while the initial item prompt is still speaking.
     // This was the startup race that made the button appear enabled but required an
     // Off -> On toggle before Android actually delivered transcripts.
@@ -440,6 +504,9 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
     recognitionActiveRef.current = false;
     if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current);
     if (recognitionStartWatchdogRef.current) clearTimeout(recognitionStartWatchdogRef.current);
+    if (nativePickingRecognitionRef.current) {
+      try { (window as any).CentralHubNative?.setPickingRecognitionEnabled?.(false); } catch (e) {}
+    }
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch(e) {}
     }
@@ -471,7 +538,10 @@ export function useVoicePicking(onCommand: (command: string) => void): VoicePick
       setSpeakingState(false);
       // The user may have enabled listening while TTS was already in progress.
       // Always honor the current intent, not only the state captured before speech.
-      if (isListeningRef.current) restartRecognitionAfterSpeech();
+      if (isListeningRef.current) {
+        if (nativePickingRecognitionRef.current) setIsListening(!appBackgroundedRef.current);
+        else restartRecognitionAfterSpeech();
+      }
     };
 
     setSpeakingState(true);

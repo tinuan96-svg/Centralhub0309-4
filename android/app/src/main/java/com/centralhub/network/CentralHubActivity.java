@@ -62,7 +62,7 @@ public final class CentralHubActivity extends MainActivity {
             "ശ്രുതി", "ശ്രൂതി", "ஸ்ருதி", "ஸ்ரூதி",
             "CentralHub", "MalluSpices", "KeralaGrocery", "PocketGrocery", "TamilRetail",
             "DHL", "WhatsApp", "Supabase", "Netlify", "Google Analytics",
-            "stop", "wait", "pause", "continue", "repeat", "next"
+            "stop", "wait", "pause", "continue", "repeat", "next", "picked", "done", "back", "previous", "resume"
     ));
 
     private final Handler voiceHandler = new Handler(Looper.getMainLooper());
@@ -115,6 +115,8 @@ public final class CentralHubActivity extends MainActivity {
 
     @Override
     public void setTaraEnabled(boolean enabled) {
+        // Respect the picking screen's explicit microphone state, not the global wake UI.
+        if (isPickingVoiceModeActive() && enabled != isPickingRecognitionRequested()) return;
         continuousEnabled = enabled;
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             legacyMode = true;
@@ -282,7 +284,10 @@ public final class CentralHubActivity extends MainActivity {
             recognizer = SpeechRecognizer.createSpeechRecognizer(this);
             if (recognizer == null) return;
             recognizer.setRecognitionListener(new RecognitionListener() {
-                @Override public void onReadyForSpeech(Bundle params) { recognizerListening = true; }
+                @Override public void onReadyForSpeech(Bundle params) {
+                    recognizerListening = true;
+                    dispatchPickingRecognizerReady();
+                }
                 @Override public void onBeginningOfSpeech() { }
                 @Override public void onRmsChanged(float rmsdB) { }
                 @Override public void onBufferReceived(byte[] buffer) { }
@@ -343,6 +348,17 @@ public final class CentralHubActivity extends MainActivity {
 
     private void handleMatches(ArrayList<String> matches, boolean finalResult) {
         if (matches == null || matches.isEmpty()) return;
+        if (isPickingVoiceModeActive()) {
+            if (!isPickingRecognitionRequested() || !finalResult || shruthiSpeaking) return;
+            for (String raw : matches) {
+                if (raw == null || raw.trim().isEmpty()) continue;
+                // Route NORA's native transcription to the picking screen; the existing
+                // deterministic picking workflow alone decides whether a pick is recorded.
+                dispatchDebounced(raw.trim());
+                return;
+            }
+            return;
+        }
         if (shruthiSpeaking) { handleBargeIn(matches); return; }
         for (String raw : matches) {
             String canonical = canonicalize(raw);

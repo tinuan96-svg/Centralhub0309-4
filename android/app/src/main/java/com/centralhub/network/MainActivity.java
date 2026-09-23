@@ -278,6 +278,7 @@ public class MainActivity extends BridgeActivity {
                 taraHandler.removeCallbacks(taraSegmentCommitRunnable);
                 taraSegmentText.setLength(0);
                 taraConsecutiveErrors = 0;
+                dispatchPickingRecognizerReady();
             }
             @Override
             public void onBeginningOfSpeech() {
@@ -444,6 +445,10 @@ public class MainActivity extends BridgeActivity {
 
     private void processNoraRecognitionText(String rawText) {
         if (rawText == null || rawText.trim().isEmpty()) return;
+        if (isPickingVoiceModeActive()) {
+            if (isPickingRecognitionRequested() && !taraSpeaking) dispatchTaraTranscriptDebounced(rawText.trim());
+            return;
+        }
         String canonical = canonicalizeNoraTranscript(rawText);
         String lower = canonical.trim().toLowerCase(Locale.ROOT);
         boolean explicitWake = lower.equals("shruthi") || lower.startsWith("shruthi ");
@@ -706,7 +711,24 @@ public class MainActivity extends BridgeActivity {
         return SpeechRecognizer.isRecognitionAvailable(this);
     }
 
+    public boolean isPickingVoiceModeActive() {
+        return nativeBridge != null && nativeBridge.isPickingVoiceActive();
+    }
+
+    public boolean isPickingRecognitionRequested() {
+        return nativeBridge != null && nativeBridge.isPickingRecognitionRequested();
+    }
+
+    public void dispatchPickingRecognizerReady() {
+        if (!isPickingVoiceModeActive()) return;
+        WebView webView = bridge == null ? null : bridge.getWebView();
+        if (webView == null) return;
+        webView.post(() -> webView.evaluateJavascript("window.dispatchEvent(new CustomEvent('centralhub:picking-recognizer-ready'));", null));
+    }
+
     public void setTaraEnabled(boolean enabled) {
+        // The global NORA wake listener cannot steal microphone ownership during picking.
+        if (isPickingVoiceModeActive() && enabled != isPickingRecognitionRequested()) return;
         boolean wasEnabled = taraEnabled;
         taraEnabled = enabled;
         if (!enabled) {
