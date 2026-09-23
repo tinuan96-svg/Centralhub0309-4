@@ -5,10 +5,12 @@ import PublicLandingNativeRedirect from '@/components/PublicLandingNativeRedirec
 import PublicFeatureShowcase from '@/components/PublicFeatureShowcase';
 import PublicInteractiveDemo from '@/components/PublicInteractiveDemo';
 import PublicAddonCatalog from '@/components/PublicAddonCatalog';
+import PublicRealIntegrationsShowcase from '@/components/PublicRealIntegrationsShowcase';
+import { getPublicFeatureGallery } from '@/lib/publicFeatureGallery';
 
 export const metadata: Metadata = {
   title: 'CentralHub | Business software & interactive demo',
-  description: 'Explore CentralHub business management software, connected sales, stock, finance, marketing and AI tools. Try the interactive sample dashboard.',
+  description: 'Explore CentralHub sales, stock, WhatsApp customer support, Google Ads, GA4, Meta marketing, finance and AI with safe hands-on dashboard demonstrations and feature-screen galleries.',
   alternates: { canonical: 'https://centralhub.network/' },
   openGraph: {
     title: 'CentralHub | Business software & interactive demo',
@@ -47,7 +49,7 @@ export default function Home() {
           <div className="hidden items-center gap-7 text-sm font-medium text-slate-300 md:flex">
             <a href="#platform" className="hover:text-white">Platform</a>
             <a href="#features" className="hover:text-white">Features</a>
-            <a href="#interactive-demo" className="hover:text-white">Live demo</a><a href="#addons" className="hover:text-white">Add-ons</a>
+            <a href="#interactive-demo" className="hover:text-white">Live demo</a><a href="#real-integrations" className="hover:text-white">Integrations</a><a href="#addons" className="hover:text-white">Add-ons</a>
           </div>
           <Link href="/login" className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-cyan-300 px-4 py-2 text-sm font-extrabold text-slate-950 transition hover:bg-cyan-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300">
             <LockKeyhole aria-hidden="true" className="h-4 w-4" /> Sign in <ArrowRight aria-hidden="true" className="h-4 w-4" />
@@ -111,6 +113,7 @@ export default function Home() {
 
       <PublicFeatureShowcase />
       <PublicInteractiveDemo />
+      <PublicRealIntegrationsShowcase items={getPublicFeatureGallery()} />
       <PublicAddonCatalog />
 
       <section id="how-it-works" className="scroll-mt-24 mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
