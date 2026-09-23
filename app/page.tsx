@@ -74,13 +74,14 @@ export default function Home() {
           <div aria-hidden="true" className="pointer-events-none absolute -inset-5 rounded-[2rem] bg-cyan-400/10 blur-3xl" />
           <div className="relative w-full max-w-[440px] overflow-hidden rounded-[1.6rem] border border-cyan-300/20 bg-[#07111f] shadow-[0_25px_100px_rgba(0,0,0,0.45)]">
             <Image
-              src="/nora-secure-access.webp"
+              src="/feature-visuals/nora-secure-original.png"
               alt="Approved NORA CentralHub secure-access design, featuring a glowing blue AI orb and the NORA branding instead of a personal portrait."
-              width={300}
-              height={375}
+              width={1229}
+              height={1536}
               sizes="(max-width: 1024px) min(92vw, 440px), 440px"
               className="block h-auto w-full"
               priority
+              unoptimized
             />
           </div>
           <p className="relative mt-3 text-center text-xs leading-6 text-slate-400">Approved NORA visual · illustrative preview. Sign in using the real button on this page.</p>
