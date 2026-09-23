@@ -31,6 +31,8 @@ interface Product {
   expiry_blocked?: boolean | null;
   audit_hold_status?: string | null;
   price?: number | null;
+  allow_backorder?: boolean | null;
+  backorder?: boolean | null;
 }
 interface Override { store_id: string; product_id: string; is_visible: boolean; }
 
@@ -48,6 +50,7 @@ function tastyEligibility(product: Product) {
   const base = centralEligibility(product);
   if (!base.live) return base;
   if (product.is_deleted) return { live: false, reason: 'Deleted centrally' };
+  if (product.is_active !== true) return { live: false, reason: 'Not active centrally' };
   if (product.expiry_blocked || (product.expiry_date && new Date(product.expiry_date + 'T00:00:00Z').getTime() <= Date.now() + 20 * 86400000)) {
     return { live: false, reason: 'Blocked by the 20-day expiry rule' };
   }
@@ -65,6 +68,7 @@ function tastyEligibility(product: Product) {
     return { live: false, reason: 'SEO title and meta description required' };
   }
   if (!Number.isFinite(Number(product.price)) || Number(product.price) <= 0) return { live: false, reason: 'Valid price required' };
+  if (Number(product.stock ?? 0) <= 0 && !product.allow_backorder && !product.backorder) return { live: false, reason: 'Sellable stock or authorised backorder required' };
   return base;
 }
 
@@ -74,6 +78,7 @@ export default function StoreVisibilityPage() {
   const [overrides, setOverrides] = useState<Override[]>([]);
   const [storeId, setStoreId] = useState('');
   const [query, setQuery] = useState('');
+  const [tastyReadinessFilter, setTastyReadinessFilter] = useState<'all' | 'ready' | 'seo' | 'assigned'>('all');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -85,7 +90,7 @@ export default function StoreVisibilityPage() {
       supabase.from('stores').select('id,name,slug').order('name'),
       supabase
         .from('products')
-        .select('id,name,sku,brand,category,main_category,stock,price,is_active,approval_status,is_published,is_archived,is_deleted,image_main,image_url,image_medium,image_thumbnail,description,rich_description,short_description,seo_title,seo_meta_title,seo_meta_description,expiry_date,expiry_blocked,audit_hold_status')
+        .select('id,name,sku,brand,category,main_category,stock,price,is_active,approval_status,is_published,is_archived,is_deleted,image_main,image_url,image_medium,image_thumbnail,description,rich_description,short_description,seo_title,seo_meta_title,seo_meta_description,expiry_date,expiry_blocked,audit_hold_status,allow_backorder,backorder')
         .eq('is_deleted', false)
         .order('name')
         .limit(2000),
@@ -118,6 +123,11 @@ export default function StoreVisibilityPage() {
   const effectiveVisibleFor = useCallback((product: Product) => eligibilityFor(product).live && allowedFor(product.id), [allowedFor, eligibilityFor]);
 
   const filtered = products.filter(p => {
+    if (isTastyKerala) {
+      if (tastyReadinessFilter === 'ready' && !tastyEligibility(p).live) return false;
+      if (tastyReadinessFilter === 'seo' && (String(p.seo_meta_title || p.seo_title || '').trim() && String(p.seo_meta_description || '').trim())) return false;
+      if (tastyReadinessFilter === 'assigned' && !allowedFor(p.id)) return false;
+    }
     const haystack = `${p.name} ${p.sku || ''} ${p.brand || ''} ${p.category || ''}`.toLowerCase();
     return haystack.includes(query.trim().toLowerCase());
   });
@@ -126,6 +136,8 @@ export default function StoreVisibilityPage() {
   const visibleCount = products.filter(effectiveVisibleFor).length;
   const hiddenHereCount = products.filter(p => eligibilityFor(p).live && !allowedFor(p.id)).length;
   const notLiveCount = products.length - centralLiveCount;
+  const tastyMissingSeoCount = isTastyKerala ? products.filter(p => p.approval_status === 'approved' && p.is_published === true && p.is_active === true && !p.is_archived && !p.is_deleted && (!String(p.seo_meta_title || p.seo_title || '').trim() || !String(p.seo_meta_description || '').trim())).length : 0;
+  const tastyOptedInCount = isTastyKerala ? products.filter(p => allowedFor(p.id)).length : 0;
 
   const setVisibility = async (product: Product, isVisible: boolean) => {
     if (!storeId) return;
@@ -175,6 +187,23 @@ export default function StoreVisibilityPage() {
       </div>
       {isTastyKerala && <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-100">
         Tasty Kerala uses explicit opt-in product assignment. Enabling a product here does not bypass CentralHub approval, required image/category/description/SEO metadata, sellable stock, audit holds or the 20-day expiry block. Its separate Supabase storefront pulls the approved public feed every five minutes. Checkout remains disabled until its own merchant account and launch checks are approved.
+      </div>}
+      {isTastyKerala && <div className="rounded-2xl border border-cyan-500/25 bg-slate-900/70 p-4 space-y-3">
+        <h2 className="text-sm font-black text-slate-100">Tasty Kerala catalogue launch readiness</h2>
+        <p className="text-xs text-slate-400">These counts are based on currently loaded CentralHub products. A product requires both explicit store assignment and all publication rules before its scheduled feed can publish it. No product is automatically approved by this page.</p>
+        <div className="grid grid-cols-2 fold-inner:grid-cols-4 gap-2">
+          <Stat label="Eligible to assign" value={centralLiveCount}/>
+          <Stat label="Missing SEO" value={tastyMissingSeoCount}/>
+          <Stat label="Opted in" value={tastyOptedInCount}/>
+          <Stat label="Eligible & opted in" value={visibleCount}/>
+        </div>
+        <div className="flex gap-2 flex-wrap items-center text-xs">
+          <label htmlFor="tasty-readiness-filter" className="text-slate-400">Show</label>
+          <select id="tasty-readiness-filter" value={tastyReadinessFilter} onChange={e => setTastyReadinessFilter(e.target.value as typeof tastyReadinessFilter)} className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-100">
+            <option value="all">All products</option><option value="ready">Eligible to assign</option><option value="seo">SEO metadata missing</option><option value="assigned">Assigned to Tasty Kerala</option>
+          </select>
+          <span className="text-amber-200">Review SEO and product details before using Allow filtered; checkout remains disabled.</span>
+        </div>
       </div>}
       {error && <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-300">{error}</div>}
 
