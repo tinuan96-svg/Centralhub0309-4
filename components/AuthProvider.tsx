@@ -43,9 +43,9 @@ export default function AuthProvider({children}:{children:React.ReactNode}){
         }
         applySession(current);
         if(current?.user)return;
-        const isAtLogin=pathname==='/login'||pathname==='/login/';
-        if(!isAtLogin){router.replace('/login');const timeout=setTimeout(()=>{if(window.location.pathname!=='/login'&&window.location.pathname!=='/login/')window.location.replace('/login')},2000);return()=>clearTimeout(timeout)}
-      }catch(error){console.error('AuthProvider: Initialization error:',error);const isAtLogin=pathname==='/login'||pathname==='/login/';if(mounted&&!isAtLogin)window.location.replace('/login')}
+        const isAtLogin=pathname==='/login'||pathname==='/login/'||pathname==='/staff-test-verify';
+        if(!isAtLogin){router.replace('/login');const timeout=setTimeout(()=>{if(window.location.pathname!=='/login'&&window.location.pathname!=='/login/'&&window.location.pathname!=='/staff-test-verify')window.location.replace('/login')},2000);return()=>clearTimeout(timeout)}
+      }catch(error){console.error('AuthProvider: Initialization error:',error);const isAtLogin=pathname==='/login'||pathname==='/login/'||pathname==='/staff-test-verify';if(mounted&&!isAtLogin)window.location.replace('/login')}
       finally{if(mounted)setIsLoading(false)}
     };
     initAuth();
@@ -125,7 +125,8 @@ export default function AuthProvider({children}:{children:React.ReactNode}){
 
   const handleSignOut=async()=>{await AuthService.signOut();router.replace('/login')};
   const isAdmin=adminClaim&&verifiedAdminSessionToken===session?.access_token;
-  const isAtLogin=pathname==='/login'||pathname==='/login/';
+  const isProofPage=pathname==='/staff-test-verify';
+  const isAtLogin=pathname==='/login'||pathname==='/login/'||isProofPage;
   const permissions=staffAccess?.active?staffAccess.permissions:[];
   const staffNeedsSetup=isStaff&&(!staffAccess?.active||staffAccess.must_change_password);
   // Staff never mount the existing admin dashboard, sidebar, settings or
@@ -137,6 +138,7 @@ export default function AuthProvider({children}:{children:React.ReactNode}){
   const value={user,session,isLoading:loading,isAdmin,isStaff,staffAccess,permissions,disabledNavKeys,signOut:handleSignOut};
   return <AuthContext.Provider value={value}>{
     !isMounted?<div className="min-h-screen bg-slate-950" aria-busy="true" />:
+    isProofPage?children:
     loading?<div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-white space-y-4"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div><div className="text-center"><p className="text-lg font-bold">CentralHub</p><p className="text-slate-400 text-sm">Securing your session...</p></div></div>:
     (!user&&!isAtLogin?<div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-slate-400 space-y-4"><p>Redirecting to login...</p><button onClick={()=>window.location.href='/login'} className="text-blue-500 hover:underline text-sm">Click here if not redirected</button></div>:
     staffNeedsSetup&&user?<StaffPendingAccess user={user} session={session} signOut={handleSignOut}/>:

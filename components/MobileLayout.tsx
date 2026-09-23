@@ -26,7 +26,7 @@ interface MobileLayoutProps { children: React.ReactNode; }
 
 export default function MobileLayout({ children }: MobileLayoutProps) {
   const pathname = usePathname();
-  const isLoginPage = pathname === '/login';
+  const isLoginPage = pathname === '/login' || pathname === '/staff-test-verify';
   const isDashboard = pathname === '/dashboard';
   const section = pathname.split('/')[1] || 'dashboard';
   const isSupportInbox = pathname.startsWith('/customer-care/inbox') || pathname.startsWith('/customer-care/tickets/chat');

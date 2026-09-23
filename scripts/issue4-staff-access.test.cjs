@@ -15,7 +15,20 @@ vm.runInNewContext(ts.transpileModule(src, {
 }).outputText,{module:moduleObject,exports:moduleObject.exports});
 const catalog=moduleObject.exports;
 
-test('role templates are valid and have no super-admin actions',()=>{
+test('existing-Google-account verification page never converts accounts or exposes live admin workspace',()=>{
+ const auth=read('components/AuthProvider.tsx');
+ const mobile=read('components/MobileLayout.tsx');
+ const page=read('app/staff-test-verify/page.tsx');
+ assert.match(auth,/isProofPage\?children/);
+ assert.match(auth,/pathname==='\/staff-test-verify'/);
+ assert.match(mobile,/pathname === '\/staff-test-verify'/);
+ assert.match(page,/\.auth\.getUser\(\)/);
+ assert.match(page,/signInWithOAuth\(/);
+ assert.match(page,/provider:'google'/);
+ assert.match(page,/window\.location\.origin/);
+ assert.doesNotMatch(page,/auth\.admin|updateUser|createUser|\.from\(|\.rpc\(|staff\.create|fetch\('/);
+});
+\ntest('role templates are valid and have no super-admin actions',()=>{
   const permissions=new Set(catalog.PERMISSION_KEYS);
   assert.ok(permissions.size>40);
   assert.equal(permissions.size,catalog.PERMISSION_KEYS.length,'duplicate permissions');
