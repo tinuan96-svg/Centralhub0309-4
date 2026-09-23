@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import Image from 'next/image';
 import { ArrowRight, BarChart3, Boxes, CheckCircle2, ChevronRight, LayoutDashboard, LockKeyhole, Package, ShieldCheck, ShoppingBag, Sparkles, Truck, Users } from 'lucide-react';
 import PublicLandingNativeRedirect from '@/components/PublicLandingNativeRedirect';
 import PublicFeatureShowcase from '@/components/PublicFeatureShowcase';
@@ -71,43 +72,20 @@ export default function Home() {
           </div>
         </div>
 
-        <div aria-label="Illustrative CentralHub platform preview" className="relative min-w-0">
-          <div aria-hidden="true" className="absolute -inset-3 rounded-[2rem] bg-cyan-400/10 blur-3xl" />
-          <div className="relative overflow-hidden rounded-[1.6rem] border border-cyan-300/20 bg-[#0b1729] shadow-[0_25px_100px_rgba(0,0,0,0.45)]">
-            <div className="flex items-center justify-between gap-2 border-b border-white/10 bg-[#101f34] px-4 py-3">
-              <span className="flex gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-rose-400/70" /><span className="h-2.5 w-2.5 rounded-full bg-amber-300/70" /><span className="h-2.5 w-2.5 rounded-full bg-emerald-300/70" /></span>
-              <span className="text-[10px] font-semibold tracking-widest text-slate-400">CENTRALHUB / OVERVIEW</span>
-              <span className="rounded-md border border-cyan-300/20 px-2 py-1 text-[10px] text-cyan-200">PREVIEW</span>
-            </div>
-            <div className="grid grid-cols-[48px_1fr] sm:grid-cols-[60px_1fr]">
-              <div className="flex flex-col items-center gap-5 border-r border-white/10 bg-[#0b1424] py-6 text-slate-500">
-                {[LayoutDashboard, ShoppingBag, Package, Users, BarChart3].map((Icon,index) => <span key={index} className={index === 0 ? 'rounded-lg bg-cyan-300/10 p-2 text-cyan-300' : 'p-2'}><Icon aria-hidden="true" className="h-4 w-4" /></span>)}
-              </div>
-              <div className="min-w-0 p-4 sm:p-6">
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-300">Command centre</p>
-                <h2 className="mt-1 text-lg font-extrabold text-white">Business overview</h2>
-                <div className="mt-5 grid grid-cols-2 gap-2 sm:gap-3">
-                  {[
-                    { title: 'Sales', icon: ShoppingBag, detail: 'Sales channels' },
-                    { title: 'Orders', icon: Truck, detail: 'Order workflow' },
-                    { title: 'Inventory', icon: Boxes, detail: 'Stock control' },
-                    { title: 'Insights', icon: BarChart3, detail: 'Business reports' },
-                  ].map(({title,icon:Icon,detail}) => (
-                    <div key={title} className="min-w-0 rounded-xl border border-white/10 bg-white/[0.035] p-3 sm:p-4">
-                      <Icon aria-hidden="true" className="mb-3 h-4 w-4 text-cyan-300" /><p className="text-sm font-bold text-white">{title}</p><p className="mt-1 text-[11px] text-slate-400">{detail}</p>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.035] p-4">
-                  <div className="flex items-center justify-between gap-2"><span className="text-xs font-bold text-slate-200">Operational visibility</span><span className="text-[10px] text-slate-400">Across your business</span></div>
-                  <div aria-hidden="true" className="mt-5 flex h-24 items-end gap-2 border-b border-white/10">
-                    {[38,57,42,74,53,83,61,96,67,88,74,100].map((height,index) => <span key={index} className="min-w-0 flex-1 rounded-t-sm bg-gradient-to-t from-sky-700/70 to-cyan-300/80" style={{height: height + '%'}} />)}
-                  </div>
-                </div>
-              </div>
-            </div>
-            <p className="border-t border-white/10 bg-[#091424] px-4 py-3 text-center text-[11px] text-slate-400">Illustrative interface — not live business data</p>
+        <div aria-label="Approved NORA secure-access artwork" className="relative flex min-w-0 flex-col items-center justify-center">
+          <div aria-hidden="true" className="pointer-events-none absolute -inset-5 rounded-[2rem] bg-cyan-400/10 blur-3xl" />
+          <div className="relative w-full max-w-[440px] overflow-hidden rounded-[1.6rem] border border-cyan-300/20 bg-[#07111f] shadow-[0_25px_100px_rgba(0,0,0,0.45)]">
+            <Image
+              src="/nora-secure-access.webp"
+              alt="Approved NORA CentralHub secure-access design, featuring a glowing blue AI orb and the NORA branding instead of a personal portrait."
+              width={300}
+              height={375}
+              sizes="(max-width: 1024px) min(92vw, 440px), 440px"
+              className="block h-auto w-full"
+              priority
+            />
           </div>
+          <p className="relative mt-3 text-center text-xs leading-6 text-slate-400">Approved NORA visual · illustrative preview. Sign in using the real button on this page.</p>
         </div>
       </section>
 
