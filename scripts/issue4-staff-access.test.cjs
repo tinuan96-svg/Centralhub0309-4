@@ -28,7 +28,8 @@ test('existing-Google-account verification page never converts accounts or expos
  assert.match(page,/window\.location\.origin/);
  assert.doesNotMatch(page,/auth\.admin|updateUser|createUser|\.from\(|\.rpc\(|staff\.create|fetch\('/);
 });
-\ntest('role templates are valid and have no super-admin actions',()=>{
+
+test('role templates are valid and have no super-admin actions',()=>{
   const permissions=new Set(catalog.PERMISSION_KEYS);
   assert.ok(permissions.size>40);
   assert.equal(permissions.size,catalog.PERMISSION_KEYS.length,'duplicate permissions');
