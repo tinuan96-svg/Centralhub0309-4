@@ -28,6 +28,7 @@ const TINU_SIGNAL = new RegExp(`\\b${TINU_NAME}\\b`, 'iu');
 const SELF_IDENTITY_PHRASE = new RegExp(`(?:this\\s+is|i\\s+am|i'?m|it\\s+is|its|it's)\\s+${TINU_NAME}\\b`, 'iu');
 const FULL_IDENTITY_PHRASE = new RegExp(`${SHRUTHI_NAME}.*?(?:this\\s+is|i\\s+am|i'?m|it\\s+is|its|it's)\\s+${TINU_NAME}\\b|(?:this\\s+is|i\\s+am|i'?m|it\\s+is|its|it's)\\s+${TINU_NAME}\\b.*?${SHRUTHI_NAME}`, 'iu');
 const WAKE_ONLY = new RegExp(`^(?:hi\\s+|hello\\s+|hey\\s+)?${SHRUTHI_NAME}[.!?\\s]*$`, 'iu');
+const NORA_WAKE = /^(?:(?:hi|hello|hey)\s+)?nora[.!?\s]*$/iu;
 const STOP_PHRASE = /^(?:(?:ok|okay|please|hey)\s+)?(?:stop|stop it|wait|pause|hold on|enough|quiet|shh)(?:\s+(?:please|now))?[.!?\s]*$|^(?:മതി|നിർത്തു|നിർത്തൂ|സ്റ്റോപ്പ്|போதும்|நிறுத்து|ஸ்டாப்)[.!?\s]*$/iu;
 
 function nativeBridge(): NativeSecurityBridge | undefined {
@@ -99,7 +100,7 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
       // and restarted, and repeated resets also make wake recognition less reliable.
       bridge.setTaraEnabled?.(true);
       bridge.setNoraConversationActive?.(true);
-      setStatus((current) => current.includes('verif') ? current : 'Listening · say “Hi Shruthi, this is Tinu”');
+      setStatus((current) => current.includes('verif') ? current : 'Listening · say “Hi Nora”');
     } catch { }
   }, []);
 
@@ -115,7 +116,7 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
     setHeard('');
     setError('');
     setFallback(false);
-    setStatus('Listening · say “Hi Shruthi, this is Tinu”');
+    setStatus('Listening · say “Hi Nora”');
     setGlobalLock(true);
     try { bridge.stopTaraTts?.(); } catch { }
     window.setTimeout(ensureVoiceListening, 40);
@@ -258,6 +259,13 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
 
       if (lockedRef.current) {
         event.stopImmediatePropagation();
+        if (NORA_WAKE.test(text)) {
+          setHeard('');
+          setError('');
+          setStatus('NORA heard · starting secure device verification…');
+          beginSecureVerification();
+          return;
+        }
         const body = text.replace(/^SHRUTHI\s*/i, '').trim();
         const now = Date.now();
         const wakeOnly = /^SHRUTHI[.!?\s]*$/i.test(text) || WAKE_ONLY.test(text);
@@ -271,13 +279,13 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
           return;
         }
 
-        setHeard(body || text);
+        setHeard('Voice activation detected');
 
         if (wakeOnly) {
           identityArmedUntilRef.current = now + IDENTITY_WINDOW_MS;
           setError('');
           setFallback(false);
-          setStatus('Shruthi heard · now say “This is Tinu”');
+          setStatus('NORA heard · secure verification required');
           return;
         }
 
@@ -292,7 +300,7 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
         if (mentionsShruthi) {
           identityArmedUntilRef.current = now + IDENTITY_WINDOW_MS;
           setError('');
-          setStatus('Shruthi heard · say “This is Tinu”');
+          setStatus('NORA heard · secure verification required');
           return;
         }
 
@@ -305,7 +313,7 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
         }
 
         setStatus('Almost there · still listening');
-        setError('Say “Shruthi” then “This is Tinu”, or say the full phrase naturally.');
+        setError('Say “Hi Nora” to start secure device verification, or use Login ID & password.');
         ensureVoiceListening();
         return;
       }
@@ -342,25 +350,23 @@ export default function ShruthiSecurityGate({ children }: { children: React.Reac
   if (!locked || !user) return <>{children}</>;
 
   return (
-    <section className="fixed inset-0 z-[320] overflow-y-auto bg-[#01040a] text-white" aria-label="Shruthi Security Login">
+    <section className="fixed inset-0 z-[320] overflow-y-auto bg-[#01040a] text-white" aria-label="NORA Secure Access">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_28%,rgba(31,137,255,.20),transparent_31%),radial-gradient(circle_at_50%_85%,rgba(18,78,170,.10),transparent_35%)]" />
       <div className="relative mx-auto flex min-h-[100dvh] w-full max-w-3xl flex-col items-center justify-center px-5 py-[max(28px,env(safe-area-inset-top))] text-center">
         <div className="mb-7 flex items-center gap-2 text-sm font-semibold tracking-[0.28em] text-slate-400"><ShieldCheck className="h-4 w-4 text-cyan-300" /> CENTRALHUB SECURE ACCESS</div>
-        <div className="relative h-44 w-44 sm:h-56 sm:w-56">
-          <div className="absolute inset-0 animate-pulse rounded-full border border-cyan-300/20 shadow-[0_0_70px_rgba(61,180,255,.20)]" />
-          <div className="absolute inset-3 rounded-full border border-blue-400/30" />
-          <img src="/shruthi-avatar.png" alt="Shruthi" className="absolute inset-5 h-[calc(100%-2.5rem)] w-[calc(100%-2.5rem)] rounded-full object-cover object-top shadow-2xl" />
+        <div className="relative mx-auto aspect-[2.7] w-full max-w-[680px] overflow-hidden" aria-label="NORA AI assistant artwork">
+          <img src="/nora-secure-access.webp" alt="NORA glowing blue AI orb with holographic light rings" className="pointer-events-none absolute inset-x-0 top-0 h-auto w-full max-w-none select-none" style={{ transform: 'translateY(-7%)' }} draggable={false} />
         </div>
-        <h1 className="mt-7 text-4xl font-light tracking-[0.08em] sm:text-5xl">SHRUTHI</h1>
+        <h1 className="mt-3 text-4xl font-light tracking-[0.08em] sm:text-5xl">NORA</h1>
         <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.38em] text-cyan-300">Security · Identity · Access</p>
 
         <div className="mt-8 w-full max-w-xl rounded-3xl border border-cyan-300/15 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl">
           <div className="flex items-center justify-center gap-2 text-cyan-200"><Mic className="h-5 w-5" /><span className="font-semibold">{status}</span></div>
           <p className="mt-3 text-sm text-slate-400">Say naturally:</p>
-          <p className="mt-1 text-lg font-medium text-white">“Hi Shruthi, this is Tinu.”</p>
-          <p className="mt-1 text-xs text-slate-500">Or: “Shruthi” → “This is Tinu”. Background speech is ignored unless it matches the security phrase.</p>
+          <p className="mt-1 text-lg font-medium text-white">“Hi Nora.”</p>
+          <p className="mt-1 text-xs text-slate-500">Voice activation begins secure device verification. Saying “Hi Nora” alone never unlocks CentralHub.</p>
           {heard && <p className="mt-3 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2 text-xs text-slate-400">Heard: {heard}</p>}
-          <p className="mt-4 text-[11px] leading-relaxed text-slate-500">Shruthi stays silent while listening so her own speaker does not interfere. Android biometric/device credential performs the actual identity verification; speech-to-text alone is not treated as a secure voiceprint.</p>
+          <p className="mt-4 text-[11px] leading-relaxed text-slate-500">NORA stays silent while listening so her own speaker does not interfere. Android biometric/device credential performs the actual identity verification; speech-to-text alone is not treated as a secure voiceprint.</p>
           {error && <p className="mt-3 text-sm text-rose-300">{error}</p>}
 
           <div className="mt-5 grid gap-2 sm:grid-cols-2">

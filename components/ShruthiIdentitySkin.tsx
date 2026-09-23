@@ -28,8 +28,8 @@ export default function ShruthiIdentitySkin() {
         border-radius: inherit;
         pointer-events: none;
         background:
-          linear-gradient(180deg, rgba(3,8,18,.02), rgba(3,8,18,.20)),
-          url('/shruthi-avatar.png') center 30% / cover no-repeat;
+          radial-gradient(circle at 50% 43%, rgba(31,201,255,.55) 0 17%, rgba(29,97,240,.36) 23%, transparent 50%),
+          radial-gradient(circle at 50% 45%, #0f3964 0 29%, #03101e 52%, #01050c 72%);
       }
 
       .nora-orb-core::after {
