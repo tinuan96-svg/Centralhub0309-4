@@ -365,17 +365,23 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
   },[legacySpeak,noraPicking]);
 
   useEffect(()=>{
-    let cancelled=false;
+    let cancelled=false,starting=false;
     const native=(window as any).CentralHubNative;
     const startNora=async()=>{
+      if(cancelled||starting||noraPickingRef.current||document.visibilityState!=='visible')return;
+      starting=true;
+      try{
       if(native?.getPlatform?.()!=='android'||typeof native.startNoraPickingRealtime!=='function')return;
       const {data}=await supabase.auth.getSession();if(cancelled||!data.session?.access_token)return;
       const url=process.env.NEXT_PUBLIC_SUPABASE_URL||'',key=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY||'';if(!url||!key)return;
       setNoraStatus('connecting');
+      // Stop any remaining legacy picking TTS before NORA's realtime voice takes over.
+      try{native.stopTaraTts?.();window.speechSynthesis?.cancel?.();}catch{}
       const started=native.startNoraPickingRealtime(data.session.access_token,url,key)===true;
       if(cancelled){if(started)native.stopNoraPickingRealtime?.();return;}
       if(started){noraPickingRef.current=true;stopListening();setNoraPicking(true);}
       else setNoraStatus('error');
+      }finally{starting=false;}
     };
     const onNoraCommand=(event:Event)=>{
       if(cancelled)return;
@@ -401,12 +407,23 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
     window.addEventListener('centralhub:shruthi-realtime-user-transcript',onNoraCommand);
     window.addEventListener('centralhub:shruthi-realtime-state',onNoraState);
     window.addEventListener('centralhub:shruthi-realtime-error',onNoraError);
+    const onVisibility=()=>{
+      if(document.visibilityState==='visible'){void startNora();return;}
+      // Android destroys the native voice connection when backgrounded.
+      // Release ownership, then reconnect only when this screen is visible again.
+      noraPickingRef.current=false;
+      try{native?.stopNoraPickingRealtime?.();}catch{}
+      setNoraPicking(false);
+      setNoraStatus('idle');
+    };
+    document.addEventListener('visibilitychange',onVisibility);
     void startNora();
     return()=>{
       cancelled=true;noraPickingRef.current=false;
       window.removeEventListener('centralhub:shruthi-realtime-user-transcript',onNoraCommand);
       window.removeEventListener('centralhub:shruthi-realtime-state',onNoraState);
       window.removeEventListener('centralhub:shruthi-realtime-error',onNoraError);
+      document.removeEventListener('visibilitychange',onVisibility);
       try{native?.stopNoraPickingRealtime?.();}catch{}
     };
   },[stopListening,startListening]);
