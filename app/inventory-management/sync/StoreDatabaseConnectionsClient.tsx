@@ -14,12 +14,13 @@ interface StoreRecord {
   created_at?: string | null;
 }
 
-const DIRECT_STORE_CONFIG: Record<string, { label: string; target: string }> = {
+const DIRECT_STORE_CONFIG: Record<string, { label: string; target: string; mode?: string }> = {
   malluspices: { label: 'MalluSpices', target: 'MalluSpices Supabase database' },
   pocketgrocery: { label: 'PocketGrocery', target: 'PocketGrocery Supabase database' },
   keralagrocery: { label: 'KeralaGroceries', target: 'KeralaGroceries Supabase database' },
   keralagroceries: { label: 'KeralaGroceries', target: 'KeralaGroceries Supabase database' },
   tamilretail: { label: 'TamilRetail', target: 'TamilRetail Supabase database' },
+  tastykerala: { label: 'Tasty Kerala', target: 'Tasty Kerala isolated Supabase catalogue', mode: 'Approved-feed sync (5 min)' },
 };
 
 export default function StoreDatabaseConnectionsClient({ params, searchParams }: { params: any; searchParams: any }) {
@@ -110,14 +111,14 @@ export default function StoreDatabaseConnectionsClient({ params, searchParams }:
                   <StoreBadge store={store} size="md" />
                   <span className={`flex items-center gap-1.5 text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${configured ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : 'text-amber-400 bg-amber-500/10 border-amber-500/20'}`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${configured ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
-                    {configured ? 'Direct DB' : 'Needs Mapping'}
+                    {configured ? (config?.mode || 'Direct DB') : 'Needs Mapping'}
                   </span>
                 </div>
 
                 <div className="space-y-4">
                   <div className="flex justify-between gap-4 text-sm">
                     <span className="text-slate-500 font-medium">Connection mode</span>
-                    <span className="text-slate-200 font-semibold text-right">Direct Supabase</span>
+                    <span className="text-slate-200 font-semibold text-right">{config?.mode || 'Direct Supabase'}</span>
                   </div>
                   <div className="flex justify-between gap-4 text-sm">
                     <span className="text-slate-500 font-medium">Database target</span>

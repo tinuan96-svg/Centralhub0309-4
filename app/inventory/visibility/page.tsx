@@ -15,6 +15,22 @@ interface Product {
   approval_status: string | null;
   is_published: boolean | null;
   is_archived: boolean | null;
+  is_deleted?: boolean | null;
+  main_category?: string | null;
+  image_main?: string | null;
+  image_url?: string | null;
+  image_medium?: string | null;
+  image_thumbnail?: string | null;
+  description?: string | null;
+  rich_description?: string | null;
+  short_description?: string | null;
+  seo_title?: string | null;
+  seo_meta_title?: string | null;
+  seo_meta_description?: string | null;
+  expiry_date?: string | null;
+  expiry_blocked?: boolean | null;
+  audit_hold_status?: string | null;
+  price?: number | null;
 }
 interface Override { store_id: string; product_id: string; is_visible: boolean; }
 
@@ -24,6 +40,32 @@ function centralEligibility(product: Product) {
   if (product.is_published !== true) return { live: false, reason: 'Not published centrally' };
   if (product.is_active === false) return { live: false, reason: 'Inactive centrally' };
   return { live: true, reason: 'Central product is live' };
+}
+
+// Tasty Kerala is an independent storefront: opt-IN assignment plus complete CentralHub
+// approval, category/image/description/SEO, pricing and expiry checks are mandatory.
+function tastyEligibility(product: Product) {
+  const base = centralEligibility(product);
+  if (!base.live) return base;
+  if (product.is_deleted) return { live: false, reason: 'Deleted centrally' };
+  if (product.expiry_blocked || (product.expiry_date && new Date(product.expiry_date + 'T00:00:00Z').getTime() <= Date.now() + 20 * 86400000)) {
+    return { live: false, reason: 'Blocked by the 20-day expiry rule' };
+  }
+  if (product.audit_hold_status && !['none', 'released', 'clear'].includes(product.audit_hold_status.toLowerCase())) {
+    return { live: false, reason: 'Inventory audit hold' };
+  }
+  if (!String(product.main_category || product.category || '').trim()) return { live: false, reason: 'Category required' };
+  if (![product.image_main, product.image_url, product.image_medium, product.image_thumbnail].some(s => /^https:\/\//i.test(String(s || '')))) {
+    return { live: false, reason: 'HTTPS product image required' };
+  }
+  if (![product.description, product.rich_description, product.short_description].some(s => String(s || '').trim())) {
+    return { live: false, reason: 'Description required' };
+  }
+  if (!String(product.seo_meta_title || product.seo_title || '').trim() || !String(product.seo_meta_description || '').trim()) {
+    return { live: false, reason: 'SEO title and meta description required' };
+  }
+  if (!Number.isFinite(Number(product.price)) || Number(product.price) <= 0) return { live: false, reason: 'Valid price required' };
+  return base;
 }
 
 export default function StoreVisibilityPage() {
@@ -43,7 +85,7 @@ export default function StoreVisibilityPage() {
       supabase.from('stores').select('id,name,slug').order('name'),
       supabase
         .from('products')
-        .select('id,name,sku,brand,category,stock,is_active,approval_status,is_published,is_archived')
+        .select('id,name,sku,brand,category,main_category,stock,price,is_active,approval_status,is_published,is_archived,is_deleted,image_main,image_url,image_medium,image_thumbnail,description,rich_description,short_description,seo_title,seo_meta_title,seo_meta_description,expiry_date,expiry_blocked,audit_hold_status')
         .eq('is_deleted', false)
         .order('name')
         .limit(2000),
@@ -68,17 +110,21 @@ export default function StoreVisibilityPage() {
     return map;
   }, [overrides, storeId]);
 
-  const allowedFor = useCallback((productId: string) => visibilityMap.get(productId) ?? true, [visibilityMap]);
-  const effectiveVisibleFor = useCallback((product: Product) => centralEligibility(product).live && allowedFor(product.id), [allowedFor]);
+  // Other established stores keep their existing legacy default. Tasty Kerala alone
+  // requires an explicit true assignment; missing rows must NEVER appear allowed.
+  const isTastyKerala = selectedStore?.slug?.toLowerCase() === 'tastykerala';
+  const allowedFor = useCallback((productId: string) => visibilityMap.get(productId) ?? !isTastyKerala, [visibilityMap, isTastyKerala]);
+  const eligibilityFor = useCallback((product: Product) => isTastyKerala ? tastyEligibility(product) : centralEligibility(product), [isTastyKerala]);
+  const effectiveVisibleFor = useCallback((product: Product) => eligibilityFor(product).live && allowedFor(product.id), [allowedFor, eligibilityFor]);
 
   const filtered = products.filter(p => {
     const haystack = `${p.name} ${p.sku || ''} ${p.brand || ''} ${p.category || ''}`.toLowerCase();
     return haystack.includes(query.trim().toLowerCase());
   });
 
-  const centralLiveCount = products.filter(p => centralEligibility(p).live).length;
+  const centralLiveCount = products.filter(p => eligibilityFor(p).live).length;
   const visibleCount = products.filter(effectiveVisibleFor).length;
-  const hiddenHereCount = products.filter(p => centralEligibility(p).live && !allowedFor(p.id)).length;
+  const hiddenHereCount = products.filter(p => eligibilityFor(p).live && !allowedFor(p.id)).length;
   const notLiveCount = products.length - centralLiveCount;
 
   const setVisibility = async (product: Product, isVisible: boolean) => {
@@ -114,7 +160,7 @@ export default function StoreVisibilityPage() {
   };
 
   const statusFor = (product: Product) => {
-    const central = centralEligibility(product);
+    const central = eligibilityFor(product);
     const allowed = allowedFor(product.id);
     if (!central.live) return { label: 'NOT LIVE', tone: 'amber', detail: central.reason, allowed };
     if (!allowed) return { label: 'HIDDEN', tone: 'rose', detail: 'Hidden for this store', allowed };
@@ -127,6 +173,9 @@ export default function StoreVisibilityPage() {
         <h1 className="text-2xl md:text-3xl font-black text-slate-100">Store Product Visibility</h1>
         <p className="text-sm text-slate-400 mt-1">Effective storefront visibility requires central approval, publication and active status plus the store-specific allow/hide override.</p>
       </div>
+      {isTastyKerala && <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-100">
+        Tasty Kerala uses explicit opt-in product assignment. Enabling a product here does not bypass CentralHub approval, required image/category/description/SEO metadata, sellable stock, audit holds or the 20-day expiry block. Its separate Supabase storefront pulls the approved public feed every five minutes. Checkout remains disabled until its own merchant account and launch checks are approved.
+      </div>}
       {error && <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-300">{error}</div>}
 
       <div className="grid grid-cols-2 fold-inner:grid-cols-4 gap-3">
