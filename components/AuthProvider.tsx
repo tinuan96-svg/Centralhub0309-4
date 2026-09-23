@@ -138,7 +138,7 @@ export default function AuthProvider({children}:{children:React.ReactNode}){
 
   const value={user,session,isLoading:loading,isAdmin,isStaff,staffAccess,permissions,disabledNavKeys,signOut:handleSignOut};
   return <AuthContext.Provider value={value}>{
-    !isMounted?<div className="min-h-screen bg-slate-950" aria-busy="true" />:
+    !isMounted?(isPublicLanding?children:<div className="min-h-screen bg-slate-950" aria-busy="true" />):
     isPublicLanding?children:
     isProofPage?children:
     loading?<div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-white space-y-4"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div><div className="text-center"><p className="text-lg font-bold">CentralHub</p><p className="text-slate-400 text-sm">Securing your session...</p></div></div>:
