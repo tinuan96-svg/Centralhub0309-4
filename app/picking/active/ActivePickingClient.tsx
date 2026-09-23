@@ -45,6 +45,7 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
   const [loadError, setLoadError] = useState<string | null>(null);
   const useAI = true;
   const [noraPicking, setNoraPicking] = useState(false);
+  const noraPickingRef=useRef(false);
   const [noraStatus,setNoraStatus]=useState('idle');
   const [noraMicEnabled,setNoraMicEnabled]=useState(true);
   const [noraHeard,setNoraHeard]=useState('');
@@ -373,7 +374,7 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
       setNoraStatus('connecting');
       const started=native.startNoraPickingRealtime(data.session.access_token,url,key)===true;
       if(cancelled){if(started)native.stopNoraPickingRealtime?.();return;}
-      if(started){stopListening();setNoraPicking(true);}
+      if(started){noraPickingRef.current=true;stopListening();setNoraPicking(true);}
       else setNoraStatus('error');
     };
     const onNoraCommand=(event:Event)=>{
@@ -388,6 +389,7 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
     };
     const onNoraError=(event:Event)=>{
       if(cancelled)return;
+      noraPickingRef.current=false;
       setNoraStatus('error');setNoraPicking(false);
       console.warn('[Picking] NORA Live unavailable:',(event as CustomEvent<{message?:string}>).detail?.message);
     };
@@ -396,7 +398,7 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
     window.addEventListener('centralhub:shruthi-realtime-error',onNoraError);
     void startNora();
     return()=>{
-      cancelled=true;
+      cancelled=true;noraPickingRef.current=false;
       window.removeEventListener('centralhub:shruthi-realtime-user-transcript',onNoraCommand);
       window.removeEventListener('centralhub:shruthi-realtime-state',onNoraState);
       window.removeEventListener('centralhub:shruthi-realtime-error',onNoraError);
@@ -522,7 +524,8 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
     fetchOrders();
     // Auto-start assistant
     const timer = setTimeout(() => {
-      startListening();
+      // NORA Live owns the native microphone. Do not reopen legacy recognition.
+      if(!noraPickingRef.current)startListening();
     }, 1500);
 
     return () => {
@@ -639,7 +642,7 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
              {isPaused ? '▶️' : '⏸️'}
           </button>
           <span className="rounded-full border border-cyan-400/40 bg-cyan-500/15 px-3 py-1.5 text-[10px] font-bold text-cyan-200" aria-label="NORA picking mode">
-            {noraPicking?'✦ NORA LIVE':noraStatus==='connecting'?'NORA CONNECTING':noraStatus==='error'?'LOCAL BACKUP':'VOICE PICKING'}
+            {noraPicking?(noraStatus==='listening'||noraStatus==='speaking'?'✦ NORA LIVE':'NORA CONNECTING'):noraStatus==='connecting'?'NORA CONNECTING':noraStatus==='error'?'LOCAL BACKUP':'VOICE PICKING'}
           </span>
         </div>
       </header>
