@@ -385,13 +385,18 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
     const onNoraState=(event:Event)=>{
       if(cancelled)return;
       const state=String((event as CustomEvent<{state?:string}>).detail?.state||'idle');
+      if(state==='idle'&&!noraPickingRef.current)return;
       setNoraStatus(state);
     };
     const onNoraError=(event:Event)=>{
       if(cancelled)return;
       noraPickingRef.current=false;
+      try{native?.stopNoraPickingRealtime?.();}catch{}
       setNoraStatus('error');setNoraPicking(false);
       console.warn('[Picking] NORA Live unavailable:',(event as CustomEvent<{message?:string}>).detail?.message);
+      // The live microphone has been released. Restore the existing local
+      // recognizer so warehouse picking still accepts spoken commands.
+      startListening();
     };
     window.addEventListener('centralhub:shruthi-realtime-user-transcript',onNoraCommand);
     window.addEventListener('centralhub:shruthi-realtime-state',onNoraState);
@@ -404,7 +409,7 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
       window.removeEventListener('centralhub:shruthi-realtime-error',onNoraError);
       try{native?.stopNoraPickingRealtime?.();}catch{}
     };
-  },[stopListening]);
+  },[stopListening,startListening]);
 
   useEffect(()=>{
     if(!noraPicking||noraStatus!=='listening'||!currentItem||announcedNoraIndexRef.current===currentIndex)return;
