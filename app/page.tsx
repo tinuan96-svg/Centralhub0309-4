@@ -11,7 +11,7 @@ import { getPublicFeatureGallery } from '@/lib/publicFeatureGallery';
 
 export const metadata: Metadata = {
   title: 'CentralHub | Business software & interactive demo',
-  description: 'Explore CentralHub sales, stock, WhatsApp customer support, Google Ads, GA4, Meta marketing, finance and AI with safe hands-on dashboard demonstrations and feature-screen galleries.',
+  description: 'Explore CentralHub shipment booking, WhatsApp messaging, NORA AI, voice picking, multistore operations, marketing, VAT, bank reconciliation, inventory and financial reporting.',
   alternates: { canonical: 'https://centralhub.network/' },
   openGraph: {
     title: 'CentralHub | Business software & interactive demo',
@@ -89,10 +89,10 @@ export default function Home() {
         </div>
       </section>
 
+      <PublicAddonCatalog />
       <PublicFeatureShowcase />
       <PublicInteractiveDemo />
       <PublicRealIntegrationsShowcase items={getPublicFeatureGallery()} />
-      <PublicAddonCatalog />
 
       <section id="how-it-works" className="scroll-mt-24 mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
         <div className="max-w-2xl"><p className="text-xs font-bold uppercase tracking-[0.22em] text-cyan-300">How CentralHub works</p><h2 className="mt-3 text-3xl font-black tracking-tight text-white sm:text-4xl">From scattered tools to one connected view</h2></div>
