@@ -1,6 +1,7 @@
 import { ArrowRight, Barcode, BotMessageSquare, BookOpenCheck, CalendarClock, Calculator, ChartNoAxesCombined, ClipboardList, Landmark, Megaphone, MessageCircle, Mic, Sparkles, Store, Truck, CreditCard, Search } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import Image from 'next/image';
+import type { CSSProperties } from 'react';
 
 type Feature = { title: string; description: string; icon: LucideIcon; group: string; image: string; badge: string; alt: string };
 const features: Feature[] = [
@@ -23,6 +24,17 @@ const features: Feature[] = [
   { title: "Finance management", description: "Bring expenses, cashflow, invoices, supplier payables and profitability into one workspace.", icon: ChartNoAxesCombined, group: "Finance", image: "/feature-visuals/finance-management.svg", badge: "FINANCE", alt: "Illustration of sample cashflow chart and financial overview" },
 ];
 
+type PhotoPosition = 'ship' | 'whatsapp' | 'voice' | 'nora';
+const photoPosition: Record<PhotoPosition, string> = { ship: 'left top', whatsapp: 'right top', voice: 'left bottom', nora: 'right bottom' };
+const heroPhotos: PhotoPosition[] = ['ship','whatsapp','voice','nora'];
+const featurePhotos: Partial<Record<string, PhotoPosition>> = {
+  'Unlimited shipment booking': 'ship',
+  'Inbuilt WhatsApp message system': 'whatsapp',
+  'AI customer messaging system': 'whatsapp',
+  'AI voice assistance for order picking': 'voice',
+  'NORA — AI assistance for quick analysis': 'nora',
+};
+
 const highlights = [
   { icon: Truck, title: 'Unlimited Shipment Booking', detail: 'High-volume booking, tracking and customer updates — subject to courier terms and capacity.', image: '/feature-visuals/unlimited-shipment-booking.svg', badge: 'UNLIMITED' },
   { icon: BotMessageSquare, title: 'AI Customer Messaging', detail: 'Integrated WhatsApp inbox and AI-assisted messages with appropriate review.', image: '/feature-visuals/ai-customer-messaging.svg', badge: 'AI-POWERED' },
@@ -38,9 +50,9 @@ export default function PublicAddonCatalog() {
       <p className="mt-5 max-w-4xl text-base leading-8 text-slate-300">From order fulfilment and WhatsApp messaging to NORA, marketing, inventory, banking and accounting, explore the tools that bring your business operations together.</p>
 
       <div className="mt-10 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {highlights.map(({icon:Icon,title,detail,image,badge})=><article key={title} className="group overflow-hidden rounded-2xl border border-cyan-300/20 bg-gradient-to-br from-[#123447] via-[#10243a] to-[#0b1729]">
+        {highlights.map(({icon:Icon,title,detail,image,badge},index)=><article key={title} className="group overflow-hidden rounded-2xl border border-cyan-300/20 bg-gradient-to-br from-[#123447] via-[#10243a] to-[#0b1729]">
           <div className="relative aspect-[16/10] overflow-hidden border-b border-cyan-300/15 bg-[#081827]">
-            <Image src={image} alt={image.endsWith('.webp') ? 'Approved NORA AI artwork' : title + ' feature illustration using fictional sample data'} width={640} height={360} sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 25vw" className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-[1.025]" unoptimized loading="lazy"/>
+            <div role="img" aria-label={title + ' · illustrative promotional image from the approved reference, not a live CentralHub screenshot'} className="h-full w-full transition-transform duration-300 group-hover:scale-[1.025]" style={{backgroundImage:"url('/feature-visuals/feature-photo-sprite.webp')",backgroundRepeat:'no-repeat',backgroundSize:'200% 200%',backgroundPosition:photoPosition[heroPhotos[index]]} as CSSProperties}/>
             <span className="absolute left-3 top-3 rounded-lg border border-cyan-300/35 bg-[#061623]/90 px-2.5 py-1.5 text-[10px] font-black tracking-wide text-cyan-200">{badge}</span>
           </div>
           <div className="p-5">
@@ -59,7 +71,7 @@ export default function PublicAddonCatalog() {
       <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {features.map(({icon:Icon,title,description,group,image,badge,alt})=><article key={title} className="group flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#101f34] transition hover:border-cyan-300/35 hover:bg-[#122b40]">
           <div className="relative aspect-[16/9] w-full overflow-hidden border-b border-white/10 bg-[#071727]">
-            <Image src={image} alt={alt} width={640} height={360} sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw" className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-[1.025]" loading="lazy" unoptimized/>
+            {featurePhotos[title] ? <div role="img" aria-label={title + ' · illustrative promotional image'} className="h-full w-full transition-transform duration-300 group-hover:scale-[1.025]" style={{backgroundImage:"url('/feature-visuals/feature-photo-sprite.webp')",backgroundRepeat:'no-repeat',backgroundSize:'200% 200%',backgroundPosition:photoPosition[featurePhotos[title]!] } as CSSProperties}/> : <Image src={image} alt={alt} width={640} height={360} sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw" className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-[1.025]" loading="lazy" unoptimized/>}
             <span className="absolute left-3 top-3 max-w-[85%] rounded-lg border border-cyan-300/35 bg-[#061623]/90 px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-cyan-200">{badge}</span>
           </div>
           <div className="flex flex-1 flex-col p-5">
@@ -69,7 +81,7 @@ export default function PublicAddonCatalog() {
           </div>
         </article>)}
       </div>
-      <p className="mt-5 text-xs leading-6 text-slate-400">Feature visuals are illustrative UI previews with fictional sample data, not verified screenshots or live integration status. The approved NORA artwork is used without generating a replacement.</p>
+      <p className="mt-5 text-xs leading-6 text-slate-400">Feature visuals are illustrative promotional images and sample UI previews, not verified screenshots of active integrations or real customer information. The featured photos are cropped from the supplied reference; other modules use fictional demo visuals.</p>
       <div className="mt-8 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.045] p-4 text-xs leading-6 text-slate-300">
         <p className="font-bold text-cyan-100">Availability & service limits</p>
         <p className="mt-1">“Unlimited shipment booking” describes a high-volume booking workflow, not unlimited courier capacity or free shipments; actual bookings, charges and service limits depend on the carrier contract. The 25-platform marketing figure is an integration roadmap, not 25 verified live connections; live provider implementations currently focus on Google and Meta. Messaging, banking, customer updates and AI features require applicable accounts, permissions and configuration. Financial outputs may require professional review. Public demos use fictional data.</p>
