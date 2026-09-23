@@ -2,14 +2,17 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ArrowRight, BarChart3, Boxes, CheckCircle2, ChevronRight, LayoutDashboard, LockKeyhole, Package, ShieldCheck, ShoppingBag, Sparkles, Truck, Users } from 'lucide-react';
 import PublicLandingNativeRedirect from '@/components/PublicLandingNativeRedirect';
+import PublicFeatureShowcase from '@/components/PublicFeatureShowcase';
+import PublicInteractiveDemo from '@/components/PublicInteractiveDemo';
+import PublicAddonCatalog from '@/components/PublicAddonCatalog';
 
 export const metadata: Metadata = {
-  title: 'CentralHub | Your business, connected',
-  description: 'Discover CentralHub: one connected workspace for stores, sales, orders, inventory, customers and business insights. Sign in to your secure business application.',
+  title: 'CentralHub | Business software & interactive demo',
+  description: 'Explore CentralHub business management software, connected sales, stock, finance, marketing and AI tools. Try the interactive sample dashboard.',
   alternates: { canonical: 'https://centralhub.network/' },
   openGraph: {
-    title: 'CentralHub | Your business, connected',
-    description: 'Your business operations, connected in one workspace.',
+    title: 'CentralHub | Business software & interactive demo',
+    description: 'Explore the connected business workspace, advanced modules and interactive sample dashboard.',
     url: 'https://centralhub.network/',
     type: 'website',
   },
@@ -44,7 +47,7 @@ export default function Home() {
           <div className="hidden items-center gap-7 text-sm font-medium text-slate-300 md:flex">
             <a href="#platform" className="hover:text-white">Platform</a>
             <a href="#features" className="hover:text-white">Features</a>
-            <a href="#how-it-works" className="hover:text-white">How it works</a>
+            <a href="#interactive-demo" className="hover:text-white">Live demo</a><a href="#addons" className="hover:text-white">Add-ons</a>
           </div>
           <Link href="/login" className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-cyan-300 px-4 py-2 text-sm font-extrabold text-slate-950 transition hover:bg-cyan-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300">
             <LockKeyhole aria-hidden="true" className="h-4 w-4" /> Sign in <ArrowRight aria-hidden="true" className="h-4 w-4" />
@@ -52,14 +55,14 @@ export default function Home() {
         </nav>
       </header>
 
-      <section id="platform" className="mx-auto grid max-w-7xl items-center gap-12 px-4 pb-20 pt-16 sm:px-6 md:pt-24 lg:grid-cols-[1.04fr_0.96fr] lg:gap-12 lg:px-8 lg:pb-28">
+      <section id="hero" className="mx-auto grid max-w-7xl items-center gap-12 px-4 pb-20 pt-16 sm:px-6 md:pt-24 lg:grid-cols-[1.04fr_0.96fr] lg:gap-12 lg:px-8 lg:pb-28">
         <div>
           <p className="mb-6 inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-cyan-300/5 px-3 py-2 text-xs font-bold uppercase tracking-[0.15em] text-cyan-200"><span className="h-2 w-2 rounded-full bg-cyan-300 shadow-[0_0_14px_rgba(103,232,249,0.7)]" /> One connected business workspace</p>
           <h1 className="max-w-2xl text-4xl font-black leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-[3.5rem]">Your entire business. <span className="bg-gradient-to-r from-cyan-300 via-sky-300 to-blue-400 bg-clip-text text-transparent">One powerful hub.</span></h1>
           <p className="mt-6 max-w-xl text-base leading-8 text-slate-300 sm:text-lg">Bring sales, inventory, orders, customers and business insights together. CentralHub gives you a clearer view of your operations, across your business.</p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Link href="/login" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-cyan-300 px-6 py-3 text-sm font-extrabold text-slate-950 transition hover:bg-cyan-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300">Open CentralHub <ArrowRight aria-hidden="true" className="h-4 w-4" /></Link>
-            <a href="#features" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/5 px-6 py-3 text-sm font-bold text-white transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300">Explore features <ChevronRight aria-hidden="true" className="h-4 w-4" /></a>
+            <a href="#interactive-demo" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/5 px-6 py-3 text-sm font-bold text-white transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300">Try interactive demo <ChevronRight aria-hidden="true" className="h-4 w-4" /></a>
           </div>
           <div className="mt-9 flex flex-wrap gap-x-5 gap-y-3 text-sm text-slate-300">
             {['Online & in-store', 'Multi-store visibility', 'Operational insights'].map((item) => <span key={item} className="inline-flex items-center gap-2"><CheckCircle2 aria-hidden="true" className="h-4 w-4 text-cyan-300" />{item}</span>)}
@@ -106,14 +109,9 @@ export default function Home() {
         </div>
       </section>
 
-      <section id="features" className="scroll-mt-24 border-y border-white/10 bg-[#0b1627]/70 py-20">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="max-w-2xl"><p className="text-xs font-bold uppercase tracking-[0.22em] text-cyan-300">Everything in one place</p><h2 className="mt-3 text-3xl font-black tracking-tight text-white sm:text-4xl">Built around the way businesses work</h2><p className="mt-4 leading-7 text-slate-300">From the first sale to the final dispatch, explore the tools that bring operations and teams together.</p></div>
-          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {features.map(({icon:Icon,title,detail}) => <article key={title} className="rounded-2xl border border-white/10 bg-[#101f34] p-6 transition hover:border-cyan-300/30 hover:bg-[#13253c]"><span className="mb-5 inline-flex h-11 w-11 items-center justify-center rounded-xl border border-cyan-300/20 bg-cyan-300/10"><Icon aria-hidden="true" className="h-5 w-5 text-cyan-300" /></span><h3 className="text-lg font-extrabold text-white">{title}</h3><p className="mt-3 text-sm leading-7 text-slate-300">{detail}</p></article>)}
-          </div>
-        </div>
-      </section>
+      <PublicFeatureShowcase />
+      <PublicInteractiveDemo />
+      <PublicAddonCatalog />
 
       <section id="how-it-works" className="scroll-mt-24 mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
         <div className="max-w-2xl"><p className="text-xs font-bold uppercase tracking-[0.22em] text-cyan-300">How CentralHub works</p><h2 className="mt-3 text-3xl font-black tracking-tight text-white sm:text-4xl">From scattered tools to one connected view</h2></div>
