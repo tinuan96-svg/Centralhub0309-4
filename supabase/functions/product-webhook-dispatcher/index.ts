@@ -67,7 +67,17 @@ function buildTargets(): Target[] {
       url: Deno.env.get("POCKET_SUPABASE_URL") ?? "",
       key: Deno.env.get("POCKET_SUPABASE_SERVICE_ROLE_KEY") ?? "",
     },
-  ];
+    {
+      slug: "tastykerala",
+      url: Deno.env.get("TASTY_KERALA_SUPABASE_URL") ?? "",
+      key: Deno.env.get("TASTY_KERALA_SUPABASE_SERVICE_ROLE_KEY") ?? "",
+    },
+  ].filter((target) => {
+    if (target.slug !== "tastykerala") return true;
+    // Tasty Kerala is prepared as a fourth store but remains non-disruptive until
+    // its dedicated service-role secret is configured in CentralHub Edge secrets.
+    return Boolean(target.url && target.key);
+  });
 }
 
 async function isAuthorized(db: any, req: Request) {
