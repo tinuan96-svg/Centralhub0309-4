@@ -75,6 +75,9 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      - name: Public demo isolation and visual parity regression tests
+        run: node --test scripts/public-demo-contract.test.cjs
+
       - name: Typecheck
         run: npx tsc --noEmit
 

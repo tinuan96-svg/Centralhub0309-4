@@ -3,10 +3,11 @@ import { CSSProperties } from 'react';
 import { Banknote, ChartNoAxesCombined, Coins, Package, ShoppingBag, Wallet } from 'lucide-react';
 import { useDashboardFilterStore } from '@/lib/store/dashboardFilterStore';
 import { formatCurrency } from '@/lib/utils/currency';
-import { PeriodSummary, percentChange } from '@/lib/dashboard/reporting';
+import type { PeriodSummary } from '@/lib/dashboard/metrics';
+import { percentChange } from '@/lib/dashboard/metrics';
 
-export default function DashboardKpiGrid({ current, previous, compact = false }: { current: PeriodSummary; previous: PeriodSummary | null; compact?: boolean }) {
-  const { comparisonType } = useDashboardFilterStore();
+/** Shared production KPI renderer: demo passes synthetic figures, never a live report. */
+export function DashboardKpiCards({ current, previous, compact = false, comparisonType = 'none' }: { current: PeriodSummary; previous: PeriodSummary | null; compact?: boolean; comparisonType?: 'previous' | 'lastYear' | 'none' }) {
   const cards = [
     { label: 'Paid order total', value: current.totalRevenue, previous: previous?.totalRevenue, icon: Banknote, colour: '#67e8f9', note: 'Payment-received order total including delivery charged' },
     { label: 'Product subtotal', value: current.productSubtotal, previous: previous?.productSubtotal, icon: Banknote, colour: '#38bdf8', note: 'Product item subtotal only, excluding delivery' },
@@ -26,4 +27,9 @@ export default function DashboardKpiGrid({ current, previous, compact = false }:
       {!compact && <p className="text-xs text-slate-400 leading-relaxed mt-2">{card.note}</p>}
     </article>;
   })}</div>;
+}
+
+export default function DashboardKpiGrid({ current, previous, compact = false }: { current: PeriodSummary; previous: PeriodSummary | null; compact?: boolean }) {
+  const comparisonType = useDashboardFilterStore(state => state.comparisonType);
+  return <DashboardKpiCards current={current} previous={previous} compact={compact} comparisonType={comparisonType} />;
 }

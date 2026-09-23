@@ -11,7 +11,7 @@ type Props = { report: DashboardReport; connection: DashboardConnection; refresh
 
 function readableCount(value: number) { return value.toLocaleString('en-GB'); }
 
-export default function BusinessPulse({ report, connection, refreshError, selectedStoreId, mode = 'pulse' }: Props & { mode?: 'pulse' | 'signals' }) {
+export default function BusinessPulse({ report, connection, refreshError, selectedStoreId, mode = 'pulse', demo = false }: Props & { mode?: 'pulse' | 'signals'; demo?: boolean }) {
   const activity = useMemo(() => {
     const start = report.start.getTime();
     const end = Math.min(report.end.getTime(), report.loadedAt.getTime());
@@ -52,8 +52,8 @@ export default function BusinessPulse({ report, connection, refreshError, select
   const incompleteCosts = report.current.missingCosts > 0;
   const daysCovered = Math.max(1, (Math.min(report.end.getTime(), report.loadedAt.getTime()) - report.start.getTime()) / 86_400_000);
   const isRecent = Date.now() - report.loadedAt.getTime() < 90_000;
-  const live = !refreshError && isRecent && connection === 'connected';
-  const polled = !refreshError && isRecent && connection === 'polling';
+  const live = !demo && !refreshError && isRecent && connection === 'connected';
+  const polled = !demo && !refreshError && isRecent && connection === 'polling';
   const top = report.products.slice(0, 3);
   // This is realised paid-unit pace, not a forecast or a purchase quantity.
   const lowStockDetail = movingLowStock.slice(0, 3).map(product => ({
@@ -81,7 +81,7 @@ export default function BusinessPulse({ report, connection, refreshError, select
       </div>
       <div className="ch-business-source" data-live={live || polled} title={'Report sampled ' + report.loadedAt.toLocaleTimeString('en-GB')}>
         <span className="ch-business-source-dot" />
-        <span>{live ? 'Live · 30s checks' : polled ? '30s checks' : connection === 'offline' ? 'Offline · cached' : connection === 'paused' ? 'Paused · cached' : 'Refresh delayed'}</span>
+        <span>{demo ? 'Demo data · simulated' : live ? 'Live · 30s checks' : polled ? '30s checks' : connection === 'offline' ? 'Offline · cached' : connection === 'paused' ? 'Paused · cached' : 'Refresh delayed'}</span>
         <small>Sampled {report.loadedAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</small>
       </div>
     </div>
