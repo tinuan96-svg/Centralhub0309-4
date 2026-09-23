@@ -20,14 +20,9 @@ type NativeSecurityBridge = {
 
 type TranscriptEvent = CustomEvent<{ text?: string }>;
 
-const IDENTITY_WINDOW_MS = 10_000;
-const SHRUTHI_NAME = '(?:shruthi|shruti|sruthi|sruti|shrudhi|srudhi|shroothi|shrooti|sudhi|sudi|suthi|shudi|shuti|sweetie|sweety|ശ്രുതി|ശ്രൂതി|ஸ்ருதி|ஸ்ரூதி)';
-const TINU_NAME = '(?:tinu|tino|teenu|tenu|jinu|jino|ginu|chino|cheenu)';
-const SHRUTHI_SIGNAL = new RegExp(SHRUTHI_NAME, 'iu');
-const TINU_SIGNAL = new RegExp(`\\b${TINU_NAME}\\b`, 'iu');
-const SELF_IDENTITY_PHRASE = new RegExp(`(?:this\\s+is|i\\s+am|i'?m|it\\s+is|its|it's)\\s+${TINU_NAME}\\b`, 'iu');
-const FULL_IDENTITY_PHRASE = new RegExp(`${SHRUTHI_NAME}.*?(?:this\\s+is|i\\s+am|i'?m|it\\s+is|its|it's)\\s+${TINU_NAME}\\b|(?:this\\s+is|i\\s+am|i'?m|it\\s+is|its|it's)\\s+${TINU_NAME}\\b.*?${SHRUTHI_NAME}`, 'iu');
-const WAKE_ONLY = new RegExp(`^(?:hi\\s+|hello\\s+|hey\\s+)?${SHRUTHI_NAME}[.!?\\s]*$`, 'iu');
+// Wake-up speech only starts the existing protected-session and device
+// verification flow. It never authenticates or bypasses Supabase access.
+const NORA_WAKE = /^(?:(?:hi|hello|hey)\s+)?nora[.!?\s]*$/iu;
 
 function bridge(): NativeSecurityBridge | undefined {
   if (typeof window === 'undefined') return undefined;
@@ -49,12 +44,11 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
   const [selectedStoreId, setSelectedStoreId] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [status, setStatus] = useState('Listening · say “Hi Shruthi, this is Tinu”');
+  const [status, setStatus] = useState('Listening · say “Hi Nora”');
   const [heard, setHeard] = useState('');
   const [fallbackVisible, setFallbackVisible] = useState(false);
   const [staffLoginSelected, setStaffLoginSelected] = useState(false);
   const verifyTimerRef = useRef<number | null>(null);
-  const identityArmedUntilRef = useRef(0);
   const router = useRouter();
 
   const clearVerifyPoll = useCallback(() => {
@@ -71,7 +65,7 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
       // are intentionally idempotent in the native bridge.
       native.setTaraEnabled?.(true);
       native.setNoraConversationActive?.(true);
-      setStatus((current) => current.includes('verif') ? current : 'Listening · say “Hi Shruthi, this is Tinu”');
+      setStatus((current) => current.includes('verif') ? current : 'Listening · say “Hi Nora”');
     } catch { }
   }, []);
 
@@ -108,7 +102,7 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
     const { data } = await supabase.auth.getSession();
     const session = data.session;
     if (!session?.user) {
-      setStatus('Voice accepted · secure login required');
+      setStatus('NORA heard · secure login required');
       setFallbackVisible(true);
       return;
     }
@@ -123,7 +117,7 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
       return;
     }
 
-    setStatus('Voice accepted · verifying device identity…');
+    setStatus('NORA heard · verifying device identity…');
     clearVerifyPoll();
     const startedAt = Date.now();
     verifyTimerRef.current = window.setInterval(() => {
@@ -148,7 +142,7 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
       }
 
       setStatus('Identity verification did not complete · listening again');
-      setError('Try the phrase again or use your login ID and password.');
+      setError('Try again or use your login ID and password.');
       setFallbackVisible(true);
       ensureVoiceListening();
     }, 250);
@@ -160,55 +154,12 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
       if (!text) return;
       event.stopImmediatePropagation();
 
-      const body = text.replace(/^SHRUTHI\s*/i, '').trim();
-      const now = Date.now();
-      const wakeOnly = /^SHRUTHI[.!?\s]*$/i.test(text) || WAKE_ONLY.test(text);
-      const fullIdentity = FULL_IDENTITY_PHRASE.test(text);
-      const followUpIdentity = now < identityArmedUntilRef.current && SELF_IDENTITY_PHRASE.test(body || text);
-      const mentionsShruthi = /SHRUTHI/i.test(text) || SHRUTHI_SIGNAL.test(text);
-      const mentionsTinu = TINU_SIGNAL.test(text);
-
-      if (!mentionsShruthi && !mentionsTinu && !followUpIdentity) {
-        setStatus('Listening · focused on your security phrase');
-        return;
-      }
-
-      setHeard(body || text);
-
-      if (wakeOnly) {
-        identityArmedUntilRef.current = now + IDENTITY_WINDOW_MS;
-        setError('');
-        setFallbackVisible(false);
-        setStatus('Shruthi heard · now say “This is Tinu”');
-        return;
-      }
-
-      if (fullIdentity || followUpIdentity) {
-        identityArmedUntilRef.current = 0;
-        setError('');
-        setStatus('Voice activation accepted');
-        void completeReturningUserUnlock();
-        return;
-      }
-
-      if (mentionsShruthi) {
-        identityArmedUntilRef.current = now + IDENTITY_WINDOW_MS;
-        setError('');
-        setStatus('Shruthi heard · say “This is Tinu”');
-        return;
-      }
-
-      if (mentionsTinu && now < identityArmedUntilRef.current) {
-        identityArmedUntilRef.current = 0;
-        setError('');
-        setStatus('Identity heard · starting secure verification…');
-        void completeReturningUserUnlock();
-        return;
-      }
-
-      setStatus('Almost there · still listening');
-      setError('Say “Shruthi” then “This is Tinu”, or say the full phrase naturally.');
-      ensureVoiceListening();
+      if (!NORA_WAKE.test(text)) return;
+      setHeard('');
+      setError('');
+      setStatus('NORA heard · starting secure device verification…');
+      // Existing session and Android biometric/device credential are mandatory.
+      void completeReturningUserUnlock();
     };
 
     window.addEventListener('centralhub:tara-transcript', onTranscript as EventListener, true);
@@ -282,20 +233,24 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
       <section className="relative mx-auto flex min-h-[calc(100dvh-52px)] w-full max-w-2xl flex-col items-center justify-center text-center">
         <div className="mb-6 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.30em] text-slate-400"><ShieldCheck className="h-4 w-4 text-cyan-300" /> CentralHub Secure Access</div>
 
-        <div className="relative h-44 w-44 sm:h-52 sm:w-52">
-          <div className="absolute inset-0 animate-pulse rounded-full border border-cyan-300/20 shadow-[0_0_80px_rgba(45,167,255,.22)]" />
-          <div className="absolute inset-3 rounded-full border border-blue-400/30" />
-          <img src="/shruthi-avatar.png" alt="Shruthi" className="absolute inset-5 h-[calc(100%-2.5rem)] w-[calc(100%-2.5rem)] rounded-full object-cover object-top shadow-2xl" />
+        <div className="relative mx-auto aspect-[2.7] w-full max-w-[680px] overflow-hidden" aria-label="NORA artificial intelligence assistant artwork">
+          <img
+            src="/nora-secure-access.webp"
+            alt="NORA glowing blue AI orb with holographic light rings"
+            className="pointer-events-none absolute inset-x-0 top-0 h-auto w-full max-w-none select-none"
+            style={{ transform: 'translateY(-7%)' }}
+            draggable={false}
+          />
         </div>
 
-        <h1 className="mt-6 text-4xl font-light tracking-[0.08em] sm:text-5xl">SHRUTHI</h1>
+        <h1 className="mt-3 text-4xl font-light tracking-[0.08em] sm:text-5xl">NORA</h1>
         <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.38em] text-cyan-300">Security · Identity · Access</p>
 
         <div className="mt-7 w-full rounded-3xl border border-cyan-300/15 bg-slate-950/75 p-5 shadow-2xl backdrop-blur-xl sm:p-6">
           <div className="flex items-center justify-center gap-2 text-cyan-100"><Mic className="h-5 w-5" /><span className="font-semibold">{status}</span></div>
           <p className="mt-3 text-sm text-slate-400">Say naturally:</p>
-          <p className="mt-1 text-lg font-medium">“Hi Shruthi, this is Tinu.”</p>
-          <p className="mt-1 text-xs text-slate-500">Shruthi stays silent while listening so her own speaker does not interfere.</p>
+          <p className="mt-1 text-lg font-medium">“Hi Nora.”</p>
+          <p className="mt-1 text-xs text-slate-500">NORA stays silent while listening so her own speaker does not interfere.</p>
           {heard && <p className="mt-3 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2 text-xs text-slate-400">Heard: {heard}</p>}
           <p className="mx-auto mt-4 max-w-lg text-[11px] leading-relaxed text-slate-500">Background speech without your security markers is ignored. For returning sessions, Android biometric/device credential confirms identity before CentralHub opens.</p>
           {error && <p className="mt-3 text-sm text-rose-300">{error}</p>}
@@ -367,7 +322,7 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
           )}
         </div>
 
-        <div className="mt-5 flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] text-slate-600"><LockKeyhole className="h-3.5 w-3.5" /> Shruthi remains the access gate whenever CentralHub starts</div>
+        <div className="mt-5 flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] text-slate-600"><LockKeyhole className="h-3.5 w-3.5" /> NORA remains the access gate whenever CentralHub starts</div>
       </section>
     </main>
   );
