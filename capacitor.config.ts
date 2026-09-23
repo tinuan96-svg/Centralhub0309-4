@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: 'CentralHub',
   webDir: 'out',
   server: {
-    url: 'https://centralhub.network',
+    url: 'https://centralhub.network/login',
     cleartext: false,
   },
 };

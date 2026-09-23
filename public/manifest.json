@@ -2,7 +2,7 @@
   "name": "CentralHub Admin",
   "short_name": "CentralHub",
   "description": "Multi-Store E-commerce Management System",
-  "start_url": "/",
+  "start_url": "/login",
   "display": "standalone",
   "background_color": "#0D1117",
   "theme_color": "#0D1117",

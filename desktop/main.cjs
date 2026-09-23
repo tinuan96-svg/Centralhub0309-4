@@ -1,7 +1,7 @@
 const { app, BrowserWindow, Tray, Menu, nativeImage, shell, session } = require('electron');
 const path = require('path');
 
-const APP_URL = 'https://centralhub.network';
+const APP_URL = 'https://centralhub.network/login';
 const PARTITION = 'persist:centralhub-windows';
 let mainWindow = null;
 let tray = null;

@@ -1,18 +1,135 @@
-'use client';
+import type { Metadata } from 'next';
+import Link from 'next/link';
+import { ArrowRight, BarChart3, Boxes, CheckCircle2, ChevronRight, LayoutDashboard, LockKeyhole, Package, ShieldCheck, ShoppingBag, Sparkles, Truck, Users } from 'lucide-react';
+import PublicLandingNativeRedirect from '@/components/PublicLandingNativeRedirect';
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+export const metadata: Metadata = {
+  title: 'CentralHub | Your business, connected',
+  description: 'Discover CentralHub: one connected workspace for stores, sales, orders, inventory, customers and business insights. Sign in to your secure business application.',
+  alternates: { canonical: 'https://centralhub.network/' },
+  openGraph: {
+    title: 'CentralHub | Your business, connected',
+    description: 'Your business operations, connected in one workspace.',
+    url: 'https://centralhub.network/',
+    type: 'website',
+  },
+};
+
+const features = [
+  { icon: ShoppingBag, title: 'Online & in-store sales', detail: 'Bring your sales channels and everyday operations into a connected workspace.' },
+  { icon: Boxes, title: 'Inventory & purchasing', detail: 'Track stock availability, suppliers and purchase planning across your stores.' },
+  { icon: Truck, title: 'Orders & fulfilment', detail: 'Keep orders organised through picking, packing and dispatch.' },
+  { icon: Users, title: 'Customers & support', detail: 'Keep customer details and conversations close to your operational workflows.' },
+  { icon: BarChart3, title: 'Business insights', detail: 'View operational trends and performance to support better decisions.' },
+  { icon: Sparkles, title: 'AI assistance', detail: 'Use intelligent assistance to help surface insights and manage workflows.' },
+];
+
+const steps = [
+  { index: '01', title: 'Connect your business', detail: 'Bring the stores and workflows you manage into one place.' },
+  { index: '02', title: 'Run day-to-day operations', detail: 'Work with orders, stock, products and customers from one workspace.' },
+  { index: '03', title: 'See the bigger picture', detail: 'Review connected insights to understand what needs attention.' },
+];
 
 export default function Home() {
-  const router = useRouter();
-
-  useEffect(() => {
-    router.replace('/dashboard');
-  }, [router]);
-
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-400 flex items-center justify-center">
-      <p className="text-sm">Opening CentralHub...</p>
+    <main className="relative isolate min-h-[100dvh] overflow-x-hidden overflow-y-auto bg-[#07111f] text-slate-100">
+      <PublicLandingNativeRedirect />
+      <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[850px] bg-[radial-gradient(ellipse_at_75%_28%,rgba(8,145,178,0.2),transparent_46%),radial-gradient(ellipse_at_20%_5%,rgba(59,130,246,0.15),transparent_48%)]" />
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#07111f]/90 backdrop-blur-xl">
+        <nav aria-label="Main navigation" className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
+          <Link href="/" aria-label="CentralHub homepage" className="flex shrink-0 items-center gap-2.5 text-white">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-300/25 bg-cyan-300/10 shadow-[0_0_25px_rgba(34,211,238,0.12)]"><LayoutDashboard aria-hidden="true" className="h-5 w-5 text-cyan-300" /></span>
+            <span className="text-xl font-black tracking-tight">Central<span className="text-cyan-300">Hub</span></span>
+          </Link>
+          <div className="hidden items-center gap-7 text-sm font-medium text-slate-300 md:flex">
+            <a href="#platform" className="hover:text-white">Platform</a>
+            <a href="#features" className="hover:text-white">Features</a>
+            <a href="#how-it-works" className="hover:text-white">How it works</a>
+          </div>
+          <Link href="/login" className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-cyan-300 px-4 py-2 text-sm font-extrabold text-slate-950 transition hover:bg-cyan-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300">
+            <LockKeyhole aria-hidden="true" className="h-4 w-4" /> Sign in <ArrowRight aria-hidden="true" className="h-4 w-4" />
+          </Link>
+        </nav>
+      </header>
+
+      <section id="platform" className="mx-auto grid max-w-7xl items-center gap-12 px-4 pb-20 pt-16 sm:px-6 md:pt-24 lg:grid-cols-[1.04fr_0.96fr] lg:gap-12 lg:px-8 lg:pb-28">
+        <div>
+          <p className="mb-6 inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-cyan-300/5 px-3 py-2 text-xs font-bold uppercase tracking-[0.15em] text-cyan-200"><span className="h-2 w-2 rounded-full bg-cyan-300 shadow-[0_0_14px_rgba(103,232,249,0.7)]" /> One connected business workspace</p>
+          <h1 className="max-w-2xl text-4xl font-black leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-[3.5rem]">Your entire business. <span className="bg-gradient-to-r from-cyan-300 via-sky-300 to-blue-400 bg-clip-text text-transparent">One powerful hub.</span></h1>
+          <p className="mt-6 max-w-xl text-base leading-8 text-slate-300 sm:text-lg">Bring sales, inventory, orders, customers and business insights together. CentralHub gives you a clearer view of your operations, across your business.</p>
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <Link href="/login" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-cyan-300 px-6 py-3 text-sm font-extrabold text-slate-950 transition hover:bg-cyan-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300">Open CentralHub <ArrowRight aria-hidden="true" className="h-4 w-4" /></Link>
+            <a href="#features" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/5 px-6 py-3 text-sm font-bold text-white transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300">Explore features <ChevronRight aria-hidden="true" className="h-4 w-4" /></a>
+          </div>
+          <div className="mt-9 flex flex-wrap gap-x-5 gap-y-3 text-sm text-slate-300">
+            {['Online & in-store', 'Multi-store visibility', 'Operational insights'].map((item) => <span key={item} className="inline-flex items-center gap-2"><CheckCircle2 aria-hidden="true" className="h-4 w-4 text-cyan-300" />{item}</span>)}
+          </div>
+        </div>
+
+        <div aria-label="Illustrative CentralHub platform preview" className="relative min-w-0">
+          <div aria-hidden="true" className="absolute -inset-3 rounded-[2rem] bg-cyan-400/10 blur-3xl" />
+          <div className="relative overflow-hidden rounded-[1.6rem] border border-cyan-300/20 bg-[#0b1729] shadow-[0_25px_100px_rgba(0,0,0,0.45)]">
+            <div className="flex items-center justify-between gap-2 border-b border-white/10 bg-[#101f34] px-4 py-3">
+              <span className="flex gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-rose-400/70" /><span className="h-2.5 w-2.5 rounded-full bg-amber-300/70" /><span className="h-2.5 w-2.5 rounded-full bg-emerald-300/70" /></span>
+              <span className="text-[10px] font-semibold tracking-widest text-slate-400">CENTRALHUB / OVERVIEW</span>
+              <span className="rounded-md border border-cyan-300/20 px-2 py-1 text-[10px] text-cyan-200">PREVIEW</span>
+            </div>
+            <div className="grid grid-cols-[48px_1fr] sm:grid-cols-[60px_1fr]">
+              <div className="flex flex-col items-center gap-5 border-r border-white/10 bg-[#0b1424] py-6 text-slate-500">
+                {[LayoutDashboard, ShoppingBag, Package, Users, BarChart3].map((Icon,index) => <span key={index} className={index === 0 ? 'rounded-lg bg-cyan-300/10 p-2 text-cyan-300' : 'p-2'}><Icon aria-hidden="true" className="h-4 w-4" /></span>)}
+              </div>
+              <div className="min-w-0 p-4 sm:p-6">
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-300">Command centre</p>
+                <h2 className="mt-1 text-lg font-extrabold text-white">Business overview</h2>
+                <div className="mt-5 grid grid-cols-2 gap-2 sm:gap-3">
+                  {[
+                    { title: 'Sales', icon: ShoppingBag, detail: 'Sales channels' },
+                    { title: 'Orders', icon: Truck, detail: 'Order workflow' },
+                    { title: 'Inventory', icon: Boxes, detail: 'Stock control' },
+                    { title: 'Insights', icon: BarChart3, detail: 'Business reports' },
+                  ].map(({title,icon:Icon,detail}) => (
+                    <div key={title} className="min-w-0 rounded-xl border border-white/10 bg-white/[0.035] p-3 sm:p-4">
+                      <Icon aria-hidden="true" className="mb-3 h-4 w-4 text-cyan-300" /><p className="text-sm font-bold text-white">{title}</p><p className="mt-1 text-[11px] text-slate-400">{detail}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.035] p-4">
+                  <div className="flex items-center justify-between gap-2"><span className="text-xs font-bold text-slate-200">Operational visibility</span><span className="text-[10px] text-slate-400">Across your business</span></div>
+                  <div aria-hidden="true" className="mt-5 flex h-24 items-end gap-2 border-b border-white/10">
+                    {[38,57,42,74,53,83,61,96,67,88,74,100].map((height,index) => <span key={index} className="min-w-0 flex-1 rounded-t-sm bg-gradient-to-t from-sky-700/70 to-cyan-300/80" style={{height: height + '%'}} />)}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p className="border-t border-white/10 bg-[#091424] px-4 py-3 text-center text-[11px] text-slate-400">Illustrative interface — not live business data</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="features" className="scroll-mt-24 border-y border-white/10 bg-[#0b1627]/70 py-20">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="max-w-2xl"><p className="text-xs font-bold uppercase tracking-[0.22em] text-cyan-300">Everything in one place</p><h2 className="mt-3 text-3xl font-black tracking-tight text-white sm:text-4xl">Built around the way businesses work</h2><p className="mt-4 leading-7 text-slate-300">From the first sale to the final dispatch, explore the tools that bring operations and teams together.</p></div>
+          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {features.map(({icon:Icon,title,detail}) => <article key={title} className="rounded-2xl border border-white/10 bg-[#101f34] p-6 transition hover:border-cyan-300/30 hover:bg-[#13253c]"><span className="mb-5 inline-flex h-11 w-11 items-center justify-center rounded-xl border border-cyan-300/20 bg-cyan-300/10"><Icon aria-hidden="true" className="h-5 w-5 text-cyan-300" /></span><h3 className="text-lg font-extrabold text-white">{title}</h3><p className="mt-3 text-sm leading-7 text-slate-300">{detail}</p></article>)}
+          </div>
+        </div>
+      </section>
+
+      <section id="how-it-works" className="scroll-mt-24 mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
+        <div className="max-w-2xl"><p className="text-xs font-bold uppercase tracking-[0.22em] text-cyan-300">How CentralHub works</p><h2 className="mt-3 text-3xl font-black tracking-tight text-white sm:text-4xl">From scattered tools to one connected view</h2></div>
+        <div className="mt-10 grid gap-4 md:grid-cols-3">
+          {steps.map(step => <div key={step.index} className="rounded-2xl border border-white/10 bg-white/[0.035] p-6"><span className="text-3xl font-black text-cyan-300/70">{step.index}</span><h3 className="mt-5 text-lg font-extrabold text-white">{step.title}</h3><p className="mt-3 text-sm leading-7 text-slate-300">{step.detail}</p></div>)}
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-4 pb-20 sm:px-6 lg:px-8">
+        <div className="flex flex-col items-start justify-between gap-6 rounded-3xl border border-cyan-300/20 bg-gradient-to-br from-[#12374b] via-[#10273f] to-[#0b1a2c] p-7 sm:p-10 md:flex-row md:items-center">
+          <div className="max-w-xl"><p className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-cyan-200"><ShieldCheck aria-hidden="true" className="h-4 w-4" /> Private business workspace</p><h2 className="mt-3 text-2xl font-black tracking-tight text-white sm:text-3xl">Ready to open your CentralHub?</h2><p className="mt-3 leading-7 text-slate-200">Your operational dashboard and business information stay behind your existing secure sign-in.</p></div>
+          <Link href="/login" className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-cyan-300 px-6 py-3 text-sm font-extrabold text-slate-950 transition hover:bg-cyan-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300">Sign in securely <ArrowRight aria-hidden="true" className="h-4 w-4" /></Link>
+        </div>
+      </section>
+
+      <footer className="border-t border-white/10 bg-[#071120]"><div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-8 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8"><span className="font-bold text-slate-200">Central<span className="text-cyan-300">Hub</span></span><span>One connected workspace for your business.</span><Link href="/login" className="inline-flex min-h-10 items-center gap-2 text-cyan-200 hover:text-white">Application login <ArrowRight aria-hidden="true" className="h-4 w-4" /></Link></div></footer>
     </main>
   );
 }
