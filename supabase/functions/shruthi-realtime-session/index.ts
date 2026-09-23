@@ -7,6 +7,7 @@ Deno.serve(async(req:Request)=>{
  if(req.method!=="POST")return json({error:"method_not_allowed"},405);
  const requestBody=await req.json().catch(()=>({}));
  const liveWebSessionId=String((requestBody as any)?.live_web_session_id||"").trim();
+ const pickingMode=String((requestBody as any)?.mode||"").trim().toLowerCase()==="picking";
  const supabaseUrl=Deno.env.get("SUPABASE_URL")||"",serviceRole=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")||"",authorization=req.headers.get("Authorization")||"";
  if(!supabaseUrl||!serviceRole||!authorization.startsWith("Bearer "))return json({error:"service_not_configured"},503);
  const admin=createClient(supabaseUrl,serviceRole,{auth:{persistSession:false,autoRefreshToken:false}});
@@ -98,6 +99,7 @@ Deno.serve(async(req:Request)=>{
    contextText=JSON.stringify(sessionContext);
  }
  const model="gpt-realtime-1.5";
+ const pickingInstructions=pickingMode?`\n\nPICKING MODE:\n- You are the same Shruthi/NORA assistant, now embedded in CentralHub warehouse picking.\n- Stay hands-free and concise. Understand short commands such as picked, done, next, skip, back, previous, repeat, pause and resume, including natural Malayalam/English code-switching.\n- The picking screen, not the model, is authoritative for recording quantities, advancing items and completing orders. Never claim an item was recorded unless the screen workflow confirms it.\n- For ordinary picking commands, respond with at most a few words. Do not start unrelated executive-assistant conversations while picking.\n- If the user asks an unrelated question, answer briefly, then return focus to the current pick.\n`:"";
  const instructions=`You are Shruthi, the current user's private AI managing partner inside the CentralHub Android app.
 Speak naturally, warmly and concisely with highly responsive human-like timing. Use short conversational turns unless detail is requested. The user may speak English, Malayalam, Tamil, or switch between them; understand code-switching naturally and reply in the language/style the user is using.
 
@@ -134,9 +136,10 @@ CONVERSATION:
 - Avoid repetitive greetings and filler.
 - There is one Shruthi behaviour/persona only. Do not switch between professional, friendly, executive, board, developer or other personality modes.
 
+${pickingInstructions}
 CENTRALHUB CONTEXT:
 ${contextText}`
- const configuredSession={type:"realtime",model,output_modalities:["audio"],instructions,max_output_tokens:600,audio:{input:{format:{type:"audio/pcm",rate:24000},noise_reduction:{type:"near_field"},transcription:{model:"gpt-4o-mini-transcribe",prompt:"Natural executive-assistant speech. Malayalam and English code-switching; UK business, grocery, Meta, Facebook, Instagram, Supabase, Netlify and CentralHub terms."},turn_detection:{type:"server_vad",threshold:.62,prefix_padding_ms:240,silence_duration_ms:520,create_response:true,interrupt_response:false}},output:{format:{type:"audio/pcm",rate:24000},voice:"marin",speed:1.04}}};
+ const configuredSession={type:"realtime",model,output_modalities:["audio"],instructions,max_output_tokens:600,audio:{input:{format:{type:"audio/pcm",rate:24000},noise_reduction:{type:"near_field"},transcription:{model:"gpt-4o-mini-transcribe",prompt:pickingMode?"Warehouse picking speech. Prioritize short commands: picked, done, next, skip, back, previous, repeat, pause, resume. Malayalam and English code-switching; grocery product and shelf/location terms.":"Natural executive-assistant speech. Malayalam and English code-switching; UK business, grocery, Meta, Facebook, Instagram, Supabase, Netlify and CentralHub terms."},turn_detection:{type:"server_vad",threshold:.62,prefix_padding_ms:240,silence_duration_ms:520,create_response:true,interrupt_response:false}},output:{format:{type:"audio/pcm",rate:24000},voice:"marin",speed:1.04}}};
  // The session endpoint is distinct from the websocket connection: expose a
  // model name alongside a short-lived secret so Android uses the SAME model.
  // Never downgrade credentials/billing failures into a different model error.
