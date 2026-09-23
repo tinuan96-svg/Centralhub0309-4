@@ -181,6 +181,14 @@ public final class CentralHubActivity extends MainActivity {
     }
 
     @Override
+    public boolean startNoraPickingRealtime(String accessToken,String supabaseUrl,String publishableKey) {
+        realtimeVoiceStarting=true; realtimeVoiceActive=true;
+        runOnUiThread(()->{setVolumeControlStream(AudioManager.STREAM_MUSIC);stopContinuousPipeline();});
+        boolean started;try{started=super.startNoraPickingRealtime(accessToken,supabaseUrl,publishableKey);}finally{realtimeVoiceStarting=false;}
+        realtimeVoiceActive=started;if(!started)runOnUiThread(this::startContinuousPipeline);return started;
+    }
+
+    @Override
     public boolean startShruthiRealtime(String accessToken,String supabaseUrl,String publishableKey) {
         realtimeVoiceStarting=true;
         realtimeVoiceActive=true;

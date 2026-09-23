@@ -43,7 +43,8 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [useAI, setUseAI] = useState(false);
+  const [useAI, setUseAI] = useState(true);
+  const [noraPicking, setNoraPicking] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
 
   // Correction features state
@@ -354,7 +355,28 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
 
   }, [handlePicked, goToNext, goToPrev, isPaused, currentItem, showSummary, completePicking, useAI, currentIndex, groupedItems.length, saveLocation, saveStock]);
 
-  const { speak, startListening, stopListening, isListening, error: voiceError, lastCommand } = useVoicePicking(handleVoiceCommand);
+  const { speak: legacySpeak, startListening, stopListening, isListening, error: voiceError, lastCommand } = useVoicePicking(handleVoiceCommand);
+  const speak = useCallback((text: string) => {
+    const native=typeof window!=='undefined'?(window as any).CentralHubNative:null;
+    if(noraPicking&&native?.noraPickingSay?.(text)===true)return;
+    legacySpeak(text);
+  },[legacySpeak,noraPicking]);
+
+  useEffect(()=>{
+    let cancelled=false;
+    const startNora=async()=>{
+      const native=(window as any).CentralHubNative;
+      if(native?.getPlatform?.()!=='android'||typeof native.startNoraPickingRealtime!=='function')return;
+      const {data}=await supabase.auth.getSession();if(cancelled||!data.session?.access_token)return;
+      const url=process.env.NEXT_PUBLIC_SUPABASE_URL||'',key=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY||'';if(!url||!key)return;
+      const started=native.startNoraPickingRealtime(data.session.access_token,url,key)===true;
+      if(!cancelled&&started){setNoraPicking(true);stopListening();}
+    };
+    void startNora();
+    const onNoraCommand=(event:Event)=>{if(cancelled)return;const text=String((event as CustomEvent<{text?:string}>).detail?.text||'').trim();if(text)void handleVoiceCommand(text);};
+    window.addEventListener('centralhub:shruthi-realtime-user-transcript',onNoraCommand as EventListener);
+    return()=>{cancelled=true;window.removeEventListener('centralhub:shruthi-realtime-user-transcript',onNoraCommand as EventListener);try{(window as any).CentralHubNative?.stopShruthiRealtime?.();}catch{}};
+  },[handleVoiceCommand,stopListening]);
 
   // Sync speak ref
   useEffect(() => {
@@ -576,12 +598,12 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
           <button
             onClick={() => setUseAI(!useAI)}
             className={`px-3 py-1.5 rounded-full border transition-all text-[9px] font-black uppercase flex items-center gap-1 ${useAI ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.2)]' : 'bg-slate-800 border-slate-700 text-slate-500'}`}
-            title={useAI ? "AI Assistant Active (Smart Fallback)" : "Standard Mode (Fast)"}
+            title={noraPicking ? "NORA Picking Active" : useAI ? "AI Assistant Active (Smart Fallback)" : "Standard Mode (Fast)"}
           >
             {isThinking ? (
               <span className="w-2 h-2 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
             ) : (
-              <span>{useAI ? '🤖 AI' : '⚡ Std'}</span>
+              <span>{noraPicking ? '✦ NORA' : useAI ? '🤖 AI' : '⚡ Std'}</span>
             )}
           </button>
         </div>
@@ -657,7 +679,7 @@ export default function ActivePickingClient({ params: _params, searchParams: _se
                {isThinking ? '↻' : '●'}
              </span>
              <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest">
-               {isThinking ? 'AI is processing...' : isListening ? 'Say "Picked", "Done" or "Next"' : 'Enable Microphone to Start'}
+               {isThinking ? 'NORA is processing...' : noraPicking ? 'NORA listening — say “Picked”, “Done” or “Next”' : isListening ? 'Say “Picked”, “Done” or “Next”' : 'Enable Microphone to Start'}
              </p>
            </div>
         </div>

@@ -61,6 +61,7 @@ final class ShruthiRealtimeVoiceClient {
 
     private final Context context;
     private final String accessToken,supabaseUrl,publishableKey,liveWebSessionId;
+    private final boolean pickingMode;
     private final Listener listener;
     private final AudioManager audioManager;
     private final ExecutorService io=Executors.newCachedThreadPool();
@@ -88,8 +89,9 @@ final class ShruthiRealtimeVoiceClient {
         this(c, token, url, key, "", l);
     }
 
-    ShruthiRealtimeVoiceClient(Context c,String token,String url,String key,String liveSessionId,Listener l){
-        context=c.getApplicationContext();accessToken=token;supabaseUrl=url.replaceAll("/+$","");publishableKey=key;liveWebSessionId=liveSessionId==null?"":liveSessionId.trim();listener=l;
+    ShruthiRealtimeVoiceClient(Context c,String token,String url,String key,String liveSessionId,Listener l){this(c,token,url,key,liveSessionId,false,l);}
+    ShruthiRealtimeVoiceClient(Context c,String token,String url,String key,String liveSessionId,boolean picking,Listener l){
+        context=c.getApplicationContext();accessToken=token;supabaseUrl=url.replaceAll("/+$","");publishableKey=key;liveWebSessionId=liveSessionId==null?"":liveSessionId.trim();pickingMode=picking;listener=l;
         audioManager=(AudioManager)context.getSystemService(Context.AUDIO_SERVICE);
     }
     void connect(){
@@ -107,6 +109,10 @@ final class ShruthiRealtimeVoiceClient {
         try{if(player!=null){player.pause();player.flush();player.play();}}catch(Exception ignored){}
         WebSocket s=socket;if(s!=null){s.send("{\"type\":\"response.cancel\"}");s.send("{\"type\":\"input_audio_buffer.clear\"}");}
         scheduler.schedule(()->{if(running.get()&&!explicitlyClosed){resumeMicrophoneAfterPlayback();state("listening");}},MANUAL_INTERRUPT_GUARD_MS,TimeUnit.MILLISECONDS);
+    }
+    boolean speakInstruction(String text){
+        String clean=text==null?"":text.trim();WebSocket s=socket;if(clean.isEmpty()||s==null||!running.get())return false;
+        try{JSONObject response=new JSONObject().put("type","response.create").put("response",new JSONObject().put("output_modalities",new org.json.JSONArray().put("audio")).put("instructions","Speak exactly this warehouse-picking sentence and nothing else: "+clean));return s.send(response.toString());}catch(Exception ignored){return false;}
     }
     void release(){disconnect();io.shutdownNow();scheduler.shutdownNow();http.dispatcher().executorService().shutdown();}
 
@@ -128,6 +134,7 @@ final class ShruthiRealtimeVoiceClient {
         try(OutputStream out=c.getOutputStream()){
             JSONObject requestBody=new JSONObject();
             if(!liveWebSessionId.isEmpty())requestBody.put("live_web_session_id",liveWebSessionId);
+            if(pickingMode)requestBody.put("mode","picking");
             out.write(requestBody.toString().getBytes(StandardCharsets.UTF_8));
         }
         try{

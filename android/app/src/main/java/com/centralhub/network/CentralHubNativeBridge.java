@@ -102,6 +102,8 @@ public final class CentralHubNativeBridge {
     @JavascriptInterface public boolean isTaraVoiceAvailable() { return activity.isTaraVoiceAvailable(); }
     @JavascriptInterface public boolean isShruthiRealtimeAvailable() { return activity.isShruthiRealtimeAvailable(); }
     @JavascriptInterface public boolean startShruthiRealtime(String accessToken, String supabaseUrl, String publishableKey) { return activity.startShruthiRealtime(accessToken, supabaseUrl, publishableKey); }
+    @JavascriptInterface public boolean startNoraPickingRealtime(String accessToken, String supabaseUrl, String publishableKey) { return activity.startNoraPickingRealtime(accessToken, supabaseUrl, publishableKey); }
+    @JavascriptInterface public boolean noraPickingSay(String text) { return activity.noraPickingSay(text); }
     @JavascriptInterface public void stopShruthiRealtime() { activity.stopShruthiRealtime(); }
     @JavascriptInterface public void interruptShruthiRealtime() { activity.interruptShruthiRealtime(); }
     @JavascriptInterface public void setTaraEnabled(boolean enabled) { activity.runOnUiThread(() -> activity.setTaraEnabled(enabled)); }
