@@ -160,7 +160,18 @@ for (const file of navigationParityFiles) {
     navigationParityFailures.push(`${path.relative(root, file)} is missing`);
     continue;
   }
-  const text = fs.readFileSync(file, 'utf8');
+  let text = fs.readFileSync(file, 'utf8');
+  // Desktop sidebar and public demo now share a pure navigation catalog.
+  // Audit the actual imported catalog, not only literal routes in its consumer.
+  // Keep all existing desktop/mobile route and Analytics Centre parity assertions.
+  if (file === navigationParityFiles[0] && text.includes("from '@/lib/navigation/sections'")) {
+    const sharedCatalog = path.join(root, 'lib', 'navigation', 'sections.ts');
+    if (!fs.existsSync(sharedCatalog)) {
+      navigationParityFailures.push('Shared desktop navigation catalog is missing');
+    } else {
+      text += '\n' + fs.readFileSync(sharedCatalog, 'utf8');
+    }
+  }
   navigationTexts.set(file, text);
   for (const route of navigationParityRoutes) {
     if (!text.includes(route)) navigationParityFailures.push(`${route} missing from ${path.relative(root, file)}`);
@@ -187,7 +198,7 @@ for (const assertion of analyticsNavigationMarkers) {
     navigationParityFailures.push(`${assertion.file} is missing`);
     continue;
   }
-  const text = fs.readFileSync(full, 'utf8');
+  const text = navigationTexts.get(full) || fs.readFileSync(full, 'utf8');
   for (const marker of assertion.markers) if (!text.includes(marker)) navigationParityFailures.push(`Analytics Centre marker missing from ${assertion.file}: ${marker}`);
   if (text.includes("href: '/marketing/analytics'")) navigationParityFailures.push(`Legacy Marketing Analytics link must not be exposed in ${assertion.file}`);
 }
