@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
-interface Store { id: string; name: string; slug?: string | null; }
+interface Store { id: string; name: string; slug?: string | null; domain?: string | null; }
 interface Product {
   id: string;
   name: string;
@@ -84,7 +84,7 @@ export default function StoreVisibilityPage() {
     setLoading(true);
     setError('');
     const [storesRes, productsRes, visibilityRes] = await Promise.all([
-      supabase.from('stores').select('id,name,slug').order('name'),
+      supabase.from('stores').select('id,name,slug,domain').order('name'),
       supabase
         .from('products')
         .select('id,name,sku,brand,category,main_category,stock,price,is_active,approval_status,is_published,is_archived,is_deleted,image_main,image_url,image_medium,image_thumbnail,description,rich_description,short_description,seo_title,seo_meta_title,seo_meta_description,expiry_date,expiry_blocked,audit_hold_status,allow_backorder,backorder')
@@ -114,6 +114,7 @@ export default function StoreVisibilityPage() {
 
   // Store products inherit CentralHub publication by default; an explicit visibility row can hide or re-enable a product.
   const isTastyKerala = selectedStore?.slug?.toLowerCase() === 'tastykerala';
+  const selectedStoreLabel = selectedStore?.domain ? `${selectedStore.name} — ${selectedStore.domain}` : selectedStore?.name || 'Select a store';
   const allowedFor = useCallback((productId: string) => visibilityMap.get(productId) ?? true, [visibilityMap]);
   const eligibilityFor = useCallback((product: Product) => isTastyKerala ? tastyEligibility(product) : centralEligibility(product), [isTastyKerala]);
   const effectiveVisibleFor = useCallback((product: Product) => eligibilityFor(product).live && allowedFor(product.id), [allowedFor, eligibilityFor]);
@@ -213,7 +214,7 @@ export default function StoreVisibilityPage() {
       <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 md:p-5 space-y-4">
         <div className="flex flex-col fold-inner:flex-row gap-3 fold-inner:items-center min-w-0">
           <select value={storeId} onChange={e => setStoreId(e.target.value)} className="bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 fold-inner:min-w-56 min-w-0">
-            {stores.map(store => <option key={store.id} value={store.id}>{store.name}</option>)}
+            {stores.map(store => <option key={store.id} value={store.id}>{store.domain ? `${store.name} — ${store.domain}` : store.name}</option>)}
           </select>
           <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search product, SKU, brand or category…" className="flex-1 min-w-0 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100" />
           <div className="flex gap-2 shrink-0">
@@ -222,7 +223,7 @@ export default function StoreVisibilityPage() {
           </div>
         </div>
         <p className="text-xs text-slate-500">
-          Editing: <span className="text-slate-300 font-semibold">{selectedStore?.name || 'Select a store'}</span> · {filtered.length} matching products · {centralLiveCount} centrally live · {visibilityMap.size} explicit store overrides
+          Editing: <span className="text-slate-300 font-semibold">{selectedStoreLabel}</span> · {filtered.length} matching products · {centralLiveCount} centrally live · {visibilityMap.size} explicit store overrides
         </p>
       </div>
 
