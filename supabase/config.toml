@@ -41,3 +41,7 @@ verify_jwt = true
 # secret and only allows whitelisted Netlify site IDs.
 [functions.netlify-build-trigger]
 verify_jwt = false
+
+# Separate Tasty product feed verifier: requires private CentralHub Vault token in request header.
+[functions.tasty-kerala-verify-product-push]
+verify_jwt = false
