@@ -48,6 +48,12 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
   const [sending, setSending] = useState(false);
   const [customerContext, setCustomerContext] = useState<any>(null);
   const [loadingContext, setLoadingContext] = useState(false);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [messagesError, setMessagesError] = useState<string | null>(null);
+  const [contextError, setContextError] = useState(false);
+  const activeConversationId = useRef<string | null>(null);
+  const messageRequestId = useRef(0);
+  const contextRequestId = useRef(0);
   const [isTicketModalOpen, setIsTicketModalOpen] = useState(false);
   const [showMobileProfile, setShowMobileProfile] = useState(false);
   const [showConversationList, setShowConversationList] = useState(false);
@@ -77,28 +83,50 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
   };
 
   const loadMessages = async (id: string) => {
+    const requestId = ++messageRequestId.current;
+    setMessagesLoading(true);
+    setMessagesError(null);
     try {
       const data = await whatsappService.getMessages(id);
-      setMessages(data);
+      if (requestId !== messageRequestId.current || activeConversationId.current !== id) return;
+      // A realtime INSERT may arrive before the initial fetch returns. Never discard it.
+      setMessages(prev => {
+        const byId = new Map<string, WhatsAppMessage>();
+        for (const msg of data) byId.set(msg.id, msg);
+        for (const msg of prev) if (!byId.has(msg.id)) byId.set(msg.id, msg);
+        return [...byId.values()].filter(msg => !msg.locally_deleted_at)
+          .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+      });
     } catch (err) {
+      if (requestId !== messageRequestId.current || activeConversationId.current !== id) return;
       console.error('Failed to load messages:', err);
+      setMessagesError('Could not load this conversation. Check your connection and retry.');
+    } finally {
+      if (requestId === messageRequestId.current && activeConversationId.current === id) setMessagesLoading(false);
     }
   };
 
   const loadCustomerContext = async (phone?: string) => {
+    const requestId = ++contextRequestId.current;
+    setCustomerContext(null);
+    setContextError(false);
     if (!phone) {
-      setCustomerContext(null);
+      setLoadingContext(false);
       return;
     }
     setLoadingContext(true);
     try {
-      const data = await whatsappService.getCustomerContext(phone);
-      setCustomerContext(data);
+      const data = await Promise.race([
+        whatsappService.getCustomerContext(phone),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Customer details timed out')), 12000)),
+      ]);
+      if (requestId === contextRequestId.current) setCustomerContext(data);
     } catch (err) {
+      if (requestId !== contextRequestId.current) return;
       console.error('Failed to load customer context:', err);
-      setCustomerContext(null);
+      setContextError(true);
     } finally {
-      setLoadingContext(false);
+      if (requestId === contextRequestId.current) setLoadingContext(false);
     }
   };
 
@@ -113,14 +141,23 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
   }, []);
 
   useEffect(() => {
+    // Invalidate requests before starting a different conversation.
+    activeConversationId.current = selectedConv?.id || null;
+    ++messageRequestId.current;
+    ++contextRequestId.current;
+    setMessages([]);
+    setMessagesError(null);
+    setMessagesLoading(Boolean(selectedConv));
+    setCustomerContext(null);
+    setContextError(false);
     if (!selectedConv) {
-      setMessages([]);
-      setCustomerContext(null);
+      setMessagesLoading(false);
+      setLoadingContext(false);
       return;
     }
 
-    loadMessages(selectedConv.id);
-    loadCustomerContext(selectedConv.contact?.phone_number);
+    void loadMessages(selectedConv.id);
+    void loadCustomerContext(selectedConv.contact?.phone_number);
     setShowConversationList(false);
 
     const msgChannelName = `inbox_msg_${selectedConv.id}_${Math.random().toString(36).slice(2, 9)}`;
@@ -152,7 +189,11 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(msgSubscription); };
+    return () => {
+      ++messageRequestId.current;
+      ++contextRequestId.current;
+      supabase.removeChannel(msgSubscription);
+    };
   }, [selectedConv?.id]);
 
   useEffect(() => {
@@ -179,7 +220,7 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
         return;
       }
       setMsgInput('');
-      await loadMessages(selectedConv.id);
+      if (activeConversationId.current === selectedConv.id) await loadMessages(selectedConv.id);
     } catch (err: any) {
       console.error('[Inbox] Failed to send message:', err);
       alert(err.message || 'Connection error. Please check your internet and Meta API configuration.');
@@ -359,6 +400,8 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
             <div className="md:hidden shrink-0 border-b border-slate-800 bg-slate-950/95 px-2 py-1.5">
               {loadingContext ? (
                 <div className="h-8 flex items-center text-[10px] text-slate-500">Loading customer details…</div>
+              ) : contextError ? (
+                <div className="flex items-center justify-between gap-2 text-[10px] text-amber-300">Customer details unavailable<button type="button" className="rounded border border-amber-500/40 px-2 py-1" onClick={() => void loadCustomerContext(selectedConv.contact?.phone_number)}>Retry</button></div>
               ) : (
                 <div className="grid grid-cols-[0.8fr_1fr_1.25fr_auto] gap-1.5 items-stretch">
                   <div className="rounded-lg border border-slate-800 bg-slate-900 px-2 py-1">
@@ -379,7 +422,9 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
             </div>
 
             <div ref={chatScrollRef} className="flex-1 h-0 min-h-0 overflow-y-scroll overscroll-contain touch-pan-y px-2.5 sm:px-4 lg:px-5 py-2.5 sm:py-4 lg:py-6 space-y-2.5 sm:space-y-3 bg-slate-950" style={{ WebkitOverflowScrolling: 'touch' }}>
-              {messages.length === 0 ? (
+              {messagesLoading && <div role="status" className="text-center text-xs text-slate-400">Loading messages…</div>}
+              {messagesError && <div role="alert" className="flex items-center justify-center gap-3 text-xs text-amber-300">{messagesError}<button type="button" onClick={() => selectedConv && void loadMessages(selectedConv.id)} className="rounded-lg border border-amber-500/40 px-3 py-1">Retry</button></div>}
+              {!messagesLoading && !messagesError && messages.length === 0 ? (
                 <div className="h-full flex items-center justify-center text-xs sm:text-sm text-slate-500">No messages yet</div>
               ) : messages.map((msg) => (
                 <div key={msg.id} className={`group flex ${msg.direction === 'inbound' ? 'justify-start' : 'justify-end'}`}>
