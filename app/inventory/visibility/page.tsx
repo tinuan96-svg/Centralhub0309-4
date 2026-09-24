@@ -64,9 +64,6 @@ function tastyEligibility(product: Product) {
   if (![product.description, product.rich_description, product.short_description].some(s => String(s || '').trim())) {
     return { live: false, reason: 'Description required' };
   }
-  if (!String(product.seo_meta_title || product.seo_title || '').trim() || !String(product.seo_meta_description || '').trim()) {
-    return { live: false, reason: 'SEO title and meta description required' };
-  }
   if (!Number.isFinite(Number(product.price)) || Number(product.price) <= 0) return { live: false, reason: 'Valid price required' };
   if (Number(product.stock ?? 0) <= 0 && !product.allow_backorder && !product.backorder) return { live: false, reason: 'Sellable stock or authorised backorder required' };
   return base;
@@ -115,10 +112,9 @@ export default function StoreVisibilityPage() {
     return map;
   }, [overrides, storeId]);
 
-  // Other established stores keep their existing legacy default. Tasty Kerala alone
-  // requires an explicit true assignment; missing rows must NEVER appear allowed.
+  // Store products inherit CentralHub publication by default; an explicit visibility row can hide or re-enable a product.
   const isTastyKerala = selectedStore?.slug?.toLowerCase() === 'tastykerala';
-  const allowedFor = useCallback((productId: string) => visibilityMap.get(productId) ?? !isTastyKerala, [visibilityMap, isTastyKerala]);
+  const allowedFor = useCallback((productId: string) => visibilityMap.get(productId) ?? true, [visibilityMap]);
   const eligibilityFor = useCallback((product: Product) => isTastyKerala ? tastyEligibility(product) : centralEligibility(product), [isTastyKerala]);
   const effectiveVisibleFor = useCallback((product: Product) => eligibilityFor(product).live && allowedFor(product.id), [allowedFor, eligibilityFor]);
 
@@ -186,23 +182,23 @@ export default function StoreVisibilityPage() {
         <p className="text-sm text-slate-400 mt-1">Effective storefront visibility requires central approval, publication and active status plus the store-specific allow/hide override.</p>
       </div>
       {isTastyKerala && <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-100">
-        Tasty Kerala uses explicit opt-in product assignment. Enabling a product here does not bypass CentralHub approval, required image/category/description/SEO metadata, sellable stock, audit holds or the 20-day expiry block. Its separate Supabase storefront pulls the approved public feed every five minutes. Checkout remains disabled until its own merchant account and launch checks are approved.
+        Tasty Kerala (keralagroceries.com) is separate from KeralaGrocery (keralagrocery.com). Eligible CentralHub products sync automatically every five minutes. Store visibility overrides can still hide individual products; approval, publication, image/description, sellable stock, audit-hold and 20-day expiry safeguards remain enforced. Checkout remains disabled until its own merchant account and launch checks are approved.
       </div>}
       {isTastyKerala && <div className="rounded-2xl border border-cyan-500/25 bg-slate-900/70 p-4 space-y-3">
         <h2 className="text-sm font-black text-slate-100">Tasty Kerala catalogue launch readiness</h2>
-        <p className="text-xs text-slate-400">These counts are based on currently loaded CentralHub products. A product requires both explicit store assignment and all publication rules before its scheduled feed can publish it. No product is automatically approved by this page.</p>
+        <p className="text-xs text-slate-400">These counts are based on currently loaded CentralHub products. Eligible products flow automatically to keralagroceries.com; visibility overrides can hide specific products. This page never changes CentralHub approval.</p>
         <div className="grid grid-cols-2 fold-inner:grid-cols-4 gap-2">
-          <Stat label="Eligible to assign" value={centralLiveCount}/>
+          <Stat label="Eligible to sync" value={centralLiveCount}/>
           <Stat label="Missing SEO" value={tastyMissingSeoCount}/>
-          <Stat label="Opted in" value={tastyOptedInCount}/>
-          <Stat label="Eligible & opted in" value={visibleCount}/>
+          <Stat label="Allowed here" value={tastyOptedInCount}/>
+          <Stat label="Eligible & allowed" value={visibleCount}/>
         </div>
         <div className="flex gap-2 flex-wrap items-center text-xs">
           <label htmlFor="tasty-readiness-filter" className="text-slate-400">Show</label>
           <select id="tasty-readiness-filter" value={tastyReadinessFilter} onChange={e => setTastyReadinessFilter(e.target.value as typeof tastyReadinessFilter)} className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-100">
-            <option value="all">All products</option><option value="ready">Eligible to assign</option><option value="seo">SEO metadata missing</option><option value="assigned">Assigned to Tasty Kerala</option>
+            <option value="all">All products</option><option value="ready">Eligible to sync</option><option value="seo">SEO metadata missing</option><option value="assigned">Assigned to Tasty Kerala</option>
           </select>
-          <span className="text-amber-200">Review SEO and product details before using Allow filtered; checkout remains disabled.</span>
+          <span className="text-amber-200">Review product details before launch; SEO can be improved without blocking catalogue sync. Checkout remains disabled.</span>
         </div>
       </div>}
       {error && <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-300">{error}</div>}
