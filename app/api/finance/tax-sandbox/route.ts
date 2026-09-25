@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { AccessDenied, requireVerifiedSuperAdmin } from '@/lib/access-control/admin';
 import { getTaxSandboxReadiness } from '@/lib/tax/sandbox-readiness';
+import { runSyntheticSandboxFixture, type FixtureProvider } from '@/lib/tax/sandbox-fixtures';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -33,6 +34,16 @@ export async function POST(request: Request) {
     const payload: unknown = await request.json().catch(() => null);
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return failure(400, 'Invalid diagnostic request');
     const diagnostic = (payload as Record<string, unknown>).diagnostic;
+    if (diagnostic === 'synthetic_fixture') {
+      // Never accept financial, personal or taxpayer payloads: fixed fictional test fixtures only.
+      if (Object.keys(payload).some(key => key !== 'diagnostic' && key !== 'provider')) {
+        return failure(400, 'Only a fixture provider ID is accepted');
+      }
+      const provider = (payload as Record<string, unknown>).provider;
+      const allowed: readonly string[] = ['vat', 'paye', 'corporation_tax', 'business_rates', 'customs', 'companies_house'];
+      if (typeof provider !== 'string' || !allowed.includes(provider)) return failure(400, 'Unknown fictional fixture provider');
+      return NextResponse.json({ sandboxOnly: true, liveFilingEnabled: false, ...runSyntheticSandboxFixture(provider as FixtureProvider) }, { headers: responseHeaders });
+    }
     if (diagnostic !== 'vat_application' && diagnostic !== 'companies_house_company_read') {
       return failure(400, 'Only sandbox application and read-only company tests are supported');
     }

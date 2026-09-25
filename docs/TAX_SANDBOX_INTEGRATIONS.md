@@ -71,3 +71,41 @@ Official: https://developer.company-information.service.gov.uk/api-testing .
 - Re-deploy after setting environment variables, then refresh readiness. Credential detection is not an upstream connection test.
 - Only the explicitly initiated HMRC application-only and Companies House sandbox company-read diagnostics may contact upstream providers. No taxpayer or company filing traffic is sent.
 - Security, CI and browser verification must pass before describing the UI as deployed; do not confuse Netlify deployment status with Github CI or with successful third-party sandbox access.
+
+## 5. Business Rates — VOA API sandbox (separate from council payments)
+
+As of September 2026, **HMRC Developer Hub offers a Valuation Office Agency Business Rates API** for property search/valuation, property claims and associated cases. This is distinct from local authorities calculating, billing and collecting the Business Rates bill. The API does **not** provide a universal local-council payment method.
+
+Official service documentation: https://developer.service.hmrc.gov.uk/api-documentation/docs/api/service/business-rates-api/2.0
+
+- Create/subscribe an HMRC **sandbox** application for the VOA Business Rates API and complete its own provider authorisation and test-user prerequisites before any external call.
+- Store any issued sandbox application credentials in private Netlify server environment only:
+  - `HMRC_BUSINESS_RATES_SANDBOX_CLIENT_ID`
+  - `HMRC_BUSINESS_RATES_SANDBOX_CLIENT_SECRET`
+- The current panel only detects their presence and runs fixed **fictional local** property-reference/amount checks. It does not call VOA, search real properties, open a claim or initiate a rates payment.
+
+## 6. Customs Declarations / Import VAT — separate CDS sandbox
+
+Official service documentation: https://developer.service.hmrc.gov.uk/api-documentation/docs/api/service/customs-declarations/2.0
+
+- Create and subscribe an HMRC **sandbox** application to the relevant Customs Declaration Service APIs and obtain test-user authorisation for `customs-services` and a fictional test EORI.
+- Store separately issued app credentials as private server variables:
+  - `HMRC_CUSTOMS_SANDBOX_CLIENT_ID`
+  - `HMRC_CUSTOMS_SANDBOX_CLIENT_SECRET`
+- The panel only reports configuration presence and runs fixed **fictional local** EORI, commodity-code and pence-format checks. No customs declarations, duty payments or Import VAT retrievals are sent, even to sandbox.
+
+## 7. Fictional local acceptance tests (no credentials required)
+
+CentralHub Finance → Tax integration readiness offers "Test fictional data locally" for VAT, PAYE, Corporation Tax, VOA Business Rates, Customs and Companies House. These deterministic built-in cases are never derived from customer records. The authorised Super Admin explicitly starts them; they return only pass/fail, check names and a statement that no government API was contacted.
+
+The checks are limited to basic numeric or reference-field consistency; they **do not validate** official submission XML/JSON schemas, payroll or tax rates, VAT digital links, approved fraud prevention headers, OAuth grants, real government sandbox responses, filings or payments. Do not submit these fictitious records to a real government account or mistake a local fixture pass for API verification.
+
+## Private sandbox credentials — current handoff
+
+No genuine HMRC or Companies House sandbox secret should be fabricated, written to a repository, copied from a production app or supplied in chat. Configure each issued test key in the existing CentralHub Netlify project's private runtime environment only. The Shop fictional demo must **never** inherit or use the private CentralHub government credentials.
+
+For VAT user-restricted endpoints, separately create an HMRC sandbox organisation test user and complete a consent-based sandbox OAuth flow with fraud-prevention requirements before any externally-connected VAT functionality can be labelled tested. The current implemented VAT "Hello World" application diagnostic is not that end-to-end flow.
+
+PAYE RTI and CT600 remain separate HMRC XML test services, not REST sandbox endpoints. Obtain applicable test-service access before integrating their transports.
+
+This stage changes no production taxpayer authorisation, financial transaction, payroll record, company record, live filing, or payment.

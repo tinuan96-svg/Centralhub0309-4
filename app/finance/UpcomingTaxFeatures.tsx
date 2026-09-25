@@ -11,6 +11,16 @@ const upcoming = [
     icon: '🏢',
   },
   {
+    name: 'Business Rates (VOA)',
+    detail: 'Future HMRC VOA sandbox integration for valuations and property claims, distinct from council bills and payments. Fictional local validation only today.',
+    icon: '🏬',
+  },
+  {
+    name: 'Customs & Import VAT',
+    detail: 'Future customs-services sandbox user authorisation, declarations and import VAT records. No filing or payment in the current diagnostic.',
+    icon: '📦',
+  },
+  {
     name: 'Companies House Filing',
     detail: 'Annual accounts, confirmation statements and company filing reminders.',
     icon: '📄',
@@ -25,7 +35,7 @@ export default function UpcomingTaxFeatures() {
         <h2 id="upcoming-tax-features-heading" className="text-xl font-black text-white">More tax &amp; filing tools are on our roadmap</h2>
         <p className="text-sm text-slate-300">We hope to bring more UK business tax, payroll and company filing tools to CentralHub. These features are planned, not available for use yet.</p>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3">
         {upcoming.map(feature => (
           <article key={feature.name} className="rounded-xl border border-slate-700/80 bg-slate-950/70 p-4 space-y-2">
             <div className="flex items-start justify-between gap-2">

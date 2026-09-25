@@ -15,9 +15,9 @@ function loadRegistry() {
   return module.exports.getTaxSandboxReadiness;
 }
 const registry = loadRegistry();
-const providers = ['vat', 'paye', 'corporation_tax', 'companies_house'];
+const providers = ['vat', 'paye', 'corporation_tax', 'business_rates', 'customs', 'companies_house'];
 
-test('four distinct tax services are awaiting credentials by default', () => {
+test('six distinct government services are awaiting credentials by default', () => {
   const result = registry({});
   assert.deepEqual(Array.from(result, x => x.id), providers);
   assert.equal(result.every(x => x.status === 'awaiting_credentials' && !x.configured), true);
@@ -34,6 +34,8 @@ test('only full provider-specific credential sets mark a sandbox configured, nev
   assert.equal(result.find(x => x.id === 'companies_house').configured, false);
   assert.equal(result.find(x => x.id === 'paye').configured, false);
   assert.equal(result.find(x => x.id === 'corporation_tax').configured, false);
+  assert.equal(result.find(x => x.id === 'business_rates').configured, false);
+  assert.equal(result.find(x => x.id === 'customs').configured, false);
   env.HMRC_VAT_SANDBOX_CLIENT_SECRET = '  ';
   result = registry(env);
   assert.equal(result.find(x => x.id === 'vat').configured, false);
@@ -51,4 +53,24 @@ test('readiness never serialises values or exposes production or filing routes',
   assert.doesNotMatch(route, /https:\/\/api\.company-information\.service\.gov\.uk/);
   assert.doesNotMatch(route, /\b(vat\/returns|CT600-TIL|\/submissions\/|\/transactions\/)/i);
   assert.match(route, /'Cache-Control': 'private, no-store/);
+});
+
+test('fixed synthetic samples cover every provider without real records or network', () => {
+  const fixtures = fs.readFileSync(path.join(root, 'lib/tax/sandbox-fixtures.ts'), 'utf8');
+  const compiledFixtures = ts.transpileModule(fixtures, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const module = { exports: {} };
+  vm.runInNewContext(compiledFixtures, { module, exports: module.exports }, { timeout: 1000 });
+  for (const provider of providers) {
+    const result = module.exports.runSyntheticSandboxFixture(provider);
+    assert.equal(result.provider, provider);
+    assert.equal(result.mode, 'local_synthetic_only');
+    assert.equal(result.passed, true);
+    assert.ok(result.checked >= 2);
+    assert.equal(result.cases.every(x => x.passed), true);
+    assert.match(result.note, /No HMRC/);
+  }
+  const route = fs.readFileSync(path.join(root, 'app/api/finance/tax-sandbox/route.ts'), 'utf8');
+  assert.match(route, /requireVerifiedSuperAdmin\(request\)/);
+  assert.match(route, /Only a fixture provider ID is accepted/);
+  assert.match(route, /sandboxOnly: true, liveFilingEnabled: false/);
 });

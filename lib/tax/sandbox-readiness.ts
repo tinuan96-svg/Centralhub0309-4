@@ -3,7 +3,7 @@
  * Presence of credentials is NOT proof of an authorised connection or a working filing integration.
  * Keep every credential in Netlify server environment variables (never NEXT_PUBLIC_*).
  */
-export type TaxProviderId = 'vat' | 'paye' | 'corporation_tax' | 'companies_house';
+export type TaxProviderId = 'vat' | 'paye' | 'corporation_tax' | 'business_rates' | 'customs' | 'companies_house';
 export type SandboxProvider = {
   id: TaxProviderId;
   name: string;
@@ -39,6 +39,22 @@ const definitions = [
     required: ['HMRC_CT_TEST_VENDOR_ID', 'HMRC_CT_XML_TEST_SENDER_ID', 'HMRC_CT_XML_TEST_PASSWORD'],
     diagnostic: null,
     nextStep: 'Obtain HMRC CT600 XML developer specifications and test-service access; build schema/iXBRL validation before attempting HMRC XML test submissions. The REST sandbox cannot validate CT600.',
+  },
+  {
+    id: 'business_rates',
+    name: 'Business Rates (Valuation Office Agency)',
+    protocol: 'REST OAuth2',
+    required: ['HMRC_BUSINESS_RATES_SANDBOX_CLIENT_ID', 'HMRC_BUSINESS_RATES_SANDBOX_CLIENT_SECRET'],
+    diagnostic: null,
+    nextStep: 'HMRC offers a separate VOA Business Rates API for valuation and property claim workflows. Create an authorised HMRC sandbox application, subscribe to the VOA API, use fictional sandbox properties and obtain appropriate test-user OAuth. Local councils separately issue and collect rates bills; no property claim, valuation retrieval, payment or live council connection is enabled here.',
+  },
+  {
+    id: 'customs',
+    name: 'Customs declarations and Import VAT',
+    protocol: 'REST OAuth2',
+    required: ['HMRC_CUSTOMS_SANDBOX_CLIENT_ID', 'HMRC_CUSTOMS_SANDBOX_CLIENT_SECRET'],
+    diagnostic: null,
+    nextStep: 'Create a separate authorised HMRC sandbox application subscribed to the appropriate Customs Declaration Service APIs. Create a customs-services sandbox user and fictional EORI, then complete secure OAuth and XML/JSON schema testing before adding any declaration retrieval or submission. No real or sandbox declaration submission, EORI access, duty payment or import VAT retrieval is enabled by this registry.',
   },
   {
     id: 'companies_house',

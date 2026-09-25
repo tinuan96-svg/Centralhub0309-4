@@ -5,7 +5,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { supabase } from '@/lib/supabase';
 
 type Provider = {
-  id: 'vat' | 'paye' | 'corporation_tax' | 'companies_house';
+  id: 'vat' | 'paye' | 'corporation_tax' | 'business_rates' | 'customs' | 'companies_house';
   name: string;
   protocol: string;
   required: string[];
@@ -16,7 +16,7 @@ type Provider = {
   nextStep: string;
 };
 type Readiness = { sandboxOnly: boolean; liveFilingEnabled: boolean; providers: Provider[] };
-type DiagnosticResult = { passed?: boolean; note?: string; error?: string };
+type DiagnosticResult = { passed?: boolean; note?: string; error?: string; checked?: number; mode?: 'local_synthetic_only' };
 
 export default function TaxSandboxPanel() {
   const { isAdmin } = useAuth();
@@ -26,7 +26,7 @@ export default function TaxSandboxPanel() {
   const [message, setMessage] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
 
-  const request = useCallback(async (method: 'GET' | 'POST', diagnostic?: string) => {
+  const request = useCallback(async (method: 'GET' | 'POST', diagnostic?: string, provider?: Provider['id']) => {
     const { data, error: sessionError } = await supabase.auth.getSession();
     if (sessionError || !data.session?.access_token) throw new Error('Sign in to CentralHub again.');
     const response = await fetch('/api/finance/tax-sandbox', {
@@ -36,7 +36,7 @@ export default function TaxSandboxPanel() {
         Authorization: `Bearer ${data.session.access_token}`,
         ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {}),
       },
-      ...(method === 'POST' ? { body: JSON.stringify({ diagnostic }) } : {}),
+      ...(method === 'POST' ? { body: JSON.stringify({ diagnostic, ...(provider ? { provider } : {}) }) } : {}),
     });
     const payload: Readiness & DiagnosticResult = await response.json();
     if (!response.ok) throw new Error(payload.error || 'Sandbox service unavailable');
@@ -67,6 +67,20 @@ export default function TaxSandboxPanel() {
     } finally { setActiveTest(null); }
   };
 
+  const testSynthetic = async (provider: Provider) => {
+    if (activeTest) return;
+    setActiveTest(provider.id);
+    setMessage(previous => ({ ...previous, [provider.id]: '' }));
+    try {
+      const result = await request('POST', 'synthetic_fixture', provider.id);
+      setMessage(previous => ({ ...previous, [provider.id]: result.passed && result.mode === 'local_synthetic_only'
+        ? `Passed ${result.checked ?? 0} fictional local checks. No government API was contacted, and no filing or calculation certification was performed.`
+        : 'Fictional local checks failed. No government API was contacted.' }));
+    } catch (cause) {
+      setMessage(previous => ({ ...previous, [provider.id]: cause instanceof Error ? cause.message : 'Fictional fixture test unavailable' }));
+    } finally { setActiveTest(null); }
+  };
+
   return (
     <section id="tax-sandbox-setup" aria-labelledby="tax-sandbox-title" className="rounded-2xl border border-cyan-500/20 bg-slate-900/50 p-4 sm:p-6 space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
@@ -77,7 +91,8 @@ export default function TaxSandboxPanel() {
         </div>
         <button type="button" onClick={() => void refresh()} disabled={loading} className="rounded-xl border border-slate-700 px-3 py-2 text-xs font-bold text-slate-200 disabled:opacity-50">{loading ? 'Checking…' : 'Refresh status'}</button>
       </div>
-      <p className="rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2 text-xs text-rose-200">Live VAT, PAYE, CT600 and Companies House filing remain disabled. No credentials are entered or displayed in this screen.</p>
+      <p className="rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2 text-xs text-rose-200">Live VAT, PAYE, CT600, Business Rates, customs and Companies House filing or payments remain disabled. Sandbox app credentials must be installed privately; this screen never accepts or shows their values.</p>
+      <p className="text-xs leading-5 text-cyan-200">You may test fixed fictional records locally without credentials. A local fixture pass is not a government sandbox connection, taxpayer authorisation, legal tax computation, payroll certification or permission to submit anything.</p>
       {error && <p role="alert" className="text-xs text-rose-300">{error}</p>}
       {readiness && <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {readiness.providers.map(provider => (
@@ -92,8 +107,9 @@ export default function TaxSandboxPanel() {
               <div className="flex flex-wrap gap-1">{provider.missing.map(variable => <code key={variable} className="break-all rounded bg-slate-800 px-2 py-1 text-[10px] text-slate-300">{variable}</code>)}</div>
             </div>}
             <p className="text-xs leading-5 text-slate-400">{provider.nextStep}</p>
+            <button type="button" disabled={!!activeTest} onClick={() => void testSynthetic(provider)} className="rounded-lg border border-emerald-500/40 px-3 py-2 text-xs font-bold text-emerald-300 disabled:cursor-not-allowed disabled:opacity-40">{activeTest === provider.id ? 'Testing…' : 'Test fictional data locally'}</button>
             {provider.diagnostic ? <button type="button" disabled={!provider.configured || !!activeTest} onClick={() => void test(provider)} className="rounded-lg border border-cyan-500/40 px-3 py-2 text-xs font-bold text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40">{activeTest === provider.id ? 'Testing…' : provider.id === 'vat' ? 'Test sandbox application' : 'Test sandbox company lookup'}</button> :
-              <p className="text-xs font-medium text-amber-200">XML test submission is not available in this setup screen.</p>}
+              <p className="text-xs font-medium text-amber-200">No provider-specific live sandbox call is available in this setup screen; fictional local validation can run above.</p>}
             {message[provider.id] && <p role="status" className="text-xs leading-5 text-slate-200">{message[provider.id]}</p>}
           </article>
         ))}
