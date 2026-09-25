@@ -6,6 +6,7 @@ import HRSandboxNICalculator from '@/components/hr/HRSandboxNICalculator';
 import HRPreviewPayCalculator from '@/components/hr/HRPreviewPayCalculator';
 import HRComplianceTasks from '@/components/hr/HRComplianceTasks';
 import HRSponsorReviewForm from '@/components/hr/HRSponsorReviewForm';
+import HRShiftPlanner from '@/components/hr/HRShiftPlanner';
 
 export const HR_SECTIONS=[
   ['dashboard','Dashboard'],['employees','Employees'],['attendance','Attendance'],
@@ -122,6 +123,7 @@ export default function HRClient({section}:{section:string}){
               {!filtered.length&&<p className="p-4 text-sm text-slate-400">No matching employee drafts.</p>}</div>
           </div>
         </div>}
+        {section==='shifts'&&session?.access_token&&<HRShiftPlanner company={company} token={session.access_token} employees={data.employees}/>}
         {section==='attendance'&&<div className="rounded-2xl border border-slate-800 bg-slate-900 p-5"><h2 className="font-bold">Attendance record review</h2><p className="mt-2 text-sm text-amber-200">Clock-in and correction approvals are disabled until authenticated employee access and working-hours validation are verified.</p>
           <div className="mt-4 space-y-2">{data.attendance.map(a=><div key={a.id} className="rounded-lg border border-slate-700 p-3 text-sm">{names.get(a.employee_id)||'Employee'} · {new Date(a.clock_in).toLocaleString('en-GB')} → {a.clock_out?new Date(a.clock_out).toLocaleString('en-GB'):'Not clocked out'} · {a.approval_status}</div>)}{!data.attendance.length&&<p className="text-sm text-slate-400">No attendance records.</p>}</div></div>}
         {section==='leave'&&<div className="rounded-2xl border border-slate-800 bg-slate-900 p-5"><h2 className="font-bold">Leave request review</h2><p className="mt-2 text-sm text-amber-200">Request and approval actions will remain disabled until entitlement and payroll synchronization tests pass.</p>
@@ -133,7 +135,7 @@ export default function HRClient({section}:{section:string}){
         {section==='sponsor-compliance'&&session?.access_token&&<HRComplianceTasks company={company} token={session.access_token}/>}
         {section==='payroll'&&<div className="space-y-4"><HRPreviewPayCalculator/><HRSandboxNICalculator/><div className="rounded-2xl border border-slate-800 bg-slate-900 p-5"><h2 className="font-bold">Draft payroll registry</h2><p className="mt-2 text-sm text-amber-200">No final tax, NI, pension, net pay, payslip, payment or HMRC filing until the calculation engine passes official validation.</p>
           <div className="mt-4 space-y-2">{data.payroll.map(p=><div key={p.id} className="rounded-lg border border-slate-700 p-3 text-sm">{p.period_start} – {p.period_end} · {p.pay_frequency} · {p.tax_year} · {p.status}</div>)}{!data.payroll.length&&<p className="text-sm text-slate-400">No payroll runs.</p>}</div></div></div>}
-        {!['dashboard','employees','attendance','leave','sponsor-compliance','payroll'].includes(section)&&
+        {!['dashboard','employees','attendance','shifts','leave','sponsor-compliance','payroll'].includes(section)&&
           <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5"><h2 className="text-lg font-bold">{active[1]} — not enabled</h2>
             <p className="mt-3 text-sm text-slate-300">This area is reserved for the verified HR rollout. No incomplete actions or sample calculations are presented as operational records.</p>
             <p className="mt-2 text-sm text-slate-400">External submissions and transfers require separate documented human approval. Existing company, login and business workflows remain unchanged.</p></div>}
