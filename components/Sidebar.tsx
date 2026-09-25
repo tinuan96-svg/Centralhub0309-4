@@ -77,7 +77,8 @@ export default function Sidebar({ collapsed: manualCollapsed = false, onToggleCo
       { href: '/finance/profitability', label: 'Profitability' },
       { href: '/finance/alerts', label: 'Financial Alerts' },
     ] },
-    { label: 'HR & Payroll', icon: '👥', key: '12.5 — hr & payroll', subItems: [{ href: '/hr', label: 'HR Dashboard' }] },\n    { label: 'Pricing', icon: '🏷️', key: '13 — pricing', subItems: [{ href: '/pricing', label: 'Overview' }, { href: '/pricing/approval', label: 'Approval Centre' }, { href: '/pricing?tab=fixing', label: 'Price Fixing' }, { href: '/pricing?tab=weekly', label: 'Weekly Strategy' }, { href: '/pricing?tab=competitors', label: 'Competitors' }, { href: '/pricing?tab=rules', label: 'Pricing Rules' }, { href: '/pricing?tab=history', label: 'Price History' }] },
+    { label: 'HR & Payroll', icon: '👥', key: '12.5 — hr & payroll', subItems: [{ href: '/hr', label: 'HR Dashboard' }] },
+    { label: 'Pricing', icon: '🏷️', key: '13 — pricing', subItems: [{ href: '/pricing', label: 'Overview' }, { href: '/pricing/approval', label: 'Approval Centre' }, { href: '/pricing?tab=fixing', label: 'Price Fixing' }, { href: '/pricing?tab=weekly', label: 'Weekly Strategy' }, { href: '/pricing?tab=competitors', label: 'Competitors' }, { href: '/pricing?tab=rules', label: 'Pricing Rules' }, { href: '/pricing?tab=history', label: 'Price History' }] },
     { href: '/live-web', label: 'Live Web', icon: '🌐', key: '13.5 — live web' },
     { label: 'Settings', icon: '⚙️', key: '14 — settings', subItems: [{ href: '/settings', label: 'System Overview' }, { href: '/settings/users', label: 'User Management' }, { href: '/inventory-management/reports/audit', label: 'Audit Logs' }] },
   ], [stats]);
