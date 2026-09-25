@@ -88,13 +88,13 @@ test('Tall Fold and Android phone viewports use balanced NORA layout without shr
 
 test('Both rotating visuals dissolve into the actual page rather than showing a photo rectangle', () => {
   assert.ok(orb.includes('styles.artworkFrame'));
-  assert.match(css, /\\.artworkFrame\\s*\\{/);
-  assert.match(css, /aspect-ratio: 760 \\/ 501/);
-  assert.match(css, /mix-blend-mode: screen/);
-  assert.match(css, /contain: layout;/);
-  assert.doesNotMatch(css, /contain: layout paint/);
-  assert.match(css, /background: transparent;/);
-  assert.match(css, /mask-image: radial-gradient/);
+  assert.ok(css.includes('.artworkFrame {'));
+  assert.ok(css.includes('aspect-ratio: 760 / 501'));
+  assert.ok(css.includes('mix-blend-mode: screen'));
+  assert.ok(css.includes('contain: layout;'));
+  assert.ok(!css.includes('contain: layout paint'));
+  assert.ok(css.includes('background: transparent;'));
+  assert.ok(css.includes('mask-image: radial-gradient'));
   assert.ok(orb.includes('styles.circuitArtwork'));
   assert.ok(login.includes('loginLayout.content'));
 });
