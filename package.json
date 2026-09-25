@@ -17,7 +17,8 @@
     "cap:open": "npx cap open android",
     "validate:production": "npm run lint && npm run audit:routes && npm run audit:features && npm run audit:runtime && npm run audit:order-sync && npx tsc --noEmit && npm run build && npm run audit:smoke",
     "audit:staff": "node --test scripts/issue4-staff-access.test.cjs",
-    "audit:privileged": "node scripts/issue4-privileged-integration-inventory.cjs"
+    "audit:privileged": "node scripts/issue4-privileged-integration-inventory.cjs",
+    "audit:hr": "node --test scripts/hr-ni-sandbox.test.cjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",

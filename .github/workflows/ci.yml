@@ -90,6 +90,9 @@ jobs:
       - name: Tax sandbox credential and no-live-filing regression tests
         run: node --test scripts/tax-sandbox-readiness.test.cjs
 
+      - name: HR National Insurance sandbox regression tests
+        run: npm run audit:hr
+
       - name: Typecheck
         run: npx tsc --noEmit
 
