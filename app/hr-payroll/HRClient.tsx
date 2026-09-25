@@ -7,6 +7,7 @@ import HRPreviewPayCalculator from '@/components/hr/HRPreviewPayCalculator';
 import HRComplianceTasks from '@/components/hr/HRComplianceTasks';
 import HRSponsorReviewForm from '@/components/hr/HRSponsorReviewForm';
 import HRShiftPlanner from '@/components/hr/HRShiftPlanner';
+import HRLeaveRequestForm from '@/components/hr/HRLeaveRequestForm';
 
 export const HR_SECTIONS=[
   ['dashboard','Dashboard'],['employees','Employees'],['attendance','Attendance'],
@@ -126,7 +127,8 @@ export default function HRClient({section}:{section:string}){
         {section==='shifts'&&session?.access_token&&<HRShiftPlanner company={company} token={session.access_token} employees={data.employees}/>}
         {section==='attendance'&&<div className="rounded-2xl border border-slate-800 bg-slate-900 p-5"><h2 className="font-bold">Attendance record review</h2><p className="mt-2 text-sm text-amber-200">Clock-in and correction approvals are disabled until authenticated employee access and working-hours validation are verified.</p>
           <div className="mt-4 space-y-2">{data.attendance.map(a=><div key={a.id} className="rounded-lg border border-slate-700 p-3 text-sm">{names.get(a.employee_id)||'Employee'} · {new Date(a.clock_in).toLocaleString('en-GB')} → {a.clock_out?new Date(a.clock_out).toLocaleString('en-GB'):'Not clocked out'} · {a.approval_status}</div>)}{!data.attendance.length&&<p className="text-sm text-slate-400">No attendance records.</p>}</div></div>}
-        {section==='leave'&&<div className="rounded-2xl border border-slate-800 bg-slate-900 p-5"><h2 className="font-bold">Leave request review</h2><p className="mt-2 text-sm text-amber-200">Request and approval actions will remain disabled until entitlement and payroll synchronization tests pass.</p>
+        {section==='leave'&&session?.access_token&&<HRLeaveRequestForm company={company} token={session.access_token} employees={data.employees} onSaved={()=>reload(company,session?.access_token||'')}/>}
+        {section==='leave'&&<div className="rounded-2xl border border-slate-800 bg-slate-900 p-5"><h2 className="font-bold">Leave request review</h2><p className="mt-2 text-sm text-amber-200">Requests may be recorded as pending; approvals, entitlement and payroll synchronization remain disabled until separately validated.</p>
           <div className="mt-4 space-y-2">{data.leave.map(l=><div key={l.id} className="rounded-lg border border-slate-700 p-3 text-sm">{names.get(l.employee_id)||'Employee'} · {l.leave_type} · {l.starts_on} – {l.ends_on} · {l.approval_status}</div>)}{!data.leave.length&&<p className="text-sm text-slate-400">No leave requests.</p>}</div></div>}
         {section==='sponsor-compliance'&&<div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
           <h2 className="font-bold">Internal sponsorship case review</h2><p className="mt-2 text-sm text-amber-200">Not the official Home Office Sponsorship Management System. No UKVI submission is enabled. Deadline changes must be confirmed by an authorised compliance officer.</p>
