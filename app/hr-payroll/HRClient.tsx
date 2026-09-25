@@ -5,6 +5,7 @@ import {useAuth} from '@/components/AuthProvider';
 import HRSandboxNICalculator from '@/components/hr/HRSandboxNICalculator';
 import HRPreviewPayCalculator from '@/components/hr/HRPreviewPayCalculator';
 import HRComplianceTasks from '@/components/hr/HRComplianceTasks';
+import HRSponsorReviewForm from '@/components/hr/HRSponsorReviewForm';
 
 export const HR_SECTIONS=[
   ['dashboard','Dashboard'],['employees','Employees'],['attendance','Attendance'],
@@ -128,6 +129,7 @@ export default function HRClient({section}:{section:string}){
         {section==='sponsor-compliance'&&<div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
           <h2 className="font-bold">Internal sponsorship case review</h2><p className="mt-2 text-sm text-amber-200">Not the official Home Office Sponsorship Management System. No UKVI submission is enabled. Deadline changes must be confirmed by an authorised compliance officer.</p>
           <div className="mt-4 space-y-2">{data.sponsorship.map(s=><div key={s.id} className="rounded-lg border border-slate-700 p-3 text-sm">{names.get(s.employee_id)||'Employee'} · Visa expiry: {s.visa_expiry_date||'Needs verification'} · Right-to-work follow-up: {s.right_to_work_followup_date||'Needs verification'} · {s.compliance_status}</div>)}{!data.sponsorship.length&&<p className="text-sm text-slate-400">No sponsorship cases recorded.</p>}</div></div>}
+        {section==='sponsor-compliance'&&session?.access_token&&<HRSponsorReviewForm company={company} token={session.access_token} employees={data.employees} onSaved={()=>reload(company,session.access_token)}/>}
         {section==='sponsor-compliance'&&session?.access_token&&<HRComplianceTasks company={company} token={session.access_token}/>}
         {section==='payroll'&&<div className="space-y-4"><HRPreviewPayCalculator/><HRSandboxNICalculator/><div className="rounded-2xl border border-slate-800 bg-slate-900 p-5"><h2 className="font-bold">Draft payroll registry</h2><p className="mt-2 text-sm text-amber-200">No final tax, NI, pension, net pay, payslip, payment or HMRC filing until the calculation engine passes official validation.</p>
           <div className="mt-4 space-y-2">{data.payroll.map(p=><div key={p.id} className="rounded-lg border border-slate-700 p-3 text-sm">{p.period_start} – {p.period_end} · {p.pay_frequency} · {p.tax_year} · {p.status}</div>)}{!data.payroll.length&&<p className="text-sm text-slate-400">No payroll runs.</p>}</div></div></div>}
