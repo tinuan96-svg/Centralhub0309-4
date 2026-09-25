@@ -113,6 +113,7 @@ export default function MobileHeader() {
     { label: 'Customers & Support', icon: '💬', key: '09 — customers & support', subItems: [
       { href: '/customers', label: 'Customers' },
       { href: '/customer-care/inbox', label: 'Support Inbox' },
+      { href: '/customer-care/email', label: 'Email Inbox' },
       { href: '/customer-care/conversations', label: 'Conversations' },
       { href: '/customer-care/tickets', label: 'Tickets' },
       { href: '/customer-care/channels', label: 'WhatsApp Channels' },
