@@ -25,3 +25,14 @@ test('Login security and demo access are unchanged by responsive visual adjustme
   assert.match(login, /router\.replace\('\/dashboard'\)/);
   assert.doesNotMatch(orb, /@\/lib\/supabase|AuthService|fetch\(/);
 });
+
+test('Approved user-uploaded NORA image is the actual animated login artwork', () => {
+  const imagePath = path.join(__dirname, '..', 'public/feature-visuals/nora_approved_hero.webp');
+  assert.ok(fs.existsSync(imagePath), 'Selected approved NORA image must be committed');
+  assert.ok(fs.statSync(imagePath).size > 20000, 'Selected approved NORA image must not be a placeholder');
+  assert.match(orb, /src="\\/feature-visuals\\/nora_approved_hero\\.webp"/);
+  assert.match(css, /\\.approvedArtwork/);
+  assert.match(css, /@keyframes alive/);
+  assert.match(css, /prefers-reduced-motion: reduce/);
+  assert.doesNotMatch(orb, /styles\\.sphere|styles\\.sphereLabel/);
+});
