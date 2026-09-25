@@ -8,7 +8,7 @@ const login = source('app/login/LoginClient.tsx');
 const css = source('app/login/NoraOrb.module.css');
 const orb = source('app/login/NoraOrb.tsx');
 test('Phone and short viewport NORA art scales down while the secure action grid remains visible', () => {
-  assert.match(css, /height: clamp\(154px, 49vw, 198px\)/);
+  assert.ok(css.includes('height: clamp(142px, min(53vw, 24dvh), 216px)'));
   assert.match(css, /max-width: 480px\) and \(max-height: 680px/);
   assert.match(login, /grid grid-cols-2 gap-2 sm:mt-3 sm:grid-cols-1/);
   assert.match(login, /<details className=/);
@@ -64,7 +64,7 @@ test('NORA rotates available artworks randomly without repeating the last displa
 
 test('NORA title and login actions remain accessible with external floating widgets', () => {
   assert.match(login, /relative z-10 mt-2 text-/);
-  assert.match(login, /pb-\[calc\(7rem\+env\(safe-area-inset-bottom\)\)\]/);
+  assert.ok(login.includes('pb-[max(48px,env(safe-area-inset-bottom))]'));
   assert.match(css, /mix-blend-mode: screen/);
   assert.match(login, /href="\/demo"/);
   assert.match(login, /completeReturningUserUnlock/);
@@ -74,12 +74,12 @@ test('Tall Fold and Android phone viewports use balanced NORA layout without shr
   const layout = source('app/login/LoginResponsive.module.css');
   assert.ok(login.includes("import loginLayout from './LoginResponsive.module.css'"));
   assert.ok(login.includes("loginLayout.content"));
-  assert.match(layout, /max-width: 639px\) and \(min-height: 800px/);
-  assert.match(layout, /justify-content: center/);
-  assert.match(layout, /max-width: 639px\) and \(max-height: 799px/);
-  assert.match(layout, /justify-content: flex-start/);
-  assert.match(css, /max-width: 480px\) and \(min-height: 800px/);
-  assert.match(css, /height: clamp\(182px, 56vw, 234px\)/);
+  assert.ok(layout.includes('min-height: 0;'));
+  assert.ok(layout.includes('justify-content: center;'));
+  assert.ok(layout.includes('max-height: 740px'));
+  assert.ok(layout.includes('justify-content: flex-start;'));
+  assert.ok(css.includes('max-width: 480px) and (min-height: 800px'));
+  assert.ok(css.includes('height: clamp(170px, min(54vw, 23dvh), 216px)'));
   assert.ok(login.includes('completeReturningUserUnlock()'));
   assert.ok(login.includes('href="/demo"'));
 });
@@ -108,12 +108,27 @@ test('NORA has exactly one demo entry point and responsive animated visuals', ()
   assert.ok(login.includes('completeReturningUserUnlock()'));
   assert.ok(login.includes('OTPService.sendOTP'));
   assert.ok(login.includes('OTPService.verifyOTP'));
-  assert.ok(css.includes('height: clamp(216px, 45vw, 425px)'));
-  assert.ok(css.includes('height: clamp(182px, 56vw, 234px)'));
-  assert.ok(css.includes('height: 142px'));
+  assert.ok(css.includes('height: clamp(196px, min(39vw, 30dvh), 360px)'));
+  assert.ok(css.includes('height: clamp(170px, min(54vw, 23dvh), 216px)'));
+  assert.ok(css.includes('height: clamp(124px, 23dvh, 148px)'));
   assert.ok(css.includes('scale(1.055)'));
   assert.ok(css.includes('translateY(-1.7%) scale(1.038)'));
   assert.ok(css.includes('prefers-reduced-motion: reduce'));
-  assert.ok(layout.includes('min-height: calc(100dvh - 120px)'));
+  assert.ok(layout.includes('min-height: 0;'));
   assert.ok(orb.includes('pickRandomDifferentImage'));
+});
+
+test('Fold viewport and browser chrome do not force the login card below the screen', () => {
+  const layout = source('app/login/LoginResponsive.module.css');
+  assert.ok(login.includes('flex min-h-[100dvh] flex-col'));
+  assert.ok(login.includes('flex-1 flex-col items-center justify-center'));
+  assert.ok(!login.includes('min-h-[calc(100dvh-45px)]'));
+  assert.ok(!login.includes('pb-[calc(7rem+env(safe-area-inset-bottom))]'));
+  assert.ok(login.includes('pb-[max(48px,env(safe-area-inset-bottom))]'));
+  assert.ok(layout.includes('min-height: 0;'));
+  assert.ok(layout.includes('max-height: 740px'));
+  assert.ok(css.includes('min(53vw, 24dvh)'));
+  assert.ok(css.includes('height: clamp(124px, 23dvh, 148px)'));
+  assert.ok(login.includes('completeReturningUserUnlock()'));
+  assert.equal(login.split('href="/demo"').length - 1, 1);
 });
