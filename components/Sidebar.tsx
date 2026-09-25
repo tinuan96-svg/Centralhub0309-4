@@ -73,7 +73,7 @@ export default function Sidebar({ collapsed: manualCollapsed = false, onToggleCo
       { href: '/finance/payables', label: 'Supplier Payables' },
       { href: '/expenses', label: 'Business Expenses' },
       { href: '/finance/p-and-l', label: 'Profit & Loss' },
-      { href: '/finance/vat', label: 'VAT Returns & Settings' },
+      { href: '/finance/vat', label: 'VAT Filing (Coming Soon)' },
       { href: '/finance/profitability', label: 'Profitability' },
       { href: '/finance/alerts', label: 'Financial Alerts' },
     ] },
