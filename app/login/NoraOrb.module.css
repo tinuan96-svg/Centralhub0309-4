@@ -295,3 +295,37 @@
 @media (max-width: 480px) and (min-height: 800px) {
   .scene { height: clamp(170px, min(54vw, 23dvh), 216px); }
 }
+
+/* The living character is drawn in an actual canvas on each animation frame.
+   Stills remain as faint, cycling backgrounds only. The canvas is not subject
+   to CSS animation, so an OS reduced-motion rule cannot silently freeze it.
+   The explicit, keyboard-accessible Pause motion control always takes priority. */
+.artworkFrame { opacity: .27; }
+.livingCanvas {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+}
+.motionToggle {
+  position: absolute;
+  z-index: 12;
+  right: 1rem;
+  bottom: 0;
+  pointer-events: auto;
+  min-height: 28px;
+  border: 1px solid rgba(110,217,255,.34);
+  border-radius: 999px;
+  background: rgba(8,34,62,.91);
+  color: #ccf5ff;
+  font: 600 11px/1 Arial,sans-serif;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.motionToggle:focus-visible { outline: 2px solid #aaf2ff; outline-offset: 3px; }
+@media (max-width: 480px) {
+  .motionToggle { right: .35rem; bottom: 0; font-size: 10px; min-height: 26px; }
+}

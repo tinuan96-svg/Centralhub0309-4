@@ -149,3 +149,26 @@ test('NORA artwork has visibly moving independent orbit rings, sparks, scan and 
   assert.equal(login.split('href="/demo"').length - 1, 1);
   assert.ok(login.includes('completeReturningUserUnlock()'));
 });
+
+test('NORA has a real frame-rendered living character independent of CSS animations', () => {
+  const live = source('app/login/NoraLivingCanvas.tsx');
+  assert.ok(orb.includes('NoraLivingCanvas'));
+  assert.ok(orb.includes('playing={motionEnabled}'));
+  assert.ok(orb.includes('aria-pressed={motionEnabled}'));
+  assert.ok(orb.includes('Pause motion'));
+  assert.ok(orb.includes('Play motion'));
+  assert.ok(css.includes('.livingCanvas'));
+  assert.ok(css.includes('pointer-events: auto'));
+  assert.ok(live.includes("getContext('2d')"));
+  assert.ok(live.includes('requestAnimationFrame(tick)'));
+  assert.ok(live.includes('cancelAnimationFrame(frame)'));
+  assert.ok(live.includes('visibilitychange'));
+  assert.ok(live.includes('ResizeObserver'));
+  assert.ok(live.includes('const closing = cycle > 3.55'));
+  assert.ok(live.includes('const sweep = ctx.createLinearGradient'));
+  assert.ok(live.includes('Math.cos(angle) * rx'));
+  assert.ok(live.includes('if (!playing || !visible) return'));
+  assert.ok(!live.includes('getUserMedia'));
+  assert.ok(!live.includes('fetch('));
+  assert.equal(login.split('href="/demo"').length - 1, 1);
+});

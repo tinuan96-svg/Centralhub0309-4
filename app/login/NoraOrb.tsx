@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import styles from './NoraOrb.module.css';
+import NoraLivingCanvas from './NoraLivingCanvas';
 
 type NoraPhase = 'idle' | 'listening' | 'verifying';
 
@@ -37,6 +38,7 @@ export default function NoraOrb({ phase }: { phase: NoraPhase }) {
   const [imageIndex, setImageIndex] = useState<number | null>(null);
   const [hasImageLoaded, setHasImageLoaded] = useState(false);
   const mountedOnce = useRef(false);
+  const [motionEnabled, setMotionEnabled] = useState(true);
 
   const chooseImage = useCallback(() => {
     let previous = lastImageInTab;
@@ -66,8 +68,8 @@ export default function NoraOrb({ phase }: { phase: NoraPhase }) {
 
   return (
     <div
-      role="img"
-      aria-label="NORA AI artwork: a luminous blue holographic face within electric orbital rings, gently moving with light pulses"
+      role="group"
+      aria-label="NORA living AI animation and motion controls"
       className={[styles.scene, phase === 'verifying' ? styles.verifying : phase === 'listening' ? styles.listening : styles.idle].join(' ')}
     >
       <div aria-hidden="true" className={styles.aura} />
@@ -93,6 +95,16 @@ export default function NoraOrb({ phase }: { phase: NoraPhase }) {
         </div>
       )}
       <div aria-hidden="true" className={styles.energyHalo} />
+      <NoraLivingCanvas phase={phase} playing={motionEnabled} className={styles.livingCanvas} />
+      <button
+        type="button"
+        aria-pressed={motionEnabled}
+        className={styles.motionToggle}
+        onClick={() => setMotionEnabled(value => !value)}
+        title={motionEnabled ? 'Pause NORA animation' : 'Play NORA animation'}
+      >
+        {motionEnabled ? 'Pause motion' : 'Play motion'}
+      </button>
       {/* Animated geometry is separate from the still artwork: movement remains
           visible even when the image is fully loaded and no audio is playing. */}
       <div aria-hidden="true" className={styles.livingOrbitOuter}>
