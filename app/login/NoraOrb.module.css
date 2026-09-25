@@ -34,6 +34,9 @@
 .circuitArtwork { object-fit: cover; object-position: center 49%; }
 @media (prefers-reduced-motion: no-preference) {
   .artworkVisible { animation: heroEnter .7s ease-out both, alive 7.6s ease-in-out .7s infinite; }
+  .listening .artworkVisible { animation-duration: .7s, 5.2s; }
+  .verifying .artworkVisible { animation-duration: .7s, 2.8s; }
+  .idle .artworkVisible { animation-duration: .7s, 8s; }
 }
 @keyframes heroEnter { from { opacity: 0; } to { opacity: 1; } }
 .aura {
