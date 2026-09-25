@@ -238,7 +238,6 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
       <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[680px] opacity-50 [background-image:radial-gradient(circle,rgba(68,185,255,.75)_0.6px,transparent_1.5px)] [background-size:67px_59px] [mask-image:linear-gradient(to_bottom,black,transparent)]" />
       <section className={`relative mx-auto flex min-h-[calc(100dvh-45px)] w-full max-w-[780px] flex-col items-center justify-start py-1 text-center sm:min-h-[calc(100dvh-70px)] sm:justify-center sm:py-8 ${loginLayout.content}`}>
         <div className="mb-0.5 flex items-center justify-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.18em] text-slate-300 sm:mb-1 sm:gap-2 sm:text-xs sm:tracking-[0.36em]"><ShieldCheck aria-hidden="true" className="h-4 w-4 shrink-0 text-cyan-300 sm:h-5 sm:w-5" /> CentralHub Secure Access</div>
-        <Link href="/demo" prefetch={false} className="mb-1 inline-flex min-h-7 items-center gap-1 rounded-full border border-cyan-300/25 bg-cyan-300/10 px-3 text-[11px] font-semibold text-cyan-100 sm:hidden">Try Demo Data <ArrowRight aria-hidden="true" className="h-3 w-3" /></Link>
 
         <NoraOrb phase={/verif|unloc/i.test(status) ? 'verifying' : /listening/i.test(status) ? 'listening' : 'idle'} />
 
@@ -246,7 +245,7 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
         <p className="mt-1.5 text-[9px] font-bold uppercase tracking-[0.18em] text-cyan-200 sm:mt-3 sm:text-xs sm:tracking-[0.38em]">Security · Identity · Access</p>
         <div aria-hidden="true" className="mt-2 h-px w-20 bg-gradient-to-r from-transparent via-cyan-300 to-transparent shadow-[0_0_18px_2px_rgba(34,211,238,.45)] sm:mt-4" />
 
-        <div className="mt-3 w-full rounded-[1.4rem] border border-cyan-300/35 bg-gradient-to-b from-[#0b2344]/90 via-[#07162e]/95 to-[#071224]/95 p-3 shadow-[0_24px_95px_rgba(0,0,0,.55),0_0_35px_rgba(16,124,255,.13)] backdrop-blur-xl sm:mt-7 sm:rounded-[2rem] sm:p-7">
+        <div className="mt-4 w-full rounded-[1.4rem] border border-cyan-300/35 bg-gradient-to-b from-[#0b2344]/90 via-[#07162e]/95 to-[#071224]/95 p-3 shadow-[0_24px_95px_rgba(0,0,0,.55),0_0_35px_rgba(16,124,255,.13)] backdrop-blur-xl sm:mt-7 sm:rounded-[2rem] sm:p-7">
           <div role="status" aria-live="polite" className="flex items-center justify-center gap-2 text-cyan-50"><span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-cyan-300/60 bg-cyan-300/10 shadow-[0_0_22px_rgba(14,177,255,.3)] sm:h-11 sm:w-11"><span aria-hidden="true" className="absolute -inset-1 rounded-full border border-cyan-300/30 motion-safe:animate-pulse" /><Mic aria-hidden="true" className="relative h-4 w-4 sm:h-5 sm:w-5" /></span><span className="text-xs font-semibold leading-4 sm:text-base">{status}</span></div>
           {/listening/i.test(status) ? (
             <p className="mt-1.5 text-sm font-semibold text-cyan-50 sm:mt-3">Say “Hi Nora” to start secure device verification.</p>
@@ -254,7 +253,6 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
             <p className="mt-1.5 text-xs leading-5 text-slate-300 sm:mt-3 sm:text-sm">Use secure login below. Voice wake-up is available in the CentralHub Android app.</p>
           )}
           {heard && <p className="mt-2 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2 text-xs text-slate-400">Heard: {heard}</p>}
-          <Link href="/demo" prefetch={false} className="mt-2 inline-flex min-h-9 items-center justify-center gap-1.5 rounded-full border border-cyan-300/30 bg-cyan-300/10 px-4 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-300/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"><PlayCircle aria-hidden="true" className="h-3.5 w-3.5" /> Open demo dashboard</Link>
           <details className="mx-auto mt-1.5 max-w-lg text-xs leading-5 text-slate-400 sm:mt-3">
             <summary className="cursor-pointer rounded-md py-1 text-cyan-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300">How NORA secure access works</summary>
             <p className="mt-1">NORA stays silent while listening so her own speaker does not interfere. Voice wake-up requires the CentralHub Android app. Returning sessions must pass Android biometric or device-credential verification before CentralHub opens.</p>

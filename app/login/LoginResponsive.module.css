@@ -3,9 +3,9 @@
    the fold, and expanding password/OTP forms can still grow and scroll. */
 @media (max-width: 639px) and (min-height: 800px) {
   .content {
-    min-height: calc(100dvh - 148px);
+    min-height: calc(100dvh - 120px);
     justify-content: center;
-    padding-top: 16px;
+    padding-top: 8px;
     padding-bottom: 16px;
   }
 }

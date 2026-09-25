@@ -8,10 +8,9 @@ const login = source('app/login/LoginClient.tsx');
 const css = source('app/login/NoraOrb.module.css');
 const orb = source('app/login/NoraOrb.tsx');
 test('Phone and short viewport NORA art scales down while the secure action grid remains visible', () => {
-  assert.match(css, /height: clamp\(136px, 43vw, 174px\)/);
+  assert.match(css, /height: clamp\(154px, 49vw, 198px\)/);
   assert.match(css, /max-width: 480px\) and \(max-height: 680px/);
   assert.match(login, /grid grid-cols-2 gap-2 sm:mt-3 sm:grid-cols-1/);
-  assert.match(login, /mb-1 inline-flex min-h-7/);
   assert.match(login, /<details className=/);
   assert.match(css, /prefers-reduced-motion: reduce/);
 });
@@ -65,7 +64,6 @@ test('NORA rotates available artworks randomly without repeating the last displa
 
 test('NORA title and login actions remain accessible with external floating widgets', () => {
   assert.match(login, /relative z-10 mt-2 text-/);
-  assert.match(login, /Open demo dashboard/);
   assert.match(login, /pb-\[calc\(7rem\+env\(safe-area-inset-bottom\)\)\]/);
   assert.match(css, /mix-blend-mode: screen/);
   assert.match(login, /href="\/demo"/);
@@ -81,7 +79,7 @@ test('Tall Fold and Android phone viewports use balanced NORA layout without shr
   assert.match(layout, /max-width: 639px\) and \(max-height: 799px/);
   assert.match(layout, /justify-content: flex-start/);
   assert.match(css, /max-width: 480px\) and \(min-height: 800px/);
-  assert.match(css, /height: clamp\(166px, 50vw, 212px\)/);
+  assert.match(css, /height: clamp\(182px, 56vw, 234px\)/);
   assert.ok(login.includes('completeReturningUserUnlock()'));
   assert.ok(login.includes('href="/demo"'));
 });
@@ -97,4 +95,25 @@ test('Both rotating visuals dissolve into the actual page rather than showing a 
   assert.ok(css.includes('mask-image: radial-gradient'));
   assert.ok(orb.includes('styles.circuitArtwork'));
   assert.ok(login.includes('loginLayout.content'));
+});
+
+test('NORA has exactly one demo entry point and responsive animated visuals', () => {
+  const layout = source('app/login/LoginResponsive.module.css');
+  assert.equal(login.split('href="/demo"').length - 1, 1);
+  assert.equal(login.split('Try Demo Data').length - 1, 1);
+  assert.ok(!login.includes('Open demo dashboard'));
+  assert.ok(login.includes('Verify this device'));
+  assert.ok(login.includes('Login ID & password'));
+  assert.ok(login.includes('Staff login'));
+  assert.ok(login.includes('completeReturningUserUnlock()'));
+  assert.ok(login.includes('OTPService.sendOTP'));
+  assert.ok(login.includes('OTPService.verifyOTP'));
+  assert.ok(css.includes('height: clamp(216px, 45vw, 425px)'));
+  assert.ok(css.includes('height: clamp(182px, 56vw, 234px)'));
+  assert.ok(css.includes('height: 142px'));
+  assert.ok(css.includes('scale(1.055)'));
+  assert.ok(css.includes('translateY(-1.7%) scale(1.038)'));
+  assert.ok(css.includes('prefers-reduced-motion: reduce'));
+  assert.ok(layout.includes('min-height: calc(100dvh - 120px)'));
+  assert.ok(orb.includes('pickRandomDifferentImage'));
 });
