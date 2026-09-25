@@ -232,50 +232,57 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
   };
 
   return (
-    <main className="relative isolate min-h-[100dvh] overflow-x-hidden bg-[#030b1b] px-4 pb-[max(28px,env(safe-area-inset-bottom))] pt-[max(20px,env(safe-area-inset-top))] text-white sm:px-6">
+    <main className="relative isolate min-h-[100dvh] overflow-x-hidden bg-[#030b1b] px-3 pb-[max(20px,env(safe-area-inset-bottom))] pt-[max(12px,env(safe-area-inset-top))] text-white sm:px-6 sm:pt-[max(20px,env(safe-area-inset-top))]">
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_50%_16%,rgba(0,117,255,.18),transparent_50%),radial-gradient(circle_at_50%_80%,rgba(8,84,180,.14),transparent_48%)]" />
       <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[680px] opacity-50 [background-image:radial-gradient(circle,rgba(68,185,255,.75)_0.6px,transparent_1.5px)] [background-size:67px_59px] [mask-image:linear-gradient(to_bottom,black,transparent)]" />
-      <section className="relative mx-auto flex min-h-[calc(100dvh-70px)] w-full max-w-[780px] flex-col items-center justify-center py-4 text-center sm:py-8">
-        <div className="mb-1 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-[0.22em] text-slate-300 sm:text-xs sm:tracking-[0.36em]"><ShieldCheck aria-hidden="true" className="h-5 w-5 shrink-0 text-cyan-300" /> CentralHub Secure Access</div>
+      <section className="relative mx-auto flex min-h-[calc(100dvh-45px)] w-full max-w-[780px] flex-col items-center justify-start py-1 text-center sm:min-h-[calc(100dvh-70px)] sm:justify-center sm:py-8">
+        <div className="mb-0.5 flex items-center justify-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.18em] text-slate-300 sm:mb-1 sm:gap-2 sm:text-xs sm:tracking-[0.36em]"><ShieldCheck aria-hidden="true" className="h-4 w-4 shrink-0 text-cyan-300 sm:h-5 sm:w-5" /> CentralHub Secure Access</div>
+        <Link href="/demo" prefetch={false} className="mb-1 inline-flex min-h-7 items-center gap-1 rounded-full border border-cyan-300/25 bg-cyan-300/10 px-3 text-[11px] font-semibold text-cyan-100 sm:hidden">Try Demo Data <ArrowRight aria-hidden="true" className="h-3 w-3" /></Link>
 
         <NoraOrb phase={/verif|unloc/i.test(status) ? 'verifying' : /listening/i.test(status) ? 'listening' : 'idle'} />
 
-        <h1 className="-mt-2 text-[clamp(2.6rem,9vw,4.2rem)] font-light leading-none tracking-[0.19em] text-slate-50 [text-shadow:0_0_30px_rgba(93,205,255,0.4)] sm:-mt-4">NORA</h1>
-        <p className="mt-3 text-[10px] font-bold uppercase tracking-[0.22em] text-cyan-200 sm:text-xs sm:tracking-[0.38em]">Security · Identity · Access</p>
-        <div aria-hidden="true" className="mt-4 h-px w-20 bg-gradient-to-r from-transparent via-cyan-300 to-transparent shadow-[0_0_18px_2px_rgba(34,211,238,.45)]" />
+        <h1 className="-mt-2 text-[clamp(2rem,8vw,4.2rem)] font-light leading-none tracking-[0.19em] text-slate-50 [text-shadow:0_0_30px_rgba(93,205,255,0.4)] sm:-mt-4">NORA</h1>
+        <p className="mt-1.5 text-[9px] font-bold uppercase tracking-[0.18em] text-cyan-200 sm:mt-3 sm:text-xs sm:tracking-[0.38em]">Security · Identity · Access</p>
+        <div aria-hidden="true" className="mt-2 h-px w-20 bg-gradient-to-r from-transparent via-cyan-300 to-transparent shadow-[0_0_18px_2px_rgba(34,211,238,.45)] sm:mt-4" />
 
-        <div className="mt-5 w-full rounded-[1.65rem] border border-cyan-300/35 bg-gradient-to-b from-[#0b2344]/90 via-[#07162e]/95 to-[#071224]/95 p-4 shadow-[0_24px_95px_rgba(0,0,0,.55),0_0_35px_rgba(16,124,255,.13)] backdrop-blur-xl sm:mt-7 sm:rounded-[2rem] sm:p-7">
-          <div role="status" aria-live="polite" className="flex flex-wrap items-center justify-center gap-3 text-cyan-50"><span className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-cyan-300/60 bg-cyan-300/10 shadow-[0_0_22px_rgba(14,177,255,.3)]"><span aria-hidden="true" className="absolute -inset-1 rounded-full border border-cyan-300/30 motion-safe:animate-pulse" /><Mic aria-hidden="true" className="relative h-5 w-5" /></span><span className="text-sm font-semibold sm:text-base">{status}</span></div>
-          <p className="mt-3 text-sm text-slate-300">Say naturally:</p>
-          <p className="mt-1 text-xl font-semibold tracking-wide text-white">“Hi Nora.”</p>
-          <p className="mt-2 text-xs leading-relaxed text-slate-300">NORA stays silent while listening so her own speaker does not interfere.</p>
-          {heard && <p className="mt-3 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2 text-xs text-slate-400">Heard: {heard}</p>}
-          <p className="mx-auto mt-3 max-w-lg text-xs leading-5 text-slate-400">Voice wake-up requires the CentralHub Android app. For returning sessions, Android biometric/device credential confirms identity before CentralHub opens.</p>
+        <div className="mt-3 w-full rounded-[1.4rem] border border-cyan-300/35 bg-gradient-to-b from-[#0b2344]/90 via-[#07162e]/95 to-[#071224]/95 p-3 shadow-[0_24px_95px_rgba(0,0,0,.55),0_0_35px_rgba(16,124,255,.13)] backdrop-blur-xl sm:mt-7 sm:rounded-[2rem] sm:p-7">
+          <div role="status" aria-live="polite" className="flex items-center justify-center gap-2 text-cyan-50"><span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-cyan-300/60 bg-cyan-300/10 shadow-[0_0_22px_rgba(14,177,255,.3)] sm:h-11 sm:w-11"><span aria-hidden="true" className="absolute -inset-1 rounded-full border border-cyan-300/30 motion-safe:animate-pulse" /><Mic aria-hidden="true" className="relative h-4 w-4 sm:h-5 sm:w-5" /></span><span className="text-xs font-semibold leading-4 sm:text-base">{status}</span></div>
+          {/listening/i.test(status) ? (
+            <p className="mt-1.5 text-sm font-semibold text-cyan-50 sm:mt-3">Say “Hi Nora” to start secure device verification.</p>
+          ) : (
+            <p className="mt-1.5 text-xs leading-5 text-slate-300 sm:mt-3 sm:text-sm">Use secure login below. Voice wake-up is available in the CentralHub Android app.</p>
+          )}
+          {heard && <p className="mt-2 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2 text-xs text-slate-400">Heard: {heard}</p>}
+          <details className="mx-auto mt-1.5 max-w-lg text-xs leading-5 text-slate-400 sm:mt-3">
+            <summary className="cursor-pointer rounded-md py-1 text-cyan-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300">How NORA secure access works</summary>
+            <p className="mt-1">NORA stays silent while listening so her own speaker does not interfere. Voice wake-up requires the CentralHub Android app. Returning sessions must pass Android biometric or device-credential verification before CentralHub opens.</p>
+          </details>
           {error && <p className="mt-3 text-sm text-rose-300">{error}</p>}
 
-          <div className="mt-5 grid gap-2.5 sm:grid-cols-2">
-            <button type="button" onClick={() => void completeReturningUserUnlock()} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-cyan-200/50 bg-gradient-to-r from-cyan-400 to-blue-600 px-4 py-3 text-sm font-bold text-white shadow-[0_4px_20px_rgba(0,149,255,.24)] transition hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"><Fingerprint aria-hidden="true" className="h-4 w-4" /> Verify this device <ArrowRight aria-hidden="true" className="h-4 w-4" /></button>
-            <button type="button" aria-expanded={fallbackVisible && mode === 'password'} onClick={() => { setMode('password'); setFallbackVisible(value => !value || mode !== 'password'); }} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-cyan-200/30 bg-[#0d2840]/70 px-4 py-3 text-sm font-semibold text-slate-50 transition hover:border-cyan-300/60 hover:bg-[#10334e] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"><KeyRound aria-hidden="true" className="h-4 w-4" /> Login ID & password <ArrowRight aria-hidden="true" className="h-4 w-4" /></button>
+<div className="mt-2 grid grid-cols-2 gap-2 sm:mt-5 sm:gap-2.5">
+            <button type="button" onClick={() => void completeReturningUserUnlock()} className="inline-flex min-h-11 items-center justify-center gap-1 rounded-xl border border-cyan-200/50 bg-gradient-to-r from-cyan-400 to-blue-600 px-2 py-2 text-[11px] sm:px-4 sm:py-3 sm:text-sm font-bold text-white shadow-[0_4px_20px_rgba(0,149,255,.24)] transition hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"><Fingerprint aria-hidden="true" className="h-4 w-4" /> Verify this device <ArrowRight aria-hidden="true" className="hidden h-4 w-4 sm:block" /></button>
+            <button type="button" aria-expanded={fallbackVisible && mode === 'password'} onClick={() => { setMode('password'); setFallbackVisible(value => !value || mode !== 'password'); }} className="inline-flex min-h-11 items-center justify-center gap-1 rounded-xl border border-cyan-200/30 bg-[#0d2840]/70 px-2 py-2 text-[11px] sm:px-4 sm:py-3 sm:text-sm font-semibold text-slate-50 transition hover:border-cyan-300/60 hover:bg-[#10334e] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"><KeyRound aria-hidden="true" className="h-4 w-4" /> Login ID & password <ArrowRight aria-hidden="true" className="hidden h-4 w-4 sm:block" /></button>
           </div>
-
+          <div className="mt-2 grid grid-cols-2 gap-2 sm:mt-3 sm:grid-cols-1 sm:gap-3">
           <button type="button" onClick={() => {
             setStaffLoginSelected(true);
             setFallbackVisible(true);
             setMode('password');
             setError('');
             setStatus('Staff login · enter your work email and temporary or personal password');
-          }} className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-cyan-300/35 bg-[#0d2840]/80 px-4 py-3 text-sm font-semibold text-cyan-50 transition hover:bg-[#10344d] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300">
-            <KeyRound aria-hidden="true" className="h-4 w-4" /> Staff login <ArrowRight aria-hidden="true" className="h-4 w-4" />
+          }} className="inline-flex min-h-11 w-full items-center justify-center gap-1 rounded-xl border border-cyan-300/35 bg-[#0d2840]/80 px-2 py-2 text-[11px] sm:px-4 sm:py-3 sm:text-sm font-semibold text-cyan-50 transition hover:bg-[#10344d] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300">
+            <KeyRound aria-hidden="true" className="h-4 w-4" /> Staff login <ArrowRight aria-hidden="true" className="hidden h-4 w-4 sm:block" />
           </button>
-          {staffLoginSelected&&<p className="mt-2 text-xs text-slate-300">Staff accounts use their own email and password. Your Super Admin must activate the account before you can access assigned work sections.</p>}
-
           <Link
             href="/demo"
             prefetch={false}
-            className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-cyan-300/35 bg-[#0d2840]/80 px-4 py-3 text-sm font-semibold text-cyan-50 transition hover:border-cyan-300/60 hover:bg-[#10344d] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
+            className="inline-flex min-h-11 w-full items-center justify-center gap-1 rounded-xl border border-cyan-300/35 bg-[#0d2840]/80 px-2 py-2 text-[11px] sm:px-4 sm:py-3 sm:text-sm font-semibold text-cyan-50 transition hover:border-cyan-300/60 hover:bg-[#10344d] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
           >
-            <PlayCircle className="h-4 w-4" aria-hidden="true" /> Try Demo Data <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            <PlayCircle className="h-4 w-4" aria-hidden="true" /> Try Demo Data <ArrowRight className="hidden h-4 w-4 sm:block" aria-hidden="true" />
           </Link>
+          </div>
+          {staffLoginSelected&&<p className="mt-2 text-xs text-slate-300">Staff accounts use their own email and password. Your Super Admin must activate the account before you can access assigned work sections.</p>}
+
           <p className="mt-2 text-xs text-slate-500">Explore a sample CentralHub dashboard without logging in. No live business data or transactions.</p>
 
           {fallbackVisible && (
