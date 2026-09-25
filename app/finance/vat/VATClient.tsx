@@ -174,6 +174,16 @@ export default function VATClient() {
         </select>
       </div>
 
+      <section aria-label="VAT filing feature status" className="rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-cyan-500/10 via-slate-900 to-slate-950 p-5 sm:p-6">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-amber-200">In development</span>
+          <span className="text-xs font-semibold text-cyan-300">Coming soon</span>
+        </div>
+        <h2 className="mt-3 text-xl sm:text-2xl font-black text-white">VAT Return Filing — we're working on it</h2>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">We're building direct HMRC Making Tax Digital VAT return filing in CentralHub and hope to make it available soon. There is no confirmed launch date yet.</p>
+        <p className="mt-2 text-xs leading-5 text-slate-400">You can still review VAT transactions and configure company settings below. Preparing or submitting a VAT return to HMRC is not available here yet.</p>
+      </section>
+
       {error && <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-300">{error}</div>}
 
       <div className={`rounded-2xl border p-5 ${configured ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-amber-500/20 bg-amber-500/5'}`}>
