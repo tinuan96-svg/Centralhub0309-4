@@ -12,6 +12,6 @@ const ProtectedAppShell = dynamic(() => import('./ProtectedAppShell'), {
 
 export default function AppRouteShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  if (pathname === '/' || pathname === '/demo' || pathname.startsWith('/demo/')) return <>{children}</>;
+  if (pathname === '/' || pathname === '/demo' || pathname.startsWith('/demo/') || ['/company', '/contact', '/privacy', '/terms', '/security', '/tax-integrations', '/data-processing'].includes(pathname)) return <>{children}</>;
   return <ProtectedAppShell>{children}</ProtectedAppShell>;
 }
