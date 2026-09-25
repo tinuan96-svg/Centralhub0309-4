@@ -22,6 +22,19 @@ type NativeSecurityBridge = {
 
 type TranscriptEvent = CustomEvent<{ text?: string }>;
 
+// Share the existing account-scoped trust marker with the dashboard security gate.
+// Only set this after successful authentication or Android device verification.
+const SECURITY_TRUST_PREFIX = 'centralhub:shruthi-security-trusted-until:';
+const SECURITY_TRUST_MS = 5 * 60_000;
+function rememberVerifiedLogin(userId: string) {
+  if (!userId || typeof window === 'undefined') return;
+  try {
+    const now = Date.now();
+    sessionStorage.setItem(SECURITY_TRUST_PREFIX + userId, String(now + SECURITY_TRUST_MS));
+    sessionStorage.setItem('centralhub:shruthi-security-unlocked-at', String(now));
+  } catch { }
+}
+
 // Wake-up speech only starts the existing protected-session and device
 // verification flow. It never authenticates or bypasses Supabase access.
 const NORA_WAKE = /^(?:(?:hi|hello|hey)\s+)?nora[.!?\s]*$/iu;
@@ -141,7 +154,7 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
       clearVerifyPoll();
       if (result === 'success') {
         setStatus('Identity verified · unlocking CentralHub');
-        try { sessionStorage.setItem('centralhub:shruthi-security-unlocked-at', String(Date.now())); } catch { }
+        rememberVerifiedLogin(session.user.id);
         router.replace('/dashboard');
         return;
       }
@@ -179,7 +192,7 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
       const signedIn = await AuthService.signIn(email, password);
       const staffLogin = signedIn.user?.app_metadata?.role === 'staff';
       if (!staffLogin) {
-        try { sessionStorage.setItem('centralhub:shruthi-security-unlocked-at', String(Date.now())); } catch { }
+        rememberVerifiedLogin(signedIn.user.id);
       } else {
         // Staff passwords do not satisfy the Super Admin's voice/biometric gate.
         try { sessionStorage.removeItem('centralhub:shruthi-security-unlocked-at'); } catch { }
@@ -219,9 +232,9 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
       if (!requestId || !selectedStoreId) throw new Error('Your OTP session has expired. Please request a new code.');
       const res = await OTPService.verifyOTP(requestId, otp, selectedStoreId);
       if (res.success && res.session_tokens?.email_otp && res.user?.email) {
-        const { error: authError } = await supabase.auth.verifyOtp({ email: res.user.email, token: res.session_tokens.email_otp, type: 'magiclink' });
+        const { data: otpSession, error: authError } = await supabase.auth.verifyOtp({ email: res.user.email, token: res.session_tokens.email_otp, type: 'magiclink' });
         if (authError) throw authError;
-        try { sessionStorage.setItem('centralhub:shruthi-security-unlocked-at', String(Date.now())); } catch { }
+        if (otpSession.user?.app_metadata?.role !== 'staff' && otpSession.user?.id) rememberVerifiedLogin(otpSession.user.id);
         setStatus('WhatsApp verification complete · unlocking CentralHub');
         router.replace('/dashboard');
       } else setError(res.error || 'Invalid OTP');
