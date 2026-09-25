@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/components/AuthProvider';
 
 type Store = { id: string; name: string; slug: string | null };
 type VatSetting = {
@@ -59,6 +60,11 @@ export default function VATClient() {
   const [transactions, setTransactions] = useState<VatTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const { isAdmin } = useAuth();
+  const [editingSettings, setEditingSettings] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsMessage, setSettingsMessage] = useState('');
+  const [draft, setDraft] = useState({ vat_number: '', is_vat_registered: false, accounting_basis: 'not_configured', prices_include_vat: true, notes: '' });
 
   const loadStores = useCallback(async () => {
     const { data, error: storeError } = await supabase.from('stores').select('id,name,slug').order('name');
@@ -83,6 +89,9 @@ export default function VATClient() {
     if (txResult.error) throw txResult.error;
 
     setSetting((settingsResult.data || null) as VatSetting | null);
+    setDraft({ vat_number: settingsResult.data?.vat_number || '', is_vat_registered: Boolean(settingsResult.data?.is_vat_registered), accounting_basis: settingsResult.data?.accounting_basis || 'not_configured', prices_include_vat: settingsResult.data?.prices_include_vat ?? true, notes: settingsResult.data?.notes || '' });
+    setEditingSettings(false);
+    setSettingsMessage('');
     setPeriods((periodsResult.data || []) as VatPeriod[]);
     setTransactions((txResult.data || []) as VatTransaction[]);
     setLoading(false);
@@ -95,6 +104,39 @@ export default function VATClient() {
   useEffect(() => {
     if (storeId) loadVat(storeId).catch((e: Error) => { setError(e.message); setLoading(false); });
   }, [storeId, loadVat]);
+
+  const saveVatSettings = useCallback(async () => {
+    if (!isAdmin || !storeId || savingSettings) return;
+    setSettingsMessage('');
+    const vatNumber = draft.vat_number.replace(/\s+/g, '').toUpperCase();
+    if (draft.is_vat_registered && !/^(GB)?[0-9]{9}$/.test(vatNumber)) {
+      setSettingsMessage('Enter the verified nine-digit UK VAT registration number before enabling VAT registration.');
+      return;
+    }
+    if (draft.is_vat_registered && draft.accounting_basis === 'not_configured') {
+      setSettingsMessage('Select the accounting basis confirmed by your accountant.');
+      return;
+    }
+    setSavingSettings(true);
+    try {
+      const { error: saveError } = await supabase.from('vat_settings').upsert({
+        store_id: storeId,
+        vat_number: vatNumber || null,
+        is_vat_registered: draft.is_vat_registered,
+        accounting_basis: draft.accounting_basis,
+        prices_include_vat: draft.prices_include_vat,
+        notes: draft.notes.trim() || null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'store_id' });
+      if (saveError) throw saveError;
+      await loadVat(storeId);
+      setSettingsMessage('VAT settings saved for the selected store. This does not file or authorise a return with HMRC.');
+    } catch (cause) {
+      setSettingsMessage(cause instanceof Error ? cause.message : 'Could not save VAT settings.');
+    } finally {
+      setSavingSettings(false);
+    }
+  }, [draft, isAdmin, loadVat, savingSettings, storeId]);
 
   const stats = useMemo(() => {
     const known = transactions.filter(tx => tx.classification_status === 'known');
@@ -144,6 +186,47 @@ export default function VATClient() {
         </div>
         {!configured && <p className="text-xs text-slate-500 mt-3">CentralHub shows captured evidence but will not present a VAT return as ready while registration/accounting settings or classifications are unresolved.</p>}
       </div>
+
+      <section className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h2 className="font-black text-slate-100">VAT return filing configuration</h2>
+            <p className="text-xs text-slate-400 mt-1">Configure the selected company's VAT registration and accounting treatment. No live HMRC connection or submission is enabled.</p>
+          </div>
+          <button type="button" disabled={!isAdmin || loading} onClick={() => { setEditingSettings(value => !value); setSettingsMessage(''); }} className="rounded-xl border border-cyan-500/40 px-4 py-2.5 text-xs font-black text-cyan-300 disabled:opacity-50">
+            {editingSettings ? 'Close configuration' : 'Configure VAT'}
+          </button>
+        </div>
+        {editingSettings && !loading && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-800 pt-4">
+            <label className="flex items-center gap-3 text-sm text-slate-200 md:col-span-2">
+              <input type="checkbox" checked={draft.is_vat_registered} onChange={e => setDraft(previous => ({ ...previous, is_vat_registered: e.target.checked }))} />
+              This legal company is registered for UK VAT (verify against HMRC registration)
+            </label>
+            <label className="text-xs text-slate-400">VAT registration number
+              <input value={draft.vat_number} onChange={e => setDraft(previous => ({ ...previous, vat_number: e.target.value }))} placeholder="9-digit VAT number" maxLength={13} autoComplete="off" className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white" />
+            </label>
+            <label className="text-xs text-slate-400">VAT accounting basis
+              <select value={draft.accounting_basis} onChange={e => setDraft(previous => ({ ...previous, accounting_basis: e.target.value }))} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white">
+                <option value="not_configured">Not confirmed</option>
+                <option value="invoice">Invoice / accrual basis</option>
+                <option value="cash">Cash Accounting Scheme (if eligible and in use)</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-3 text-sm text-slate-200 md:col-span-2">
+              <input type="checkbox" checked={draft.prices_include_vat} onChange={e => setDraft(previous => ({ ...previous, prices_include_vat: e.target.checked }))} />
+              Store's displayed prices are VAT-inclusive
+            </label>
+            <label className="text-xs text-slate-400 md:col-span-2">Accounting notes (no passwords or HMRC credentials)
+              <textarea value={draft.notes} onChange={e => setDraft(previous => ({ ...previous, notes: e.target.value }))} rows={2} maxLength={2000} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white" />
+            </label>
+            <p className="text-xs leading-5 text-amber-200 md:col-span-2">Do not select an accounting scheme, VAT registration status, or a universal shipping VAT rate based on an assumption. Company identity, product tax codes, invoices, refunds, imports and unresolved transactions must be checked before preparing a return. This screen does not connect to HMRC.</p>
+            <button type="button" disabled={!isAdmin || savingSettings} onClick={() => void saveVatSettings()} className="rounded-xl bg-cyan-500 px-4 py-3 text-sm font-black text-slate-950 disabled:opacity-50">{savingSettings ? 'Saving…' : 'Save company VAT settings'}</button>
+          </div>
+        )}
+        {settingsMessage && <p role="status" className="text-sm text-cyan-200">{settingsMessage}</p>}
+        <div className="flex flex-wrap gap-2 text-xs"><span className="rounded-lg bg-slate-800 px-3 py-2 text-slate-300">HMRC MTD: Not connected</span><span className="rounded-lg bg-slate-800 px-3 py-2 text-slate-300">Return submission: Disabled</span><span className="rounded-lg bg-slate-800 px-3 py-2 text-slate-300">Periods: Import from HMRC once authorised</span></div>
+      </section>
 
       {stats.unresolved > 0 && (
         <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-amber-100">
