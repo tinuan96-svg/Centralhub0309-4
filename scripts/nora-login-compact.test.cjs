@@ -172,3 +172,20 @@ test('NORA has a real frame-rendered living character independent of CSS animati
   assert.ok(!live.includes('fetch('));
   assert.equal(login.split('href="/demo"').length - 1, 1);
 });
+
+test('One successful NORA sign-in unlocks only the same account dashboard gate', () => {
+  const gate = source('components/ShruthiSecurityGate.tsx');
+  assert.ok(login.includes("const SECURITY_TRUST_PREFIX = 'centralhub:shruthi-security-trusted-until:'"));
+  assert.ok(gate.includes("const TRUST_KEY_PREFIX = 'centralhub:shruthi-security-trusted-until:'"));
+  assert.ok(login.includes('SECURITY_TRUST_MS = 5 * 60_000'));
+  assert.ok(gate.includes('TRUST_WINDOW_MS = 5 * 60_000'));
+  assert.ok(login.includes('SECURITY_TRUST_PREFIX + userId'));
+  assert.ok(gate.includes('${TRUST_KEY_PREFIX}${userId}'));
+  assert.ok(login.includes('rememberVerifiedLogin(session.user.id)'));
+  assert.ok(login.includes('rememberVerifiedLogin(signedIn.user.id)'));
+  assert.ok(login.includes('rememberVerifiedLogin(otpSession.user.id)'));
+  assert.ok(login.includes("otpSession.user?.app_metadata?.role !== 'staff'"));
+  assert.ok(gate.includes('readTrustedUntil(user.id) > Date.now()'));
+  assert.ok(gate.includes('clearTrustedUntil(user.id)'));
+  assert.ok(gate.includes('lock();'));
+});
