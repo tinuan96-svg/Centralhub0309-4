@@ -4,6 +4,7 @@ import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
+import android.media.AudioDeviceInfo;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioRecord;
@@ -11,6 +12,7 @@ import android.media.AudioTrack;
 import android.media.MediaRecorder;
 import android.media.audiofx.AcousticEchoCanceler;
 import android.media.audiofx.NoiseSuppressor;
+import android.os.Build;
 import android.os.SystemClock;
 import android.util.Base64;
 import androidx.core.content.ContextCompat;
@@ -46,7 +48,7 @@ final class ShruthiRealtimeVoiceClient {
         void onError(String message);
     }
     private static final AtomicReference<ShruthiRealtimeVoiceClient> ACTIVE=new AtomicReference<>();
-    private static final long SPEAKER_TAIL_GUARD_MS=320L, MANUAL_INTERRUPT_GUARD_MS=250L, BARGE_IN_CONFIRM_MS=160L;
+    private static final long SPEAKER_TAIL_GUARD_MS=650L, MANUAL_INTERRUPT_GUARD_MS=250L, BARGE_IN_CONFIRM_MS=160L;
     private static final int MAX_EVENT_IDS=512;
     private static final class VoiceSecret {
         final String value,model;
@@ -80,6 +82,8 @@ final class ShruthiRealtimeVoiceClient {
     private volatile Thread captureThread,playbackThread;
     private volatile boolean explicitlyClosed=false;
     private volatile int reconnectAttempt=0,previousAudioMode=AudioManager.MODE_NORMAL;
+    private volatile boolean speakerRouteOwned=false;
+    private volatile AudioDeviceInfo previousCommunicationDevice;
     private volatile long suppressMicUntilMs=0L;
     private volatile double playbackRms=0d;
     private volatile boolean echoCancellationReady=false, responseGenerating=false;
@@ -236,9 +240,13 @@ final class ShruthiRealtimeVoiceClient {
         if(audioEventType.isEmpty())audioEventType=type;else if(!audioEventType.equals(type))return;
         String delta=e.optString("delta");if(delta.isEmpty())return;byte[] pcm;try{pcm=Base64.decode(delta,Base64.DEFAULT);}catch(Exception ex){return;}
         responseGenerating=true;
-        // Keep AudioRecord running: AEC removes speaker playback, while near-end gating
-        // prevents speaker leakage from reaching the model until a real interruption.
-        assistantAudioActive.set(true);state("speaking");playbackQueue.offer(PlaybackItem.audio(pcm));
+        // Prevent self-triggering: hardware echo cancellation alone cannot reliably
+        // distinguish our loudspeaker from a person. The user can interrupt via the UI.
+        if(assistantAudioActive.compareAndSet(false,true)){
+            hardPauseMicrophone(true);
+            state("speaking");
+        }
+        playbackQueue.offer(PlaybackItem.audio(pcm));
     }
     private void handleAssistantTranscript(String type,JSONObject e){
         String id=e.optString("response_id");synchronized(blockedResponses){if(!id.isEmpty()&&blockedResponses.contains(id))return;}
@@ -249,7 +257,7 @@ final class ShruthiRealtimeVoiceClient {
     private void startAudio(int current){
         ensureMicPermission();int rate=24000,inputMin=AudioRecord.getMinBufferSize(rate,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT),outputMin=AudioTrack.getMinBufferSize(rate,AudioFormat.CHANNEL_OUT_MONO,AudioFormat.ENCODING_PCM_16BIT);
         if(inputMin<=0||outputMin<=0)throw new IllegalStateException("24 kHz voice audio is not supported on this device");
-        previousAudioMode=audioManager==null?AudioManager.MODE_NORMAL:audioManager.getMode();if(audioManager!=null)try{audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);}catch(Exception ignored){}
+        previousAudioMode=audioManager==null?AudioManager.MODE_NORMAL:audioManager.getMode();if(audioManager!=null)try{audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);selectVoiceOutput();}catch(Exception ignored){}
         AudioRecord r=createRecorder(rate,inputMin);recorder=r;
         if(AcousticEchoCanceler.isAvailable())try{echoCanceler=AcousticEchoCanceler.create(r.getAudioSessionId());if(echoCanceler!=null){echoCanceler.setEnabled(true);echoCancellationReady=echoCanceler.getEnabled();}}catch(Exception ignored){}
         if(NoiseSuppressor.isAvailable())try{noiseSuppressor=NoiseSuppressor.create(r.getAudioSessionId());if(noiseSuppressor!=null)noiseSuppressor.setEnabled(true);}catch(Exception ignored){}
@@ -260,35 +268,12 @@ final class ShruthiRealtimeVoiceClient {
         if(p.getState()!=AudioTrack.STATE_INITIALIZED){p.release();cleanupAudio();throw new IllegalStateException("Unable to initialize voice playback");}player=p;p.setVolume(1.0f);p.play();r.startRecording();
         captureThread=new Thread(()->{
             byte[] b=new byte[2400]; // 50 ms of 24 kHz mono PCM16
-            java.util.ArrayDeque<byte[]> recentFrames=new java.util.ArrayDeque<>();
-            long nearEndMs=0L;
-            double ambientRms=0.009d;
             while(isCurrent(current)&&!Thread.currentThread().isInterrupted()){
-                if(!captureEnabled.get()||SystemClock.elapsedRealtime()<suppressMicUntilMs){sleep(20);continue;}
+                if(micSuppressed()){sleep(20);continue;}
                 AudioRecord a=recorder;if(a==null)break;
                 if(a.getRecordingState()!=AudioRecord.RECORDSTATE_RECORDING){sleep(20);continue;}
                 int n=a.read(b,0,b.length);
-                if(n<=0||!captureEnabled.get()||SystemClock.elapsedRealtime()<suppressMicUntilMs)continue;
-                double level=pcmRms(b,n);
-                if(assistantAudioActive.get()){
-                    // Never forward unverified speaker leakage to server VAD. The on-device
-                    // communication-mode AEC must be active for automatic barge-in.
-                    // Keep 200 ms of pre-roll so the beginning of a user correction survives.
-                    recentFrames.addLast(java.util.Arrays.copyOf(b,n));
-                    while(recentFrames.size()>4)recentFrames.removeFirst();
-                    boolean nearEnd=echoCancellationReady
-                        && level>Math.max(0.017d,playbackRms*0.30d)
-                        && level>ambientRms*2.4d;
-                    nearEndMs=nearEnd?nearEndMs+(n*1000L/48000L):0L;
-                    if(nearEndMs<BARGE_IN_CONFIRM_MS)continue;
-                    interruptForBargeIn();
-                    for(byte[] frame:recentFrames)sendAudio(frame,frame.length);
-                    recentFrames.clear();nearEndMs=0L;
-                    continue;
-                }
-                recentFrames.clear();nearEndMs=0L;
-                // Update ambient noise only with quiet frames, not the user's voice.
-                ambientRms=ambientRms*0.98d+Math.min(level,0.015d)*0.02d;
+                if(n<=0||micSuppressed())continue;
                 sendAudio(b,n);
             }
         },"shruthi-realtime-capture");captureThread.setDaemon(true);captureThread.start();
@@ -301,15 +286,15 @@ final class ShruthiRealtimeVoiceClient {
         if(id!=null&&!id.isEmpty()&&!id.equals(activeResponseId))return;
         activeResponseId="";audioEventType="";transcriptEventType="";
         playbackRms=0d;assistantAudioActive.set(false);
+        if(!pickingMode || pickingMicWanted)resumeMicrophoneAfterPlayback();
         if(pickingMode){
-            if(pickingMicWanted)resumeMicrophoneAfterPlayback();
             if(!pendingPickingInstruction.isEmpty()){flushPickingInstruction();return;}
         }
         state(pickingMicWanted?"listening":"idle");
     }
     private void sendAudio(byte[] pcm,int n){
         WebSocket s=socket;
-        if(s!=null&&n>0)s.send("{\"type\":\"input_audio_buffer.append\",\"audio\":\""+Base64.encodeToString(pcm,0,n,Base64.NO_WRAP)+"\"}");
+        if(s!=null&&n>0&&!micSuppressed())s.send("{\"type\":\"input_audio_buffer.append\",\"audio\":\""+Base64.encodeToString(pcm,0,n,Base64.NO_WRAP)+"\"}");
     }
     private static double pcmRms(byte[] pcm,int n){
         if(pcm==null||n<2)return 0d;
@@ -338,7 +323,34 @@ final class ShruthiRealtimeVoiceClient {
     private boolean micSuppressed(){return assistantAudioActive.get()||!captureEnabled.get()||SystemClock.elapsedRealtime()<suppressMicUntilMs;}
     private boolean rememberEvent(String id){if(id==null||id.isEmpty())return true;synchronized(seenEvents){if(!seenEvents.add(id))return false;if(seenEvents.size()>MAX_EVENT_IDS)seenEvents.remove(seenEvents.iterator().next());}return true;}
     private void resetResponseState(){activeResponseId="";audioEventType="";transcriptEventType="";synchronized(blockedResponses){blockedResponses.clear();}synchronized(seenEvents){seenEvents.clear();}}
-    private void cleanupAudio(){Thread c=captureThread;captureThread=null;if(c!=null)c.interrupt();Thread p=playbackThread;playbackThread=null;if(p!=null)p.interrupt();playbackQueue.clear();try{if(echoCanceler!=null)echoCanceler.release();}catch(Exception ignored){}echoCanceler=null;echoCancellationReady=false;try{if(noiseSuppressor!=null)noiseSuppressor.release();}catch(Exception ignored){}noiseSuppressor=null;try{if(recorder!=null)recorder.stop();}catch(Exception ignored){}try{if(recorder!=null)recorder.release();}catch(Exception ignored){}recorder=null;try{if(player!=null)player.pause();}catch(Exception ignored){}try{if(player!=null)player.flush();}catch(Exception ignored){}try{if(player!=null)player.release();}catch(Exception ignored){}player=null;if(audioManager!=null)try{audioManager.setMode(previousAudioMode);}catch(Exception ignored){}}
+    private void selectVoiceOutput(){
+        if(audioManager==null||Build.VERSION.SDK_INT<Build.VERSION_CODES.S)return;
+        try{
+            AudioDeviceInfo speaker=null;
+            for(AudioDeviceInfo device:audioManager.getAvailableCommunicationDevices()){
+                int type=device.getType();
+                // Respect connected wired, USB and Bluetooth audio instead of forcing the phone speaker.
+                if(type==AudioDeviceInfo.TYPE_WIRED_HEADSET||type==AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+                    ||type==AudioDeviceInfo.TYPE_USB_HEADSET||type==AudioDeviceInfo.TYPE_USB_DEVICE
+                    ||type==AudioDeviceInfo.TYPE_BLUETOOTH_SCO||type==AudioDeviceInfo.TYPE_BLE_HEADSET)return;
+                if(type==AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)speaker=device;
+            }
+            if(speaker!=null&&audioManager.getCommunicationDevice()!=speaker){
+                previousCommunicationDevice=audioManager.getCommunicationDevice();
+                speakerRouteOwned=audioManager.setCommunicationDevice(speaker);
+            }
+        }catch(Exception ignored){}
+    }
+    private void restoreVoiceOutput(){
+        if(!speakerRouteOwned||audioManager==null||Build.VERSION.SDK_INT<Build.VERSION_CODES.S)return;
+        try{
+            if(previousCommunicationDevice!=null&&audioManager.getAvailableCommunicationDevices().contains(previousCommunicationDevice))
+                audioManager.setCommunicationDevice(previousCommunicationDevice);
+            else audioManager.clearCommunicationDevice();
+        }catch(Exception ignored){}
+        finally{speakerRouteOwned=false;previousCommunicationDevice=null;}
+    }
+    private void cleanupAudio(){Thread c=captureThread;captureThread=null;if(c!=null)c.interrupt();Thread p=playbackThread;playbackThread=null;if(p!=null)p.interrupt();playbackQueue.clear();try{if(echoCanceler!=null)echoCanceler.release();}catch(Exception ignored){}echoCanceler=null;echoCancellationReady=false;try{if(noiseSuppressor!=null)noiseSuppressor.release();}catch(Exception ignored){}noiseSuppressor=null;try{if(recorder!=null)recorder.stop();}catch(Exception ignored){}try{if(recorder!=null)recorder.release();}catch(Exception ignored){}recorder=null;try{if(player!=null)player.pause();}catch(Exception ignored){}try{if(player!=null)player.flush();}catch(Exception ignored){}try{if(player!=null)player.release();}catch(Exception ignored){}player=null;restoreVoiceOutput();if(audioManager!=null)try{audioManager.setMode(previousAudioMode);}catch(Exception ignored){}}
     private void failOrReconnect(String msg){
         if(explicitlyClosed||!running.get()||!reconnectScheduled.compareAndSet(false,true))return;
         generation.incrementAndGet();resetResponseState();assistantAudioActive.set(false);captureEnabled.set(false);cleanupAudio();
