@@ -2,11 +2,11 @@
   position: relative;
   isolation: isolate;
   width: min(100%, 820px);
-  height: clamp(215px, 40vw, 375px);
+  height: clamp(260px, 46vw, 430px);
   flex: none;
   overflow: hidden;
   contain: layout paint;
-  background: radial-gradient(ellipse at 50% 52%, rgba(4, 93, 197, .16), transparent 47%);
+  background: radial-gradient(ellipse at 50% 48%, rgba(0, 166, 255, .25), transparent 38%), radial-gradient(ellipse at 50% 72%, rgba(0, 82, 255, .18), transparent 55%);
 }
 .stars { position: absolute; inset: 0; opacity: .78; pointer-events: none; }
 .star {
@@ -30,7 +30,7 @@
 }
 .orbArea {
   position: absolute; z-index: 2; left: 50%; top: 43%;
-  width: clamp(156px, 36%, 266px); aspect-ratio: 1;
+  width: clamp(190px, 39%, 310px); aspect-ratio: 1;
   transform: translate(-50%, -50%);
   animation: levitate 5s ease-in-out infinite;
 }
@@ -40,12 +40,12 @@
   filter: blur(15px); animation: haloPulse 3.7s ease-in-out infinite alternate;
 }
 .sphere {
-  position: absolute; z-index: 3; inset: 7%; display: grid; place-items: center;
-  overflow: hidden; border: 2px solid rgba(132, 234, 255, .9); border-radius: 50%;
+  position: absolute; z-index: 3; inset: 5%; display: grid; place-items: center;
+  overflow: hidden; border: 3px solid rgba(170, 246, 255, .96); border-radius: 50%;
   background:
     radial-gradient(ellipse at 37% 17%, rgba(204, 248, 255, .9) 0%, rgba(85, 208, 255, .48) 4%, transparent 27%),
     radial-gradient(circle at 49% 58%, #041225 8%, #083267 47%, #0069d2 78%, #8decff 96%, #d7ffff 100%);
-  box-shadow: 0 0 7px #ddffff, 0 0 28px rgba(20, 176, 255, .95), inset 0 0 23px #51d5ff, inset -13px -10px 40px rgba(0, 17, 76, .9);
+  box-shadow: 0 0 9px #edffff, 0 0 34px rgba(26, 200, 255, .98), 0 0 72px rgba(0, 103, 255, .52), inset 0 0 30px #6ce6ff, inset -16px -12px 46px rgba(0, 17, 76, .9);
   animation: spherePulse 4s ease-in-out infinite alternate;
 }
 .sphere::before {
@@ -66,11 +66,11 @@
 }
 .sphereLabel {
   position: relative; z-index: 1; color: #e2fbff;
-  font-size: clamp(21px, 4vw, 36px); font-weight: 700; letter-spacing: .1em;
+  font-size: clamp(25px, 4.5vw, 42px); font-weight: 700; letter-spacing: .1em;
   text-shadow: 0 0 11px #48cbff, 0 0 28px #108afa;
 }
 .orbit {
-  position: absolute; left: 50%; top: 50%; width: 145%; height: 48%;
+  position: absolute; left: 50%; top: 50%; width: 158%; height: 50%;
   border: 2px solid rgba(68, 201, 255, .86); border-radius: 50%;
   box-shadow: 0 0 8px #22baff, inset 0 0 10px rgba(18, 161, 255, .8);
   pointer-events: none;
@@ -93,7 +93,7 @@
 }
 .platform {
   position: absolute; z-index: 1; left: 50%; bottom: 5%;
-  width: min(76%, 490px); height: 19%;
+  width: min(82%, 570px); height: 20%;
   border: 2px solid rgba(40, 170, 255, .85); border-radius: 50%;
   transform: translateX(-50%);
   background: radial-gradient(ellipse at center, rgba(23, 173, 255, .5), rgba(10, 48, 134, .18) 42%, transparent 72%);
@@ -111,7 +111,10 @@
   background: linear-gradient(transparent, rgba(139, 242, 255, .95), transparent);
   box-shadow: 0 0 12px 4px #0ab7ff; transform: translateX(-50%);
 }
-.listening .waveBar { animation-duration: 1.1s; }
+.listening .waveBar { animation-duration: .82s; }
+.listening .sphere { animation-duration: 1.8s; }
+.listening .orbitFront { animation-duration: 3.8s; }
+.listening .orbitBehind { animation-duration: 4.6s; }
 .verifying .sphere, .verifying .halo { animation-duration: 1s; }
 .verifying .waveBar { animation-duration: .48s; }
 .idle .waveBar { animation-duration: 2.6s; opacity: .65; }
@@ -126,11 +129,11 @@
 @keyframes ringFront { from { transform: translate(-50%, -43%) rotate(-12deg); } to { transform: translate(-50%, -43%) rotate(12deg); } }
 @keyframes platformPulse { from { opacity: .72; transform: translateX(-50%) scale(.96); } to { opacity: 1; transform: translateX(-50%) scale(1.025); } }
 @media (max-width: 480px) {
-  .scene { height: clamp(210px, 57vw, 275px); }
-  .orbArea { width: clamp(154px, 47%, 215px); }
+  .scene { height: clamp(245px, 68vw, 330px); }
+  .orbArea { width: clamp(180px, 53%, 245px); }
   .wave { width: 32%; height: 21%; }
   .waveBar { width: 1.5px; }
-  .platform { width: 88%; bottom: 5%; }
+  .platform { width: 94%; bottom: 4%; }
 }
 @media (prefers-reduced-motion: reduce) {
   .scene *, .scene *::before, .scene *::after {
