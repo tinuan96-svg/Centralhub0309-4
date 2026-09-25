@@ -77,6 +77,7 @@ export default function ClassifiedSidebar({ collapsed: manualCollapsed = false, 
     '07-intelligence':['analytics.view'],
     '07-pricing':['pricing.view'],
     '08-finance':['finance.view'],
+    '08-hr-payroll':[], // Phase 1 HR is Super Admin only; staff need distinct HR roles and verified RLS before access.
     '08.5-developer':['security.view'],
     '09-system':['settings.view','security.view','users.view'],
   };

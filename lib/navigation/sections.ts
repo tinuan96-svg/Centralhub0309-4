@@ -52,6 +52,14 @@ export const sections: NavSection[] = [
   { key: '08-finance', label: 'Finance & Control', icon: '💰', description: 'Bank, expenses, ledgers, payables, P&L and profitability', items: [
     { href: '/finance', label: 'Finance Overview' }, { href: '/finance/planning', label: 'Planning & Growth' }, { href: '/profit-analysis', label: 'Profit Analysis' }, { href: '/banking', label: 'Bank Accounts & Cashflow' }, { href: '/finance/ledger', label: 'Chart of Accounts & Ledger' }, { href: '/finance/transactions', label: 'Bank Reconciliation' }, { href: '/finance/mollie', label: 'Mollie Audit' }, { href: '/finance/payables', label: 'Supplier Payables' }, { href: '/expenses', label: 'Business Expenses' }, { href: '/finance/p-and-l', label: 'Profit & Loss' }, { href: '/finance/profitability', label: 'Profitability' }, { href: '/finance/alerts', label: 'Financial Alerts' }, { href: '/finance/vat', label: 'VAT Filing (Coming Soon)' },
   ] },
+  { key: '08-hr-payroll', label: 'HR & Payroll', icon: '👥', description: 'Private employee and compliance administration — phased rollout', items: [
+    { href: '/hr-payroll', label: 'HR Dashboard' }, { href: '/hr-payroll/employees', label: 'Employees' },
+    { href: '/hr-payroll/attendance', label: 'Attendance (Review Only)' }, { href: '/hr-payroll/shifts', label: 'Shifts (Upcoming)' },
+    { href: '/hr-payroll/leave', label: 'Leave (Review Only)' }, { href: '/hr-payroll/sponsor-compliance', label: 'Sponsor Compliance (Review Only)' },
+    { href: '/hr-payroll/payroll', label: 'Payroll (Drafts Only)' }, { href: '/hr-payroll/payslips', label: 'Payslips (Upcoming)' },
+    { href: '/hr-payroll/pensions', label: 'Pensions (Upcoming)' }, { href: '/hr-payroll/hmrc-paye', label: 'HMRC / PAYE (Upcoming)' },
+    { href: '/hr-payroll/reports', label: 'Reports (Upcoming)' }, { href: '/hr-payroll/settings', label: 'Settings (Upcoming)' },
+  ] },
   { key: '08.5-developer', label: 'Developer & CI/CD', icon: '🛠️', description: 'Builds, artifacts, releases and deployment automation', items: [
     { href: '/developer/ci-cd', label: 'Builds & CI/CD' }, { href: '/developer/ci-cd/releases', label: 'App Releases' },
   ] },
