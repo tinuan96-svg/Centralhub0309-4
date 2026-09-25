@@ -191,7 +191,7 @@ export default function MobileHeader() {
       { href: '/finance/p-and-l', label: 'Profit & Loss' },
       { href: '/finance/profitability', label: 'Profitability' },
       { href: '/finance/alerts', label: 'Financial Alerts' },
-      { href: '/finance/vat', label: 'VAT Control' },
+      { href: '/finance/vat', label: 'VAT Filing (Coming Soon)' },
     ] },
     { label: 'Developer & CI/CD', icon: '🛠️', key: '12.5 — developer & ci/cd', subItems: [
       { href: '/developer/ci-cd', label: 'Builds & CI/CD' },
