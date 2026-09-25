@@ -93,6 +93,25 @@ export default function NoraOrb({ phase }: { phase: NoraPhase }) {
         </div>
       )}
       <div aria-hidden="true" className={styles.energyHalo} />
+      {/* Animated geometry is separate from the still artwork: movement remains
+          visible even when the image is fully loaded and no audio is playing. */}
+      <div aria-hidden="true" className={styles.livingOrbitOuter}>
+        <i className={styles.orbitSpark} />
+      </div>
+      <div aria-hidden="true" className={styles.livingOrbitInner}>
+        <i className={styles.orbitSpark} />
+      </div>
+      <div aria-hidden="true" className={styles.livingScan} />
+      <div aria-hidden="true" className={styles.livingWaveLeft}>
+        {Array.from({ length: 12 }, (_, index) => (
+          <i key={index} style={{ animationDelay: `${-index * 0.11}s` }} />
+        ))}
+      </div>
+      <div aria-hidden="true" className={styles.livingWaveRight}>
+        {Array.from({ length: 12 }, (_, index) => (
+          <i key={index} style={{ animationDelay: `${-(11 - index) * 0.11}s` }} />
+        ))}
+      </div>
       <div aria-hidden="true" className={styles.energySweep} />
       <div aria-hidden="true" className={styles.orbitNodes}>
         <i className={styles.orbitNode} />

@@ -132,3 +132,20 @@ test('Fold viewport and browser chrome do not force the login card below the scr
   assert.ok(login.includes('completeReturningUserUnlock()'));
   assert.equal(login.split('href="/demo"').length - 1, 1);
 });
+
+test('NORA artwork has visibly moving independent orbit rings, sparks, scan and waveforms', () => {
+  assert.ok(orb.includes('styles.livingOrbitOuter'));
+  assert.ok(orb.includes('styles.livingOrbitInner'));
+  assert.ok(orb.includes('styles.orbitSpark'));
+  assert.ok(orb.includes('styles.livingScan'));
+  assert.ok(orb.includes('styles.livingWaveLeft'));
+  assert.ok(orb.includes('styles.livingWaveRight'));
+  for (const animation of ['noraOrbitOuter', 'noraOrbitInner', 'noraScan', 'noraWave']) {
+    assert.ok(css.includes('@keyframes ' + animation), 'Missing moving layer: ' + animation);
+  }
+  assert.ok(css.includes('animation: noraOrbitOuter 7s linear infinite'));
+  assert.ok(css.includes('animation: noraOrbitInner 10s linear infinite'));
+  assert.ok(css.includes('prefers-reduced-motion: reduce'));
+  assert.equal(login.split('href="/demo"').length - 1, 1);
+  assert.ok(login.includes('completeReturningUserUnlock()'));
+});

@@ -175,6 +175,112 @@
 @media (max-width: 480px) and (max-height: 680px) {
   .scene { height: clamp(124px, 23dvh, 148px); }
 }
+
+/* Visible, independent motion: the original still image stays sharp,
+   while holographic rings, sparks, scanning light and waveforms move. */
+.livingOrbitOuter, .livingOrbitInner {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  top: 46%;
+  width: 72%;
+  height: 43%;
+  border: 2px solid rgba(73, 185, 255, .48);
+  border-top-color: #b5f2ff;
+  border-right-color: rgba(46, 177, 255, .13);
+  border-bottom-color: rgba(33, 110, 255, .6);
+  border-radius: 50%;
+  box-shadow: 0 0 11px rgba(34, 181, 255, .6), inset 0 0 8px rgba(15, 118, 255, .28);
+  transform: translate(-50%, -50%) rotate(-22deg);
+  animation: noraOrbitOuter 7s linear infinite;
+}
+.livingOrbitInner {
+  width: 63%;
+  height: 37%;
+  border-color: rgba(56, 193, 255, .55);
+  border-left-color: #dbfbff;
+  border-right-color: rgba(118, 103, 255, .55);
+  transform: translate(-50%, -50%) rotate(17deg);
+  animation: noraOrbitInner 10s linear infinite;
+}
+.orbitSpark {
+  position: absolute;
+  left: 48%;
+  top: -5px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #e7fcff;
+  box-shadow: 0 0 5px 3px #26c6ff, 0 0 21px 6px rgba(29, 139, 255, .85);
+}
+.livingOrbitInner .orbitSpark {
+  left: 5%;
+  top: 16%;
+  width: 7px;
+  height: 7px;
+}
+.livingScan {
+  position: absolute;
+  z-index: 5;
+  left: 29%;
+  top: 23%;
+  width: 42%;
+  height: 49%;
+  border-radius: 50%;
+  background: linear-gradient(to bottom, transparent 0%, rgba(145, 238, 255, .04) 42%, rgba(148, 227, 255, .36) 49%, transparent 57%, transparent 100%);
+  mix-blend-mode: screen;
+  animation: noraScan 3.8s ease-in-out infinite;
+}
+.livingWaveLeft, .livingWaveRight {
+  position: absolute;
+  z-index: 5;
+  top: 39%;
+  left: 5%;
+  width: 23%;
+  height: 18%;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  gap: 2px;
+  filter: drop-shadow(0 0 4px rgba(35, 191, 255, .85));
+}
+.livingWaveRight { left: auto; right: 5%; }
+.livingWaveLeft i, .livingWaveRight i {
+  flex: 1;
+  max-width: 3px;
+  height: 60%;
+  border-radius: 10px;
+  background: linear-gradient(to bottom, transparent, #6ce7ff 35%, #c9f9ff 50%, #3b99ff 70%, transparent);
+  transform: scaleY(.4);
+  animation: noraWave 1.25s ease-in-out infinite alternate;
+}
+.livingWaveLeft i:nth-child(3n), .livingWaveRight i:nth-child(3n) { height: 100%; }
+.livingWaveLeft i:nth-child(4n), .livingWaveRight i:nth-child(4n) { height: 32%; }
+@keyframes noraOrbitOuter {
+  from { transform: translate(-50%, -50%) rotate(-22deg); }
+  to { transform: translate(-50%, -50%) rotate(338deg); }
+}
+@keyframes noraOrbitInner {
+  from { transform: translate(-50%, -50%) rotate(17deg); }
+  to { transform: translate(-50%, -50%) rotate(-343deg); }
+}
+@keyframes noraScan {
+  0%, 100% { opacity: .25; transform: translateY(-22%) scale(.95); }
+  50% { opacity: .9; transform: translateY(24%) scale(1.07); }
+}
+@keyframes noraWave {
+  from { transform: scaleY(.2); opacity: .6; }
+  to { transform: scaleY(1); opacity: 1; }
+}
+.listening .livingWaveLeft i, .listening .livingWaveRight i { animation-duration: .6s; }
+.verifying .livingOrbitOuter, .verifying .livingOrbitInner { animation-duration: 2.5s; }
+@media (max-width: 480px) {
+  .livingOrbitOuter { width: 76%; height: 42%; }
+  .livingOrbitInner { width: 65%; height: 36%; }
+  .orbitSpark { width: 6px; height: 6px; }
+  .livingWaveLeft, .livingWaveRight { width: 19%; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .scene *, .scene *::before, .scene *::after {
     animation: none !important;
