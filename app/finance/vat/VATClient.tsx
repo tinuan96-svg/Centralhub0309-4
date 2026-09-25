@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/AuthProvider';
+import UpcomingTaxFeatures from '../UpcomingTaxFeatures';
 
 type Store = { id: string; name: string; slug: string | null };
 type VatSetting = {
@@ -183,6 +184,8 @@ export default function VATClient() {
         <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">We're building direct HMRC Making Tax Digital VAT return filing in CentralHub and hope to make it available soon. There is no confirmed launch date yet.</p>
         <p className="mt-2 text-xs leading-5 text-slate-400">You can still review VAT transactions and configure company settings below. Preparing or submitting a VAT return to HMRC is not available here yet.</p>
       </section>
+
+      <UpcomingTaxFeatures />
 
       {error && <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-300">{error}</div>}
 
