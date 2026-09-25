@@ -30,6 +30,12 @@ export default function NoraOrb({ phase }: { phase: NoraPhase }) {
         className={styles.approvedArtwork}
       />
       <div aria-hidden="true" className={styles.energyHalo} />
+      <div aria-hidden="true" className={styles.energySweep} />
+      <div aria-hidden="true" className={styles.orbitNodes}>
+        <i className={styles.orbitNode} />
+        <i className={styles.orbitNode} />
+        <i className={styles.orbitNode} />
+      </div>
       <div aria-hidden="true" className={styles.orbitAccent} />
       <div aria-hidden="true" className={styles.stars}>
         {stars.map((star, i) => (

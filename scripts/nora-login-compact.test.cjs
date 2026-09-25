@@ -37,3 +37,13 @@ test('Approved user-uploaded NORA image is the actual animated login artwork', (
   assert.ok(!orb.includes('styles.sphere'));
   assert.ok(!orb.includes('styles.sphereLabel'));
 });
+
+test('The actual approved hero blends seamlessly and has independently animated energy', () => {
+  assert.ok(css.includes('mask-image: radial-gradient'));
+  assert.ok(css.includes('@keyframes energySweep'));
+  assert.ok(css.includes('@keyframes orbitTrack'));
+  assert.ok(orb.includes('styles.energySweep'));
+  assert.ok(orb.includes('styles.orbitNodes'));
+  assert.ok(orb.includes('nora_approved_hero.webp'));
+  assert.ok(css.includes('prefers-reduced-motion: reduce'));
+});

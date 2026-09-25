@@ -21,7 +21,10 @@
   object-position: center;
   user-select: none;
   transform-origin: center 48%;
-  filter: brightness(1.04) saturate(1.08) drop-shadow(0 0 13px rgba(13, 148, 255, .28));
+  /* Feather the approved image into the page instead of exposing its rectangular photo edges. */
+  -webkit-mask-image: radial-gradient(ellipse 69% 71% at 50% 50%, #000 43%, rgba(0,0,0,.95) 60%, rgba(0,0,0,.45) 79%, transparent 100%);
+  mask-image: radial-gradient(ellipse 69% 71% at 50% 50%, #000 43%, rgba(0,0,0,.95) 60%, rgba(0,0,0,.45) 79%, transparent 100%);
+  filter: brightness(1.06) saturate(1.10) drop-shadow(0 0 12px rgba(13, 148, 255, .28));
   animation: alive 7.6s ease-in-out infinite;
 }
 .aura {
@@ -85,8 +88,8 @@
 .verifying .energyHalo { animation-duration: 1.2s; }
 .idle .approvedArtwork { animation-duration: 8s; }
 @keyframes alive {
-  0%, 100% { transform: translateY(0) scale(1); filter: brightness(1.02) saturate(1.05) drop-shadow(0 0 10px rgba(13, 148, 255, .26)); }
-  50% { transform: translateY(-2%) scale(1.028); filter: brightness(1.15) saturate(1.16) drop-shadow(0 0 18px rgba(13, 148, 255, .40)); }
+  0%, 100% { transform: translateY(0) scale(1); filter: brightness(1.04) saturate(1.08) drop-shadow(0 0 10px rgba(13,148,255,.26)); }
+  50% { transform: translateY(-.7%) scale(1.012); filter: brightness(1.13) saturate(1.16) drop-shadow(0 0 18px rgba(13,148,255,.39)); }
 }
 @keyframes aura { from { opacity: .52; transform: translateX(-50%) scale(.92); } to { opacity: 1; transform: translateX(-50%) scale(1.12); } }
 @keyframes halo { from { opacity: .38; transform: translateX(-50%) scale(.92); } to { opacity: .95; transform: translateX(-50%) scale(1.12); } }
@@ -95,6 +98,48 @@
   to { opacity: .88; transform: translate(-50%, -50%) rotate(14deg); }
 }
 @keyframes twinkle { from { opacity: .12; transform: scale(.7); } to { opacity: .9; transform: scale(1.5); } }
+
+/* Foreground energy moves independently of the approved photographic artwork. */
+.energySweep {
+  position: absolute;
+  z-index: 3;
+  inset: 7% 19% 17%;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0deg 110deg, rgba(99,225,255,.2) 137deg, transparent 171deg 280deg, rgba(89,138,255,.19) 318deg, transparent 355deg);
+  -webkit-mask-image: radial-gradient(ellipse, transparent 0 48%, #000 66%, transparent 73%);
+  mask-image: radial-gradient(ellipse, transparent 0 48%, #000 66%, transparent 73%);
+  mix-blend-mode: screen;
+  animation: energySweep 12s linear infinite;
+}
+.orbitNodes {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  top: 45%;
+  width: 72%;
+  height: 38%;
+  border-radius: 50%;
+  transform: translate(-50%, -50%) rotate(-18deg);
+  animation: orbitTrack 12s linear infinite;
+}
+.orbitNode {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #d9faff;
+  box-shadow: 0 0 7px 3px #30c5ff, 0 0 18px 4px rgba(63,126,255,.65);
+  transform-origin: center;
+}
+.orbitNode:nth-child(2) { left: 10%; top: 15%; width: 3px; height: 3px; }
+.orbitNode:nth-child(3) { left: 88%; top: 77%; width: 3px; height: 3px; }
+@keyframes energySweep { to { transform: rotate(360deg); } }
+@keyframes orbitTrack { to { transform: translate(-50%, -50%) rotate(342deg); } }
+.listening .orbitNodes, .listening .energySweep { animation-duration: 7s; }
+.verifying .orbitNodes, .verifying .energySweep { animation-duration: 3.7s; }
+
 @media (max-width: 480px) {
   .scene { height: clamp(146px, 46vw, 185px); }
   .approvedArtwork { object-fit: contain; }
