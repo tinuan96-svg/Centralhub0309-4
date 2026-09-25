@@ -4,6 +4,7 @@ import {useCallback,useEffect,useMemo,useState} from 'react';
 import {useAuth} from '@/components/AuthProvider';
 import HRSandboxNICalculator from '@/components/hr/HRSandboxNICalculator';
 import HRPreviewPayCalculator from '@/components/hr/HRPreviewPayCalculator';
+import HRComplianceTasks from '@/components/hr/HRComplianceTasks';
 
 export const HR_SECTIONS=[
   ['dashboard','Dashboard'],['employees','Employees'],['attendance','Attendance'],
@@ -102,6 +103,7 @@ export default function HRClient({section}:{section:string}){
             <p className="mt-2 text-sm text-amber-200">{moneyUnavailable}</p>
             <p className="mt-2 text-sm text-slate-400">Absent-today totals require assigned shifts and approved leave. Missing attendance is not counted as absence. Compliance deadlines require individual case review.</p></div>
         </div>}
+        {section==='dashboard'&&session?.access_token&&<HRComplianceTasks company={company} token={session.access_token}/>}
         {section==='employees'&&<div className="space-y-5">
           <form onSubmit={createDraft} className="rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:p-5 space-y-4">
             <div><h2 className="text-lg font-bold">Create an employee draft</h2><p className="text-xs text-slate-400">No NI number, immigration documents, bank details or salary data collected until protected workflows are verified.</p></div>
@@ -126,6 +128,7 @@ export default function HRClient({section}:{section:string}){
         {section==='sponsor-compliance'&&<div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
           <h2 className="font-bold">Internal sponsorship case review</h2><p className="mt-2 text-sm text-amber-200">Not the official Home Office Sponsorship Management System. No UKVI submission is enabled. Deadline changes must be confirmed by an authorised compliance officer.</p>
           <div className="mt-4 space-y-2">{data.sponsorship.map(s=><div key={s.id} className="rounded-lg border border-slate-700 p-3 text-sm">{names.get(s.employee_id)||'Employee'} · Visa expiry: {s.visa_expiry_date||'Needs verification'} · Right-to-work follow-up: {s.right_to_work_followup_date||'Needs verification'} · {s.compliance_status}</div>)}{!data.sponsorship.length&&<p className="text-sm text-slate-400">No sponsorship cases recorded.</p>}</div></div>}
+        {section==='sponsor-compliance'&&session?.access_token&&<HRComplianceTasks company={company} token={session.access_token}/>}
         {section==='payroll'&&<div className="space-y-4"><HRPreviewPayCalculator/><HRSandboxNICalculator/><div className="rounded-2xl border border-slate-800 bg-slate-900 p-5"><h2 className="font-bold">Draft payroll registry</h2><p className="mt-2 text-sm text-amber-200">No final tax, NI, pension, net pay, payslip, payment or HMRC filing until the calculation engine passes official validation.</p>
           <div className="mt-4 space-y-2">{data.payroll.map(p=><div key={p.id} className="rounded-lg border border-slate-700 p-3 text-sm">{p.period_start} – {p.period_end} · {p.pay_frequency} · {p.tax_year} · {p.status}</div>)}{!data.payroll.length&&<p className="text-sm text-slate-400">No payroll runs.</p>}</div></div></div>}
         {!['dashboard','employees','attendance','leave','sponsor-compliance','payroll'].includes(section)&&
