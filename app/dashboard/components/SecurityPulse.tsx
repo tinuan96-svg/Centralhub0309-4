@@ -96,12 +96,18 @@ export default function SecurityPulse({ selectedStoreId = 'all', compact = false
 
   const overall = error ? 'unknown' : summary.rows.some(row => row.status === 'offline' || row.open.some(event => event.severity === 'critical')) ? 'offline' : summary.rows.some(row => row.status !== 'online' || row.open.some(event => ['high', 'medium'].includes(event.severity))) ? 'degraded' : summary.rows.length ? 'online' : 'unknown';
   const noUsableRows = !initialLoading && stores.length === 0 && heartbeats.length === 0;
-  const liveClass = connection === 'live' ? 'live' : connection === 'offline' ? 'offline' : 'connecting';
+  // Realtime socket availability is not evidence that site checks are fresh.
+  // Allow a visibly running radar for successful 30s polling as well as realtime,
+  // but never label stale or failed telemetry LIVE.
+  const telemetryFresh = !error && !initialLoading && summary.rows.length > 0 && summary.rows.every(row => row.score !== null);
+  const radarRunning = telemetryFresh && (connection === 'live' || connection === 'polling');
+  const liveClass = radarRunning && connection === 'live' ? 'live' : connection === 'offline' ? 'offline' : 'connecting';
+  const connectionLabel = error ? 'Delayed' : !telemetryFresh ? 'Stale checks' : connection === 'polling' ? '30s checks' : connection === 'live' ? 'Live' : connection;
 
   return <section className={`ch-panel ch-security-pulse ${compact ? 'ch-security-pulse-compact' : ''}`} aria-label="Live security pulse">
-    <div className="ch-panel-heading"><div><h2 className="ch-panel-title flex items-center gap-2"><Radar size={18} /> Security Radar</h2><p className="ch-muted">{compact ? 'Observed uptime · TLS · security headers' : 'Monitored availability, TLS and browser-security checks · not a guarantee of protection'}</p></div><span className={`ch-live-state ch-live-${liveClass}`}><span />{connection}</span></div>
+    <div className="ch-panel-heading"><div><h2 className="ch-panel-title flex items-center gap-2"><Radar size={18} /> Security Radar</h2><p className="ch-muted">{compact ? 'Observed uptime · TLS · security headers' : 'Monitored availability, TLS and browser-security checks · not a guarantee of protection'}</p></div><span className={`ch-live-state ch-live-${liveClass}`}><span />{connectionLabel}</span></div>
     {noUsableRows && error ? <div className="ch-metric-state" role="alert"><WifiOff size={24} /><span>Security telemetry unavailable</span></div> : <div className="ch-security-layout">
-      <div className="ch-radar" style={{ '--radar-tone': tone[overall] } as React.CSSProperties} data-status={overall} data-active={connection === 'live' && !error && summary.score !== null} aria-busy={initialLoading}>
+      <div className="ch-radar" style={{ '--radar-tone': tone[overall] } as React.CSSProperties} data-status={overall} data-active={radarRunning} aria-busy={initialLoading}>
         <div className="ch-radar-grid" /><div className="ch-radar-sweep" /><div className="ch-radar-core"><strong>{initialLoading && !summary.rows.length ? '…' : summary.score === null ? '—' : summary.score}</strong><span>{initialLoading ? 'loading' : summary.score === null ? 'stale / unknown' : 'observed index'}</span></div>
         {summary.rows.map((row, index) => <i key={row.store.id} style={{ transform: `rotate(${index * (360 / Math.max(summary.rows.length, 1))}deg) translateY(-42%)`, background: tone[row.status] }} title={`${row.store.name}: ${row.status}`} />)}
       </div>
@@ -117,6 +123,6 @@ export default function SecurityPulse({ selectedStoreId = 'all', compact = false
       </div>
       <p className="mt-1 text-[10px] leading-4 text-slate-400">Current source observes uptime, TLS, headers and recorded alerts only. Unavailable is not zero threats.</p>
     </details>
-    <div className="ch-security-footer"><span><Activity size={13} /> {connection === 'live' ? 'Realtime events + 30s verification' : connection === 'offline' ? 'Offline · last values retained' : '30s safety checks'} · {summary.rows.some(row => row.score === null) ? 'Some checks stale or unavailable' : 'Sample-based index, not a full threat scan'}</span><Link href="/site-health">Open Security Centre →</Link></div>
+    <div className="ch-security-footer"><span><Activity size={13} /> {radarRunning && connection === 'live' ? 'Realtime events + 30s verification' : radarRunning ? 'Verified by 30s checks' : connection === 'offline' ? 'Offline · last values retained' : 'Telemetry delayed or stale'} · {summary.rows.some(row => row.score === null) ? 'Some checks stale or unavailable' : 'Sample-based index, not a full threat scan'}</span><Link href="/site-health">Open Security Centre →</Link></div>
   </section>;
 }

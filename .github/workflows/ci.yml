@@ -84,6 +84,9 @@ jobs:
       - name: Compact NORA outer-screen layout and secure login regression tests
         run: node --test scripts/nora-login-compact.test.cjs
 
+      - name: Live dashboard motion and telemetry accuracy regression tests
+        run: node --test scripts/dashboard-live-motion.test.cjs
+
       - name: Typecheck
         run: npx tsc --noEmit
 

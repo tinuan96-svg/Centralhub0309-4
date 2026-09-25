@@ -992,3 +992,54 @@
     line-height:1.25;
   }
 }
+
+/* Measured dashboard telemetry: moving sweep is an indicator of an active
+   transport, never synthetic sales/security data. Historical SVG and KPI
+   values remain unchanged until fresh records arrive. */
+.ch-dashboard-motion-control { font-size:.7rem; min-height:2rem; padding:.3rem .6rem; white-space:nowrap; border:1px solid rgba(34,211,238,.36); border-radius:.65rem; }
+.ch-live-console .ch-business-wave[data-active="true"] .ch-business-sweep {
+  z-index:2; width:16%; opacity:.95;
+  background:linear-gradient(90deg,transparent 0%,rgba(34,211,238,.08) 22%,rgba(34,211,238,.24) 58%,rgba(165,243,252,.4) 84%,transparent 100%);
+  box-shadow:0 0 14px rgba(34,211,238,.15);
+  animation:ch-business-scan 4s linear infinite;
+}
+.ch-live-console .ch-business-sweep::after {
+  content:""; position:absolute; right:9%; top:0; bottom:0; width:1px;
+  background:rgba(207,250,254,.88); box-shadow:0 0 9px 2px rgba(34,211,238,.52);
+}
+.ch-live-console .ch-business-wave[data-active="false"] .ch-business-sweep { opacity:0;animation:none; }
+.ch-live-console .ch-radar[data-active="true"] .ch-radar-sweep {
+  opacity:.76; animation:chRadar 3.2s linear infinite;
+  background:conic-gradient(from 0deg,transparent 0deg 290deg,color-mix(in srgb,var(--radar-tone) 6%,transparent) 318deg,color-mix(in srgb,var(--radar-tone) 50%,transparent) 348deg,var(--radar-tone) 359deg,transparent 360deg);
+}
+.ch-live-console .ch-radar[data-active="true"]::after {
+  content:""; pointer-events:none;position:absolute;inset:0;border-radius:50%;
+  border:1px solid color-mix(in srgb,var(--radar-tone) 34%,transparent);
+  box-shadow:inset 0 0 8px color-mix(in srgb,var(--radar-tone) 18%,transparent);
+  animation:ch-dashboard-radar-glow 2.4s ease-in-out infinite;
+}
+@keyframes ch-dashboard-radar-glow { 50% { box-shadow:inset 0 0 18px color-mix(in srgb,var(--radar-tone) 38%,transparent),0 0 9px color-mix(in srgb,var(--radar-tone) 14%,transparent); } }
+.ch-live-console[data-motion="off"] .ch-business-wave .ch-business-sweep,
+.ch-live-console[data-motion="off"] .ch-radar .ch-radar-sweep,
+.ch-live-console[data-motion="off"] .ch-radar::after,
+.ch-live-console[data-motion="off"] .ch-business-source-dot,
+.ch-live-console[data-motion="off"] .ch-live-live span { animation:none!important; }
+.ch-live-console[data-motion="off"] .ch-business-wave .ch-business-sweep { opacity:0!important; }
+.ch-live-console[data-motion="off"] .ch-radar[data-active="true"] .ch-radar-sweep { opacity:.18!important; }
+@media (prefers-reduced-motion:reduce) {
+  /* A deliberate tap on Motion: system -> on overrides reduced-motion for
+     these measured visuals ONLY. All other page animations remain reduced. */
+  .ch-dashboard-workspace .ch-live-console[data-motion="on"] .ch-business-wave[data-active="true"] .ch-business-sweep {
+    opacity:.95!important;animation:ch-business-scan 4s linear infinite!important;
+  }
+  .ch-dashboard-workspace .ch-live-console[data-motion="on"] .ch-radar[data-active="true"] .ch-radar-sweep {
+    opacity:.76!important;animation:chRadar 3.2s linear infinite!important;
+  }
+  .ch-dashboard-workspace .ch-live-console[data-motion="on"] .ch-radar[data-active="true"]::after {
+    animation:ch-dashboard-radar-glow 2.4s ease-in-out infinite!important;
+  }
+  .ch-dashboard-workspace .ch-live-console[data-motion="on"] .ch-business-source[data-live="true"] .ch-business-source-dot,
+  .ch-dashboard-workspace .ch-live-console[data-motion="on"] .ch-live-live span {
+    animation:chPulse 1.5s ease-in-out infinite!important;
+  }
+}

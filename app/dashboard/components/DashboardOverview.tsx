@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { ArrowUpRight, ChevronDown, CircleAlert, Download } from 'lucide-react';
 import { useDashboardFilterStore } from '@/lib/store/dashboardFilterStore';
@@ -106,6 +106,9 @@ function DashboardDetailGroup({ title, description, widgets }: { title: string; 
 
 export default function DashboardOverview({ refreshKey, appearance = 'dark', controls }: { refreshKey: number; appearance?: 'dark' | 'light'; controls?: ReactNode }) {
   const { timeRange, comparisonType, selectedStoreId, customStartDate, customEndDate } = useDashboardFilterStore();
+  // Respect device reduced-motion by default. A deliberate tap opts in to
+  // moving telemetry visuals; users can also pause without stopping live data.
+  const [motionPreference, setMotionPreference] = useState<'system' | 'on' | 'off'>('system');
   const { report, loading, error, connection, refresh } = useLiveDashboardReport({ timeRange, comparisonType, selectedStoreId, customStartDate, customEndDate }, refreshKey);
 
   const stores = report?.stores.filter(s => selectedStoreId === 'all' || s.id === selectedStoreId) || [];
@@ -160,10 +163,13 @@ export default function DashboardOverview({ refreshKey, appearance = 'dark', con
   const operationsWidgets = detailWidgets.filter(widget => !groupedIds.has(widget.id));
 
   return <>
-    <section className="ch-model-shell ch-visual-console ch-live-console ch-rich-console" data-appearance={appearance} aria-label="Visual business dashboard">
+    <section className="ch-model-shell ch-visual-console ch-live-console ch-rich-console" data-motion={motionPreference} data-appearance={appearance} aria-label="Visual business dashboard">
       <h1 className="sr-only">Business dashboard</h1>
       <DashboardFilterBar compact lastUpdated={report?.loadedAt || null} loading={loading} onRefresh={refresh} actions={<>{controls}<button type="button" onClick={exportReport} disabled={!report || loading} className="ch-button ch-console-icon" title="Export figures" aria-label="Export dashboard figures"><Download size={16} /></button></>} />
-      <DashboardLiveStatus connection={connection} loading={loading} error={!!error} updatedAt={report?.loadedAt || null} />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <DashboardLiveStatus connection={connection} loading={loading} error={!!error} updatedAt={report?.loadedAt || null} />
+        <button type="button" className="ch-button ch-dashboard-motion-control" aria-label="Dashboard visual animation preference" title="System respects device reduced-motion; On enables moving visuals; Off pauses visual animations without pausing data updates." onClick={() => setMotionPreference(current => current === 'system' ? 'on' : current === 'on' ? 'off' : 'system')}>Motion: {motionPreference === 'system' ? 'system' : motionPreference === 'on' ? 'on' : 'off'}</button>
+      </div>
       {error && <div role="alert" className="ch-note ch-error flex items-center gap-3"><CircleAlert size={20} /><span>{error}{report ? ' Showing the last successful report until the next update.' : ''}</span></div>}
       {loading && !report && <div role="status" aria-label="Loading dashboard" className="ch-kpi-grid">{Array.from({ length: 6 }, (_, i) => <div key={i} className="ch-panel h-28 animate-pulse"><div className="h-3 w-20 bg-slate-700/50 rounded mb-5" /><div className="h-7 w-28 bg-slate-700/50 rounded" /></div>)}</div>}
       {!report && <div className="ch-grid-main"><SecurityPulse selectedStoreId={selectedStoreId} compact /></div>}
