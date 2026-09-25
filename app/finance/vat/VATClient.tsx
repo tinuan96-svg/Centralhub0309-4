@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/AuthProvider';
 import UpcomingTaxFeatures from '../UpcomingTaxFeatures';
+import TaxSandboxPanel from '../TaxSandboxPanel';
 
 type Store = { id: string; name: string; slug: string | null };
 type VatSetting = {
@@ -186,6 +187,7 @@ export default function VATClient() {
       </section>
 
       <UpcomingTaxFeatures />
+      <TaxSandboxPanel />
 
       {error && <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-300">{error}</div>}
 
