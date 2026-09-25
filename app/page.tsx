@@ -11,7 +11,7 @@ import { getPublicFeatureGallery } from '@/lib/publicFeatureGallery';
 
 export const metadata: Metadata = {
   title: 'CentralHub | Business software & interactive demo',
-  description: 'Explore CentralHub shipment booking, WhatsApp messaging, NORA AI, voice picking, multistore operations, marketing, VAT, bank reconciliation, inventory and financial reporting.',
+  description: 'Explore CentralHub business operations, inventory, reporting and interactive demos. HMRC tax filing integrations are in development and are not available for live filing.',
   alternates: { canonical: 'https://centralhub.network/' },
   openGraph: {
     title: 'CentralHub | Business software & interactive demo',
@@ -52,6 +52,8 @@ export default function Home() {
             <a href="#interactive-demo" className="hover:text-white">Quick demo</a>
             <Link href="/demo" className="hover:text-white">Full demo</Link>
             <a href="#real-integrations" className="hover:text-white">Integrations</a>
+            <Link href="/tax-integrations" className="hover:text-white">Tax roadmap</Link>
+            <Link href="/company" className="hover:text-white">Company</Link>
           </div>
           <PublicMobileNavigation />
           <Link href="/login" className="inline-flex min-h-11 shrink-0 items-center justify-center gap-1 rounded-xl bg-cyan-300 px-3 py-2 text-xs font-extrabold text-slate-950 transition hover:bg-cyan-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300 sm:gap-2 sm:px-4 sm:text-sm">
@@ -98,6 +100,21 @@ export default function Home() {
       <PublicInteractiveDemo />
       <PublicRealIntegrationsShowcase items={getPublicFeatureGallery()} />
 
+
+      <section id="tax-integrations" className="mx-auto max-w-7xl scroll-mt-24 px-4 pb-20 sm:px-6 lg:px-8" aria-labelledby="tax-integrations-title">
+        <div className="rounded-3xl border border-cyan-300/20 bg-[#0c2134] p-6 sm:p-9">
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-cyan-300">Tax &amp; compliance integrations · in development</p>
+          <h2 id="tax-integrations-title" className="mt-3 text-2xl font-black text-white sm:text-3xl">HMRC integrations: a transparent roadmap</h2>
+          <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-300">CentralHub includes VAT management views. HMRC Making Tax Digital VAT authorisation, return retrieval and live submission have not been verified as available. An application-only sandbox diagnostic is not HMRC production approval.</p>
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            <div className="rounded-xl border border-white/10 bg-white/[0.035] p-4"><h3 className="font-bold text-white">Making Tax Digital for VAT</h3><p className="mt-2 text-sm leading-6 text-slate-300">In development · sandbox application testing only. Live VAT filing is not available.</p></div>
+            <div className="rounded-xl border border-white/10 bg-white/[0.035] p-4"><h3 className="font-bold text-white">PAYE &amp; Corporation Tax</h3><p className="mt-2 text-sm leading-6 text-slate-300">Planned integrations · separate HMRC developer testing and authorisation required.</p></div>
+            <div className="rounded-xl border border-white/10 bg-white/[0.035] p-4"><h3 className="font-bold text-white">Company filings</h3><p className="mt-2 text-sm leading-6 text-slate-300">Read-only Companies House sandbox diagnostics are planned; live filing is not available.</p></div>
+          </div>
+          <Link href="/tax-integrations" className="mt-6 inline-flex min-h-11 items-center gap-2 text-sm font-bold text-cyan-200 hover:text-white">Read the tax integration status <ArrowRight aria-hidden="true" className="h-4 w-4" /></Link>
+        </div>
+      </section>
+
       <section id="how-it-works" className="scroll-mt-24 mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
         <div className="max-w-2xl"><p className="text-xs font-bold uppercase tracking-[0.22em] text-cyan-300">How CentralHub works</p><h2 className="mt-3 text-3xl font-black tracking-tight text-white sm:text-4xl">From scattered tools to one connected view</h2></div>
         <div className="mt-10 grid gap-4 md:grid-cols-3">
@@ -112,7 +129,7 @@ export default function Home() {
         </div>
       </section>
 
-      <footer className="border-t border-white/10 bg-[#071120]"><div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-8 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8"><span className="font-bold text-slate-200">Central<span className="text-cyan-300">Hub</span></span><span>One connected workspace for your business.</span><Link href="/demo" className="inline-flex min-h-10 items-center gap-2 text-cyan-200 hover:text-white">Full demo <ArrowRight aria-hidden="true" className="h-4 w-4" /></Link><Link href="/login" className="inline-flex min-h-10 items-center gap-2 text-cyan-200 hover:text-white">Application login <ArrowRight aria-hidden="true" className="h-4 w-4" /></Link></div></footer>
+      <footer className="border-t border-white/10 bg-[#071120]"><div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-8 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8"><span className="font-bold text-slate-200">Central<span className="text-cyan-300">Hub</span></span><span>Operated by INDIVORA LTD · Company no. 17459277 · Registered in England and Wales</span><Link href="/company" className="inline-flex min-h-10 items-center text-cyan-200 hover:text-white">Company information</Link><Link href="/tax-integrations" className="inline-flex min-h-10 items-center text-cyan-200 hover:text-white">Tax integration status</Link><Link href="/demo" className="inline-flex min-h-10 items-center gap-2 text-cyan-200 hover:text-white">Full demo <ArrowRight aria-hidden="true" className="h-4 w-4" /></Link><Link href="/login" className="inline-flex min-h-10 items-center gap-2 text-cyan-200 hover:text-white">Application login <ArrowRight aria-hidden="true" className="h-4 w-4" /></Link></div></footer>
     </main>
   );
 }

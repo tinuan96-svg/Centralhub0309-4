@@ -11,6 +11,8 @@ const links = [
   { href: '/demo', label: 'Full dashboard demo' },
   { href: '#real-integrations', label: 'Integrations' },
   { href: '#how-it-works', label: 'How it works' },
+  { href: '/tax-integrations', label: 'Tax roadmap' },
+  { href: '/company', label: 'Company information' },
 ];
 
 export default function PublicMobileNavigation() {
