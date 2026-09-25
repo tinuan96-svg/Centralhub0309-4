@@ -72,23 +72,25 @@ export default function NoraOrb({ phase }: { phase: NoraPhase }) {
     >
       <div aria-hidden="true" className={styles.aura} />
       {imageIndex !== null && (
-        <img
-          key={imageIndex}
-          src={NORA_IMAGES[imageIndex]}
-          alt=""
-          width={760}
-          height={501}
-          decoding="async"
-          draggable={false}
-          onLoad={() => setHasImageLoaded(true)}
-          onError={() => {
-            // A broken alternative must not leave the hero invisible.
-            setImageIndex(0);
-            setHasImageLoaded(true);
-          }}
-          className={[styles.approvedArtwork, hasImageLoaded ? styles.artworkVisible : styles.artworkLoading,
-            imageIndex === 1 ? styles.circuitArtwork : ''].join(' ')}
-        />
+        <div className={styles.artworkFrame} aria-hidden="true">
+          <img
+            key={imageIndex}
+            src={NORA_IMAGES[imageIndex]}
+            alt=""
+            width={760}
+            height={501}
+            decoding="async"
+            draggable={false}
+            onLoad={() => setHasImageLoaded(true)}
+            onError={() => {
+              // A broken alternative must not leave the hero invisible.
+              setImageIndex(0);
+              setHasImageLoaded(true);
+            }}
+            className={[styles.approvedArtwork, hasImageLoaded ? styles.artworkVisible : styles.artworkLoading,
+              imageIndex === 1 ? styles.circuitArtwork : ''].join(' ')}
+          />
+        </div>
       )}
       <div aria-hidden="true" className={styles.energyHalo} />
       <div aria-hidden="true" className={styles.energySweep} />

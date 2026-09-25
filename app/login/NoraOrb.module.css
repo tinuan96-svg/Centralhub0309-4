@@ -2,35 +2,46 @@
    Never draw a replacement orb or embed the original screenshot UI here. */
 .scene {
   position: relative;
-  isolation: isolate;
+  isolation: auto;
   width: min(100%, 820px);
   height: clamp(205px, 42vw, 395px);
   flex: none;
   overflow: hidden;
-  contain: layout paint;
-  background: radial-gradient(ellipse at 50% 52%, rgba(0, 91, 209, .21), transparent 66%);
+  contain: layout;
+  background: transparent;
   pointer-events: none;
 }
-.approvedArtwork {
+/* Clip to the ACTUAL visible art rather than the full responsive scene.
+   object-fit: contain on a scene-wide <img> masks its empty letterbox instead
+   of the painted rectangle, which caused the framed-photo appearance. */
+.artworkFrame {
   position: absolute;
   z-index: 2;
-  inset: 0;
+  top: 0;
+  left: 50%;
+  height: 100%;
+  max-width: 100%;
+  aspect-ratio: 760 / 501;
+  width: auto;
+  transform: translateX(-50%);
+  mix-blend-mode: screen;
+  -webkit-mask-image: radial-gradient(ellipse 53% 54% at 50% 49%, #000 34%, rgba(0,0,0,.9) 54%, rgba(0,0,0,.38) 74%, transparent 94%);
+  mask-image: radial-gradient(ellipse 53% 54% at 50% 49%, #000 34%, rgba(0,0,0,.9) 54%, rgba(0,0,0,.38) 74%, transparent 94%);
+}
+.approvedArtwork {
+  display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
   object-position: center;
   user-select: none;
   transform-origin: center 48%;
-  /* Feather the approved image into the page instead of exposing its rectangular photo edges. */
-  -webkit-mask-image: radial-gradient(ellipse 69% 71% at 50% 50%, #000 43%, rgba(0,0,0,.95) 60%, rgba(0,0,0,.45) 79%, transparent 100%);
-  mask-image: radial-gradient(ellipse 69% 71% at 50% 50%, #000 43%, rgba(0,0,0,.95) 60%, rgba(0,0,0,.45) 79%, transparent 100%);
   filter: brightness(1.06) saturate(1.10) drop-shadow(0 0 12px rgba(13, 148, 255, .28));
   animation: alive 7.6s ease-in-out infinite;
 }
 .artworkLoading { opacity: 0; }
 .artworkVisible { opacity: 1; }
-/* Earlier AI sphere artwork is portrait-oriented; crop its phone bars and
-   retain only the glowing circuit sphere in the responsive hero window. */
+/* Portrait original has a captured phone bar: crop centrally to the sphere. */
 .circuitArtwork { object-fit: cover; object-position: center 49%; }
 @media (prefers-reduced-motion: no-preference) {
   .artworkVisible { animation: heroEnter .7s ease-out both, alive 7.6s ease-in-out .7s infinite; }
@@ -154,7 +165,8 @@
 
 @media (max-width: 480px) {
   .scene { height: clamp(136px, 43vw, 174px); }
-  .approvedArtwork { object-fit: contain; }
+  .artworkFrame { max-width: 100%; }
+  .approvedArtwork { object-fit: cover; }
   .circuitArtwork { object-fit: cover; object-position: center 49%; }
   .energyHalo { top: 26%; width: 38%; }
   .orbitAccent { width: 72%; top: 44%; }
@@ -169,13 +181,7 @@
   }
 }
 
-/* Both landscape and portrait variants fade before the NORA heading. */
-.approvedArtwork {
-  -webkit-mask-image: radial-gradient(ellipse 67% 73% at 50% 45%, #000 39%, rgba(0,0,0,.94) 55%, rgba(0,0,0,.50) 73%, transparent 95%), linear-gradient(to bottom, black 0%, black 72%, transparent 100%);
-  -webkit-mask-composite: source-in;
-  mask-image: radial-gradient(ellipse 67% 73% at 50% 45%, #000 39%, rgba(0,0,0,.94) 55%, rgba(0,0,0,.50) 73%, transparent 95%), linear-gradient(to bottom, black 0%, black 72%, transparent 100%);
-  mask-composite: intersect;
-}
+/* A clean soft edge is handled on the artwork-sized frame itself. */
 
 /* Make the rotating NORA image substantial on tall folded phones while
    preserving the compact short-screen layout and the title boundary. */

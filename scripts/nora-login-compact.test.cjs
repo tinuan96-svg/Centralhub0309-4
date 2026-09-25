@@ -67,7 +67,7 @@ test('NORA title and login actions remain accessible with external floating widg
   assert.match(login, /relative z-10 mt-2 text-/);
   assert.match(login, /Open demo dashboard/);
   assert.match(login, /pb-\[calc\(7rem\+env\(safe-area-inset-bottom\)\)\]/);
-  assert.match(css, /mask-composite: intersect/);
+  assert.match(css, /mix-blend-mode: screen/);
   assert.match(login, /href="\/demo"/);
   assert.match(login, /completeReturningUserUnlock/);
 });
@@ -84,4 +84,17 @@ test('Tall Fold and Android phone viewports use balanced NORA layout without shr
   assert.match(css, /height: clamp\(166px, 50vw, 212px\)/);
   assert.ok(login.includes('completeReturningUserUnlock()'));
   assert.ok(login.includes('href="/demo"'));
+});
+
+test('Both rotating visuals dissolve into the actual page rather than showing a photo rectangle', () => {
+  assert.ok(orb.includes('styles.artworkFrame'));
+  assert.match(css, /\\.artworkFrame\\s*\\{/);
+  assert.match(css, /aspect-ratio: 760 \\/ 501/);
+  assert.match(css, /mix-blend-mode: screen/);
+  assert.match(css, /contain: layout;/);
+  assert.doesNotMatch(css, /contain: layout paint/);
+  assert.match(css, /background: transparent;/);
+  assert.match(css, /mask-image: radial-gradient/);
+  assert.ok(orb.includes('styles.circuitArtwork'));
+  assert.ok(login.includes('loginLayout.content'));
 });
