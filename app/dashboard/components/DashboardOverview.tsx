@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { ArrowUpRight, ChevronDown, CircleAlert, Download } from 'lucide-react';
 import { useDashboardFilterStore } from '@/lib/store/dashboardFilterStore';
@@ -30,6 +30,13 @@ type DashboardWidget = {
   mobile?: number;
   minHeight?: number;
 };
+
+type MotionPreference = 'system' | 'on' | 'off';
+const DASHBOARD_MOTION_STORAGE_KEY = 'centralhub:dashboard:motion-preference';
+
+function isMotionPreference(value: string | null): value is MotionPreference {
+  return value === 'system' || value === 'on' || value === 'off';
+}
 
 const EXECUTIVE_WIDGET_IDS = new Set([
   'growth-pulse',
@@ -108,7 +115,33 @@ export default function DashboardOverview({ refreshKey, appearance = 'dark', con
   const { timeRange, comparisonType, selectedStoreId, customStartDate, customEndDate } = useDashboardFilterStore();
   // Respect device reduced-motion by default. A deliberate tap opts in to
   // moving telemetry visuals; users can also pause without stopping live data.
-  const [motionPreference, setMotionPreference] = useState<'system' | 'on' | 'off'>('system');
+  // Start identically on the server and first client render, then restore
+  // the last explicit selection. Write only when the user taps: an initial
+  // effect that saves "system" would overwrite the previously saved choice.
+  const [motionPreference, setMotionPreference] = useState<MotionPreference>('system');
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(DASHBOARD_MOTION_STORAGE_KEY);
+      if (isMotionPreference(stored)) setMotionPreference(stored);
+    } catch { /* Private browsing can block storage; the button still works. */ }
+
+    // Keep another open dashboard tab consistent with changes from this device.
+    const syncAcrossTabs = (event: StorageEvent) => {
+      if (event.key !== DASHBOARD_MOTION_STORAGE_KEY) return;
+      setMotionPreference(isMotionPreference(event.newValue) ? event.newValue : 'system');
+    };
+    window.addEventListener('storage', syncAcrossTabs);
+    return () => window.removeEventListener('storage', syncAcrossTabs);
+  }, []);
+
+  const cycleMotionPreference = () => {
+    const next: MotionPreference = motionPreference === 'system' ? 'on' : motionPreference === 'on' ? 'off' : 'system';
+    setMotionPreference(next);
+    try {
+      window.localStorage.setItem(DASHBOARD_MOTION_STORAGE_KEY, next);
+    } catch { /* Keep this visit's preference if browser storage is blocked. */ }
+  };
+
   const { report, loading, error, connection, refresh } = useLiveDashboardReport({ timeRange, comparisonType, selectedStoreId, customStartDate, customEndDate }, refreshKey);
 
   const stores = report?.stores.filter(s => selectedStoreId === 'all' || s.id === selectedStoreId) || [];
@@ -168,7 +201,7 @@ export default function DashboardOverview({ refreshKey, appearance = 'dark', con
       <DashboardFilterBar compact lastUpdated={report?.loadedAt || null} loading={loading} onRefresh={refresh} actions={<>{controls}<button type="button" onClick={exportReport} disabled={!report || loading} className="ch-button ch-console-icon" title="Export figures" aria-label="Export dashboard figures"><Download size={16} /></button></>} />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <DashboardLiveStatus connection={connection} loading={loading} error={!!error} updatedAt={report?.loadedAt || null} />
-        <button type="button" className="ch-button ch-dashboard-motion-control" aria-label="Dashboard visual animation preference" title="System respects device reduced-motion; On enables moving visuals; Off pauses visual animations without pausing data updates." onClick={() => setMotionPreference(current => current === 'system' ? 'on' : current === 'on' ? 'off' : 'system')}>Motion: {motionPreference === 'system' ? 'system' : motionPreference === 'on' ? 'on' : 'off'}</button>
+        <button type="button" className="ch-button ch-dashboard-motion-control" aria-label="Dashboard visual animation preference" title="System respects device reduced-motion; On enables moving visuals; Off pauses visual animations without pausing data updates." onClick={cycleMotionPreference}>Motion: {motionPreference === 'system' ? 'system' : motionPreference === 'on' ? 'on' : 'off'}</button>
       </div>
       {error && <div role="alert" className="ch-note ch-error flex items-center gap-3"><CircleAlert size={20} /><span>{error}{report ? ' Showing the last successful report until the next update.' : ''}</span></div>}
       {loading && !report && <div role="status" aria-label="Loading dashboard" className="ch-kpi-grid">{Array.from({ length: 6 }, (_, i) => <div key={i} className="ch-panel h-28 animate-pulse"><div className="h-3 w-20 bg-slate-700/50 rounded mb-5" /><div className="h-7 w-28 bg-slate-700/50 rounded" /></div>)}</div>}
