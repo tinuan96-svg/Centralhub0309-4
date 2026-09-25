@@ -30,7 +30,7 @@ test('Approved user-uploaded NORA image is the actual animated login artwork', (
   const imagePath = path.join(__dirname, '..', 'public/feature-visuals/nora_approved_hero.webp');
   assert.ok(fs.existsSync(imagePath), 'Selected approved NORA image must be committed');
   assert.ok(fs.statSync(imagePath).size > 20000, 'Selected approved NORA image must not be a placeholder');
-  assert.ok(orb.includes('src="/feature-visuals/nora_approved_hero.webp"'));
+  assert.ok(orb.includes('/feature-visuals/nora_approved_hero.webp'));
   assert.ok(css.includes('.approvedArtwork'));
   assert.ok(css.includes('@keyframes alive'));
   assert.ok(css.includes('prefers-reduced-motion: reduce'));
@@ -45,5 +45,20 @@ test('The actual approved hero blends seamlessly and has independently animated 
   assert.ok(orb.includes('styles.energySweep'));
   assert.ok(orb.includes('styles.orbitNodes'));
   assert.ok(orb.includes('nora_approved_hero.webp'));
+  assert.ok(css.includes('prefers-reduced-motion: reduce'));
+});
+
+test('NORA rotates available artworks randomly without repeating the last displayed image', () => {
+  assert.ok(fs.existsSync(path.join(__dirname, '..', 'public/feature-visuals/nora-ai-original.jpg')));
+  assert.ok(orb.includes('/feature-visuals/nora-ai-original.jpg'));
+  assert.ok(orb.includes("localStorage.getItem(LAST_IMAGE_KEY)"));
+  assert.ok(orb.includes("localStorage.setItem(LAST_IMAGE_KEY, String(next))"));
+  assert.ok(orb.includes('.filter(index => index !== safePrevious)'));
+  assert.ok(orb.includes('Math.random() * candidates.length'));
+  assert.ok(orb.includes('if (event.persisted) chooseImage()'));
+  assert.ok(orb.includes('if (!mountedOnce.current)'));
+  assert.ok(orb.includes('imageIndex === 1 ? styles.circuitArtwork'));
+  assert.ok(css.includes('.circuitArtwork'));
+  assert.ok(css.includes('@keyframes heroEnter'));
   assert.ok(css.includes('prefers-reduced-motion: reduce'));
 });

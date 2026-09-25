@@ -27,6 +27,15 @@
   filter: brightness(1.06) saturate(1.10) drop-shadow(0 0 12px rgba(13, 148, 255, .28));
   animation: alive 7.6s ease-in-out infinite;
 }
+.artworkLoading { opacity: 0; }
+.artworkVisible { opacity: 1; }
+/* Earlier AI sphere artwork is portrait-oriented; crop its phone bars and
+   retain only the glowing circuit sphere in the responsive hero window. */
+.circuitArtwork { object-fit: cover; object-position: center 49%; }
+@media (prefers-reduced-motion: no-preference) {
+  .artworkVisible { animation: heroEnter .7s ease-out both, alive 7.6s ease-in-out .7s infinite; }
+}
+@keyframes heroEnter { from { opacity: 0; } to { opacity: 1; } }
 .aura {
   position: absolute;
   z-index: 0;
@@ -143,6 +152,7 @@
 @media (max-width: 480px) {
   .scene { height: clamp(146px, 46vw, 185px); }
   .approvedArtwork { object-fit: contain; }
+  .circuitArtwork { object-fit: cover; object-position: center 49%; }
   .energyHalo { top: 26%; width: 38%; }
   .orbitAccent { width: 72%; top: 44%; }
 }
