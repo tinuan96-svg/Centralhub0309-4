@@ -8,7 +8,7 @@ const login = source('app/login/LoginClient.tsx');
 const css = source('app/login/NoraOrb.module.css');
 const orb = source('app/login/NoraOrb.tsx');
 test('Phone and short viewport NORA art scales down while the secure action grid remains visible', () => {
-  assert.match(css, /height: clamp\(146px, 46vw, 185px\)/);
+  assert.match(css, /height: clamp\(136px, 43vw, 174px\)/);
   assert.match(css, /max-width: 480px\) and \(max-height: 680px/);
   assert.match(login, /grid grid-cols-2 gap-2 sm:mt-3 sm:grid-cols-1/);
   assert.match(login, /mb-1 inline-flex min-h-7/);
@@ -61,4 +61,13 @@ test('NORA rotates available artworks randomly without repeating the last displa
   assert.ok(css.includes('.circuitArtwork'));
   assert.ok(css.includes('@keyframes heroEnter'));
   assert.ok(css.includes('prefers-reduced-motion: reduce'));
+});
+
+test('NORA title and login actions remain accessible with external floating widgets', () => {
+  assert.match(login, /relative z-10 mt-2 text-/);
+  assert.match(login, /Open demo dashboard/);
+  assert.match(login, /pb-\[calc\(7rem\+env\(safe-area-inset-bottom\)\)\]/);
+  assert.match(css, /mask-composite: intersect/);
+  assert.match(login, /href="\/demo"/);
+  assert.match(login, /completeReturningUserUnlock/);
 });

@@ -153,7 +153,7 @@
 .verifying .orbitNodes, .verifying .energySweep { animation-duration: 3.7s; }
 
 @media (max-width: 480px) {
-  .scene { height: clamp(146px, 46vw, 185px); }
+  .scene { height: clamp(136px, 43vw, 174px); }
   .approvedArtwork { object-fit: contain; }
   .circuitArtwork { object-fit: cover; object-position: center 49%; }
   .energyHalo { top: 26%; width: 38%; }
@@ -167,4 +167,12 @@
     animation: none !important;
     transition: none !important;
   }
+}
+
+/* Both landscape and portrait variants fade before the NORA heading. */
+.approvedArtwork {
+  -webkit-mask-image: radial-gradient(ellipse 67% 73% at 50% 45%, #000 39%, rgba(0,0,0,.94) 55%, rgba(0,0,0,.50) 73%, transparent 95%), linear-gradient(to bottom, black 0%, black 72%, transparent 100%);
+  -webkit-mask-composite: source-in;
+  mask-image: radial-gradient(ellipse 67% 73% at 50% 45%, #000 39%, rgba(0,0,0,.94) 55%, rgba(0,0,0,.50) 73%, transparent 95%), linear-gradient(to bottom, black 0%, black 72%, transparent 100%);
+  mask-composite: intersect;
 }

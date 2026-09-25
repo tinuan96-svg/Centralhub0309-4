@@ -232,7 +232,7 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
   };
 
   return (
-    <main className="relative isolate min-h-[100dvh] overflow-x-hidden bg-[#030b1b] px-3 pb-[max(20px,env(safe-area-inset-bottom))] pt-[max(12px,env(safe-area-inset-top))] text-white sm:px-6 sm:pt-[max(20px,env(safe-area-inset-top))]">
+    <main className="relative isolate min-h-[100dvh] overflow-x-hidden bg-[#030b1b] px-3 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-[max(12px,env(safe-area-inset-top))] text-white sm:px-6 sm:pb-10 sm:pt-[max(20px,env(safe-area-inset-top))]">
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_50%_16%,rgba(0,117,255,.18),transparent_50%),radial-gradient(circle_at_50%_80%,rgba(8,84,180,.14),transparent_48%)]" />
       <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[680px] opacity-50 [background-image:radial-gradient(circle,rgba(68,185,255,.75)_0.6px,transparent_1.5px)] [background-size:67px_59px] [mask-image:linear-gradient(to_bottom,black,transparent)]" />
       <section className="relative mx-auto flex min-h-[calc(100dvh-45px)] w-full max-w-[780px] flex-col items-center justify-start py-1 text-center sm:min-h-[calc(100dvh-70px)] sm:justify-center sm:py-8">
@@ -241,7 +241,7 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
 
         <NoraOrb phase={/verif|unloc/i.test(status) ? 'verifying' : /listening/i.test(status) ? 'listening' : 'idle'} />
 
-        <h1 className="-mt-2 text-[clamp(2rem,8vw,4.2rem)] font-light leading-none tracking-[0.19em] text-slate-50 [text-shadow:0_0_30px_rgba(93,205,255,0.4)] sm:-mt-4">NORA</h1>
+        <h1 className="relative z-10 mt-2 text-[clamp(2rem,8vw,4.2rem)] font-light leading-none tracking-[0.19em] text-slate-50 [text-shadow:0_0_30px_rgba(93,205,255,0.4)] sm:mt-3">NORA</h1>
         <p className="mt-1.5 text-[9px] font-bold uppercase tracking-[0.18em] text-cyan-200 sm:mt-3 sm:text-xs sm:tracking-[0.38em]">Security · Identity · Access</p>
         <div aria-hidden="true" className="mt-2 h-px w-20 bg-gradient-to-r from-transparent via-cyan-300 to-transparent shadow-[0_0_18px_2px_rgba(34,211,238,.45)] sm:mt-4" />
 
@@ -253,6 +253,7 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
             <p className="mt-1.5 text-xs leading-5 text-slate-300 sm:mt-3 sm:text-sm">Use secure login below. Voice wake-up is available in the CentralHub Android app.</p>
           )}
           {heard && <p className="mt-2 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2 text-xs text-slate-400">Heard: {heard}</p>}
+          <Link href="/demo" prefetch={false} className="mt-2 inline-flex min-h-9 items-center justify-center gap-1.5 rounded-full border border-cyan-300/30 bg-cyan-300/10 px-4 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-300/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"><PlayCircle aria-hidden="true" className="h-3.5 w-3.5" /> Open demo dashboard</Link>
           <details className="mx-auto mt-1.5 max-w-lg text-xs leading-5 text-slate-400 sm:mt-3">
             <summary className="cursor-pointer rounded-md py-1 text-cyan-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300">How NORA secure access works</summary>
             <p className="mt-1">NORA stays silent while listening so her own speaker does not interfere. Voice wake-up requires the CentralHub Android app. Returning sessions must pass Android biometric or device-credential verification before CentralHub opens.</p>
