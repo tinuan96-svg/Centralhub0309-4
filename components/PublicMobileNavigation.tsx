@@ -13,6 +13,9 @@ const links = [
   { href: '#how-it-works', label: 'How it works' },
   { href: '/tax-integrations', label: 'Tax roadmap' },
   { href: '/company', label: 'Company information' },
+  { href: '/privacy', label: 'Privacy' },
+  { href: '/terms', label: 'Terms' },
+  { href: '/contact', label: 'Contact' },
 ];
 
 export default function PublicMobileNavigation() {
