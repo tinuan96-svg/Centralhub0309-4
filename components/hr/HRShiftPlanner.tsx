@@ -38,3 +38,4 @@ export default function HRShiftPlanner({company,token,employees}:{company:string
   <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={confirmed===s.id} onChange={e=>setConfirmed(e.target.checked?s.id:'')}/><span>I have reviewed this active employee's contract, schedule and working-time requirements and authorise issuing this shift.</span></label>
   <button type="button" disabled={confirmed!==s.id||saving} onClick={()=>void publish(s)} className="mt-3 rounded-lg border border-cyan-700 px-3 py-2 text-xs text-cyan-200 disabled:opacity-40">Issue reviewed shift</button></div>}
  </div>)}{!loading&&!shifts.length&&<p className="text-sm text-slate-400">No planned or issued shifts.</p>}</div></section></section>;
+}
