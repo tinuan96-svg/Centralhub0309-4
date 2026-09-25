@@ -313,7 +313,7 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
       <aside className={`${selectedConv ? 'hidden md:flex' : 'flex'} w-full md:w-64 lg:w-72 2xl:w-80 h-full max-h-full flex-none min-h-0 overflow-hidden border-r border-slate-800 flex-col bg-slate-900/50`}>
         <div className="h-12 lg:h-14 shrink-0 px-3 lg:px-4 border-b border-slate-800 flex items-center justify-between bg-slate-900">
           <h2 className="text-base lg:text-lg font-bold text-white uppercase tracking-tight">Inbox</h2>
-          <span className="text-[10px] lg:text-xs text-slate-500">{conversations.length}</span>
+          <div className="flex items-center gap-2"><a href="/customer-care/email" className="rounded-md border border-cyan-700/60 px-2 py-1 text-xs text-cyan-300 hover:bg-cyan-950/50">Email</a><span className="text-[10px] lg:text-xs text-slate-500">{conversations.length}</span></div>
         </div>
         <div className="flex-1 h-0 min-h-0 overflow-y-scroll overscroll-contain touch-pan-y [scrollbar-gutter:stable]" style={{ WebkitOverflowScrolling: 'touch' }}>
           {conversations.map((conv) => (

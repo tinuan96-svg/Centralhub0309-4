@@ -26,7 +26,7 @@ export const sections: NavSection[] = [
     { href: '/picking', label: 'Picking' }, { href: '/packing', label: 'Packing' }, { href: '/shipping', label: 'Shipment List' }, { href: '/shipping/tracking', label: 'Tracking' }, { href: '/shipping/calculator', label: 'Shipping Cost Calculator' },
   ] },
   { key: '06-customer-growth', label: 'Customer & Support', icon: '💬', description: 'Customers, support conversations and service operations', items: [
-    { href: '/customer-care/inbox', label: 'Support Inbox' }, { href: '/customer-care/conversations', label: 'Conversations' }, { href: '/customer-care/tickets', label: 'Tickets' },
+    { href: '/customer-care/inbox', label: 'Support Inbox' }, { href: '/customer-care/email', label: 'Email Inbox' }, { href: '/customer-care/conversations', label: 'Conversations' }, { href: '/customer-care/tickets', label: 'Tickets' },
     { href: '/customer-care/channels', label: 'WhatsApp Channels' }, { href: '/customer-care/ai-assistant', label: 'AI Assistant' }, { href: '/customer-care/knowledge-base', label: 'Knowledge Base' }, { href: '/customer-care/templates', label: 'Templates' }, { href: '/customer-care/automations', label: 'Automations' },
   ] },
   { key: '10-marketing', label: 'Marketing', icon: '📣', description: 'Campaigns, promotions, audiences and customer growth', items: [

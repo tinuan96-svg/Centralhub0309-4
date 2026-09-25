@@ -17,6 +17,7 @@ export default function CustomerCareDashboard() {
 
   const menuItems = [
     { title: 'Inbox', desc: 'Real-time customer chat', icon: '📥', href: '/customer-care/inbox' },
+    { title: 'Email inbox', desc: 'Private incoming email · manual review', icon: '✉️', href: '/customer-care/email' },
     { title: 'Tickets', desc: 'Manage support issues', icon: '🎫', href: '/customer-care/tickets' },
     { title: 'AI Assistant', desc: 'AI behavior & automation', icon: '🤖', href: '/customer-care/ai-assistant' },
     { title: 'Knowledge Base', desc: 'Training data for AI', icon: '📚', href: '/customer-care/knowledge-base' },
