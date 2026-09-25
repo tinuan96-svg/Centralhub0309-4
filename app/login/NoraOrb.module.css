@@ -1,0 +1,139 @@
+.scene {
+  position: relative;
+  isolation: isolate;
+  width: min(100%, 820px);
+  height: clamp(215px, 40vw, 375px);
+  flex: none;
+  overflow: hidden;
+  contain: layout paint;
+  background: radial-gradient(ellipse at 50% 52%, rgba(4, 93, 197, .16), transparent 47%);
+}
+.stars { position: absolute; inset: 0; opacity: .78; pointer-events: none; }
+.star {
+  position: absolute; width: 2px; height: 2px; border-radius: 50%;
+  background: #96e8ff; box-shadow: 0 0 7px 2px #168aff;
+  animation: twinkle 3.5s ease-in-out infinite alternate;
+}
+.wave {
+  position: absolute; top: 45%; width: 35%; height: 26%;
+  display: flex; align-items: center; justify-content: space-evenly;
+  gap: 2px; opacity: .83; filter: drop-shadow(0 0 6px #009dff);
+  pointer-events: none;
+}
+.waveLeft { left: 0; }
+.waveRight { right: 0; transform: scaleX(-1); }
+.waveBar {
+  display: block; width: 2px; min-width: 1px; border-radius: 6px;
+  background: linear-gradient(180deg, transparent 0%, #23a9ff 27%, #d8faff 50%, #1480f6 73%, transparent 100%);
+  transform: scaleY(.42); transform-origin: center;
+  animation: voiceWave 1.45s ease-in-out infinite alternate;
+}
+.orbArea {
+  position: absolute; z-index: 2; left: 50%; top: 43%;
+  width: clamp(156px, 36%, 266px); aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  animation: levitate 5s ease-in-out infinite;
+}
+.halo {
+  position: absolute; inset: -24%; border-radius: 50%;
+  background: radial-gradient(circle, rgba(17, 144, 255, .32) 0%, rgba(14, 121, 255, .09) 43%, transparent 72%);
+  filter: blur(15px); animation: haloPulse 3.7s ease-in-out infinite alternate;
+}
+.sphere {
+  position: absolute; z-index: 3; inset: 7%; display: grid; place-items: center;
+  overflow: hidden; border: 2px solid rgba(132, 234, 255, .9); border-radius: 50%;
+  background:
+    radial-gradient(ellipse at 37% 17%, rgba(204, 248, 255, .9) 0%, rgba(85, 208, 255, .48) 4%, transparent 27%),
+    radial-gradient(circle at 49% 58%, #041225 8%, #083267 47%, #0069d2 78%, #8decff 96%, #d7ffff 100%);
+  box-shadow: 0 0 7px #ddffff, 0 0 28px rgba(20, 176, 255, .95), inset 0 0 23px #51d5ff, inset -13px -10px 40px rgba(0, 17, 76, .9);
+  animation: spherePulse 4s ease-in-out infinite alternate;
+}
+.sphere::before {
+  content: ''; position: absolute; inset: 6%; border-radius: 50%;
+  border: 1px solid rgba(131, 218, 255, .38);
+  box-shadow: inset 0 0 19px rgba(8, 190, 255, .38);
+}
+.sphere::after {
+  content: ''; position: absolute; inset: 0;
+  background: repeating-linear-gradient(0deg, transparent 0 15px, rgba(100, 210, 255, .13) 16px, transparent 17px);
+  mask-image: radial-gradient(circle at 50% 50%, transparent 19%, black 94%);
+}
+.mesh {
+  position: absolute; inset: 13%; border-radius: 50%;
+  border: 1px solid rgba(81, 209, 255, .4); transform: rotate(-24deg) scaleX(.55);
+  box-shadow: 0 0 0 11px rgba(15, 153, 255, .045), 0 0 0 22px rgba(37, 149, 255, .045);
+  animation: meshTurn 11s linear infinite;
+}
+.sphereLabel {
+  position: relative; z-index: 1; color: #e2fbff;
+  font-size: clamp(21px, 4vw, 36px); font-weight: 700; letter-spacing: .1em;
+  text-shadow: 0 0 11px #48cbff, 0 0 28px #108afa;
+}
+.orbit {
+  position: absolute; left: 50%; top: 50%; width: 145%; height: 48%;
+  border: 2px solid rgba(68, 201, 255, .86); border-radius: 50%;
+  box-shadow: 0 0 8px #22baff, inset 0 0 10px rgba(18, 161, 255, .8);
+  pointer-events: none;
+}
+.orbitBehind {
+  z-index: 1; transform: translate(-50%, -50%) rotate(13deg);
+  animation: ringBehind 9s ease-in-out infinite alternate;
+}
+.orbitVertical {
+  z-index: 4; width: 102%; height: 135%;
+  border-color: rgba(64, 179, 255, .35);
+  transform: translate(-50%, -50%) rotate(35deg) scaleX(.56);
+  box-shadow: 0 0 10px rgba(22, 169, 255, .35);
+  animation: ringVertical 12s linear infinite;
+}
+.orbitFront {
+  z-index: 5; width: 155%; height: 44%; border-color: rgba(130, 233, 255, .73);
+  border-top-color: transparent; transform: translate(-50%, -43%) rotate(-12deg);
+  animation: ringFront 7s ease-in-out infinite alternate;
+}
+.platform {
+  position: absolute; z-index: 1; left: 50%; bottom: 5%;
+  width: min(76%, 490px); height: 19%;
+  border: 2px solid rgba(40, 170, 255, .85); border-radius: 50%;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse at center, rgba(23, 173, 255, .5), rgba(10, 48, 134, .18) 42%, transparent 72%);
+  box-shadow: 0 0 20px #007fff, inset 0 0 20px #0879fb, 0 0 40px rgba(9, 101, 255, .35);
+  animation: platformPulse 4s ease-in-out infinite alternate;
+}
+.platform::before, .platform::after {
+  content: ''; position: absolute; border: 1px solid rgba(87, 210, 255, .85);
+  border-radius: 50%; box-shadow: 0 0 7px #0bb5ff;
+}
+.platform::before { inset: 18% 14%; }
+.platform::after { inset: 31% 33%; }
+.platformCenter {
+  position: absolute; left: 50%; top: -55%; width: 3px; height: 140%;
+  background: linear-gradient(transparent, rgba(139, 242, 255, .95), transparent);
+  box-shadow: 0 0 12px 4px #0ab7ff; transform: translateX(-50%);
+}
+.verifying .sphere, .verifying .halo { animation-duration: 1s; }
+.verifying .waveBar { animation-duration: .48s; }
+.idle .waveBar { animation-duration: 2.6s; opacity: .65; }
+@keyframes twinkle { from { opacity: .15; transform: scale(.65); } to { opacity: 1; transform: scale(1.5); } }
+@keyframes voiceWave { from { transform: scaleY(.35); } to { transform: scaleY(1); } }
+@keyframes levitate { 0%, 100% { transform: translate(-50%, -50%); } 50% { transform: translate(-50%, -53%); } }
+@keyframes haloPulse { from { opacity: .45; transform: scale(.94); } to { opacity: .9; transform: scale(1.07); } }
+@keyframes spherePulse { from { filter: brightness(.9); } to { filter: brightness(1.18); } }
+@keyframes meshTurn { from { transform: rotate(-24deg) scaleX(.55); } to { transform: rotate(336deg) scaleX(.55); } }
+@keyframes ringBehind { from { transform: translate(-50%, -50%) rotate(13deg); } to { transform: translate(-50%, -50%) rotate(-13deg); } }
+@keyframes ringVertical { from { transform: translate(-50%, -50%) rotate(35deg) scaleX(.56); } to { transform: translate(-50%, -50%) rotate(395deg) scaleX(.56); } }
+@keyframes ringFront { from { transform: translate(-50%, -43%) rotate(-12deg); } to { transform: translate(-50%, -43%) rotate(12deg); } }
+@keyframes platformPulse { from { opacity: .72; transform: translateX(-50%) scale(.96); } to { opacity: 1; transform: translateX(-50%) scale(1.025); } }
+@media (max-width: 480px) {
+  .scene { height: clamp(210px, 57vw, 275px); }
+  .orbArea { width: clamp(154px, 47%, 215px); }
+  .wave { width: 32%; height: 21%; }
+  .waveBar { width: 1.5px; }
+  .platform { width: 88%; bottom: 5%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scene *, .scene *::before, .scene *::after {
+    animation: none !important; transition: none !important;
+  }
+  .waveBar { transform: scaleY(.72); }
+}
