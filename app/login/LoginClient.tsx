@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import NoraOrb from './NoraOrb';
+import loginLayout from './LoginResponsive.module.css';
 import { ArrowRight, Fingerprint, KeyRound, LockKeyhole, MessageCircle, Mic, PlayCircle, ShieldCheck } from 'lucide-react';
 import { AuthService } from '@/lib/services/authService';
 import { OTPService } from '@/lib/services/comm/otpService';
@@ -235,7 +236,7 @@ export default function LoginClient({ params, searchParams }: { params: any; sea
     <main className="relative isolate min-h-[100dvh] overflow-x-hidden bg-[#030b1b] px-3 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-[max(12px,env(safe-area-inset-top))] text-white sm:px-6 sm:pb-10 sm:pt-[max(20px,env(safe-area-inset-top))]">
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_50%_16%,rgba(0,117,255,.18),transparent_50%),radial-gradient(circle_at_50%_80%,rgba(8,84,180,.14),transparent_48%)]" />
       <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[680px] opacity-50 [background-image:radial-gradient(circle,rgba(68,185,255,.75)_0.6px,transparent_1.5px)] [background-size:67px_59px] [mask-image:linear-gradient(to_bottom,black,transparent)]" />
-      <section className="relative mx-auto flex min-h-[calc(100dvh-45px)] w-full max-w-[780px] flex-col items-center justify-start py-1 text-center sm:min-h-[calc(100dvh-70px)] sm:justify-center sm:py-8">
+      <section className={`relative mx-auto flex min-h-[calc(100dvh-45px)] w-full max-w-[780px] flex-col items-center justify-start py-1 text-center sm:min-h-[calc(100dvh-70px)] sm:justify-center sm:py-8 ${loginLayout.content}`}>
         <div className="mb-0.5 flex items-center justify-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.18em] text-slate-300 sm:mb-1 sm:gap-2 sm:text-xs sm:tracking-[0.36em]"><ShieldCheck aria-hidden="true" className="h-4 w-4 shrink-0 text-cyan-300 sm:h-5 sm:w-5" /> CentralHub Secure Access</div>
         <Link href="/demo" prefetch={false} className="mb-1 inline-flex min-h-7 items-center gap-1 rounded-full border border-cyan-300/25 bg-cyan-300/10 px-3 text-[11px] font-semibold text-cyan-100 sm:hidden">Try Demo Data <ArrowRight aria-hidden="true" className="h-3 w-3" /></Link>
 

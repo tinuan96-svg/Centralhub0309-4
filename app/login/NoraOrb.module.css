@@ -176,3 +176,9 @@
   mask-image: radial-gradient(ellipse 67% 73% at 50% 45%, #000 39%, rgba(0,0,0,.94) 55%, rgba(0,0,0,.50) 73%, transparent 95%), linear-gradient(to bottom, black 0%, black 72%, transparent 100%);
   mask-composite: intersect;
 }
+
+/* Make the rotating NORA image substantial on tall folded phones while
+   preserving the compact short-screen layout and the title boundary. */
+@media (max-width: 480px) and (min-height: 800px) {
+  .scene { height: clamp(166px, 50vw, 212px); }
+}

@@ -71,3 +71,17 @@ test('NORA title and login actions remain accessible with external floating widg
   assert.match(login, /href="\/demo"/);
   assert.match(login, /completeReturningUserUnlock/);
 });
+
+test('Tall Fold and Android phone viewports use balanced NORA layout without shrinking controls on short screens', () => {
+  const layout = source('app/login/LoginResponsive.module.css');
+  assert.ok(login.includes("import loginLayout from './LoginResponsive.module.css'"));
+  assert.ok(login.includes("loginLayout.content"));
+  assert.match(layout, /max-width: 639px\) and \(min-height: 800px/);
+  assert.match(layout, /justify-content: center/);
+  assert.match(layout, /max-width: 639px\) and \(max-height: 799px/);
+  assert.match(layout, /justify-content: flex-start/);
+  assert.match(css, /max-width: 480px\) and \(min-height: 800px/);
+  assert.match(css, /height: clamp\(166px, 50vw, 212px\)/);
+  assert.ok(login.includes('completeReturningUserUnlock()'));
+  assert.ok(login.includes('href="/demo"'));
+});
