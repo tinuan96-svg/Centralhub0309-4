@@ -3,6 +3,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { ArrowRight, BarChart3, Boxes, CheckCircle2, ChevronRight, LayoutDashboard, LockKeyhole, Package, ShieldCheck, ShoppingBag, Sparkles, Truck, Users } from 'lucide-react';
 import PublicFeatureShowcase from '@/components/PublicFeatureShowcase';
+import PublicMobileNavigation from '@/components/PublicMobileNavigation';
 import PublicInteractiveDemo from '@/components/PublicInteractiveDemo';
 import PublicAddonCatalog from '@/components/PublicAddonCatalog';
 import PublicRealIntegrationsShowcase from '@/components/PublicRealIntegrationsShowcase';
@@ -40,18 +41,21 @@ export default function Home() {
     <main className="relative isolate min-h-[100dvh] overflow-x-hidden overflow-y-auto bg-[#07111f] text-slate-100">
       <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[850px] bg-[radial-gradient(ellipse_at_75%_28%,rgba(8,145,178,0.2),transparent_46%),radial-gradient(ellipse_at_20%_5%,rgba(59,130,246,0.15),transparent_48%)]" />
       <header className="sticky top-0 z-40 border-b border-white/10 bg-[#07111f]/90 backdrop-blur-xl">
-        <nav aria-label="Main navigation" className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
-          <Link href="/" aria-label="CentralHub homepage" className="flex shrink-0 items-center gap-2.5 text-white">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-300/25 bg-cyan-300/10 shadow-[0_0_25px_rgba(34,211,238,0.12)]"><LayoutDashboard aria-hidden="true" className="h-5 w-5 text-cyan-300" /></span>
-            <span className="text-xl font-black tracking-tight">Central<span className="text-cyan-300">Hub</span></span>
+        <nav aria-label="Main navigation" className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-4 py-3 sm:gap-4 sm:px-6 sm:py-4 lg:px-8">
+          <Link href="/" aria-label="CentralHub homepage" className="flex shrink-0 items-center gap-2 text-white sm:gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-300/25 bg-cyan-300/10 shadow-[0_0_25px_rgba(34,211,238,0.12)] sm:h-10 sm:w-10"><LayoutDashboard aria-hidden="true" className="h-5 w-5 text-cyan-300" /></span>
+            <span className="text-base font-black tracking-tight sm:text-xl">Central<span className="text-cyan-300">Hub</span></span>
           </Link>
-          <div className="hidden items-center gap-7 text-sm font-medium text-slate-300 md:flex">
+          <div className="hidden items-center gap-5 text-sm font-medium text-slate-300 md:flex xl:gap-7">
             <a href="#platform" className="hover:text-white">Platform</a>
             <a href="#addons" className="hover:text-white">Features</a>
-            <a href="#interactive-demo" className="hover:text-white">Live demo</a><a href="#real-integrations" className="hover:text-white">Integrations</a><a href="#addons" className="hover:text-white">Add-ons</a>
+            <a href="#interactive-demo" className="hover:text-white">Quick demo</a>
+            <Link href="/demo" className="hover:text-white">Full demo</Link>
+            <a href="#real-integrations" className="hover:text-white">Integrations</a>
           </div>
-          <Link href="/login" className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-cyan-300 px-4 py-2 text-sm font-extrabold text-slate-950 transition hover:bg-cyan-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300">
-            <LockKeyhole aria-hidden="true" className="h-4 w-4" /> Login <ArrowRight aria-hidden="true" className="h-4 w-4" />
+          <PublicMobileNavigation />
+          <Link href="/login" className="inline-flex min-h-11 shrink-0 items-center justify-center gap-1 rounded-xl bg-cyan-300 px-3 py-2 text-xs font-extrabold text-slate-950 transition hover:bg-cyan-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300 sm:gap-2 sm:px-4 sm:text-sm">
+            <LockKeyhole aria-hidden="true" className="hidden h-4 w-4 sm:block" /> Login <ArrowRight aria-hidden="true" className="hidden h-4 w-4 sm:block" />
           </Link>
         </nav>
       </header>
@@ -61,9 +65,10 @@ export default function Home() {
           <p className="mb-6 inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-cyan-300/5 px-3 py-2 text-xs font-bold uppercase tracking-[0.15em] text-cyan-200"><span className="h-2 w-2 rounded-full bg-cyan-300 shadow-[0_0_14px_rgba(103,232,249,0.7)]" /> One connected business workspace</p>
           <h1 className="max-w-2xl text-4xl font-black leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-[3.5rem]">Your entire business. <span className="bg-gradient-to-r from-cyan-300 via-sky-300 to-blue-400 bg-clip-text text-transparent">One powerful hub.</span></h1>
           <p className="mt-6 max-w-xl text-base leading-8 text-slate-300 sm:text-lg">Bring sales, inventory, orders, customers and business insights together. CentralHub gives you a clearer view of your operations, across your business.</p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
             <Link href="/login" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-cyan-300 px-6 py-3 text-sm font-extrabold text-slate-950 transition hover:bg-cyan-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300">Login to CentralHub <ArrowRight aria-hidden="true" className="h-4 w-4" /></Link>
             <a href="#interactive-demo" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/5 px-6 py-3 text-sm font-bold text-white transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300">Try interactive demo <ChevronRight aria-hidden="true" className="h-4 w-4" /></a>
+            <Link href="/demo" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-cyan-300/40 bg-cyan-300/10 px-6 py-3 text-sm font-bold text-cyan-100 transition hover:bg-cyan-300/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300">Open full dashboard demo <ArrowRight aria-hidden="true" className="h-4 w-4" /></Link>
           </div>
           <div className="mt-9 flex flex-wrap gap-x-5 gap-y-3 text-sm text-slate-300">
             {['Online & in-store', 'Multi-store visibility', 'Operational insights'].map((item) => <span key={item} className="inline-flex items-center gap-2"><CheckCircle2 aria-hidden="true" className="h-4 w-4 text-cyan-300" />{item}</span>)}
@@ -107,7 +112,7 @@ export default function Home() {
         </div>
       </section>
 
-      <footer className="border-t border-white/10 bg-[#071120]"><div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-8 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8"><span className="font-bold text-slate-200">Central<span className="text-cyan-300">Hub</span></span><span>One connected workspace for your business.</span><Link href="/login" className="inline-flex min-h-10 items-center gap-2 text-cyan-200 hover:text-white">Application login <ArrowRight aria-hidden="true" className="h-4 w-4" /></Link></div></footer>
+      <footer className="border-t border-white/10 bg-[#071120]"><div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-8 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8"><span className="font-bold text-slate-200">Central<span className="text-cyan-300">Hub</span></span><span>One connected workspace for your business.</span><Link href="/demo" className="inline-flex min-h-10 items-center gap-2 text-cyan-200 hover:text-white">Full demo <ArrowRight aria-hidden="true" className="h-4 w-4" /></Link><Link href="/login" className="inline-flex min-h-10 items-center gap-2 text-cyan-200 hover:text-white">Application login <ArrowRight aria-hidden="true" className="h-4 w-4" /></Link></div></footer>
     </main>
   );
 }

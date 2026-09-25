@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, CameraOff, ChevronLeft, ChevronRight, Image as ImageIcon, Maximize2, MessageCircle, ShieldCheck, X } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ChevronRight, Image as ImageIcon, Maximize2, MessageCircle, ShieldCheck, X } from 'lucide-react';
 import type { PublicFeatureGalleryItem } from '@/lib/publicFeatureGallery';
 
 type OpenPhoto = {feature:number;screen:number};
@@ -76,7 +76,7 @@ export default function PublicRealIntegrationsShowcase({items}:{items:PublicFeat
         </div>
 
         <div className="min-w-0 border-t border-white/10 bg-[#071321] p-4 sm:p-6 lg:border-l lg:border-t-0">
-          <div className="flex flex-wrap items-center justify-between gap-2 pb-4"><p className="text-sm font-bold text-white">Actual application screens</p><span className="rounded-lg border border-white/15 bg-white/[0.04] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-300">{images.length?images.length+' approved screenshot'+(images.length===1?'':'s'):'Awaiting privacy-safe captures'}</span></div>
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-4"><p className="text-sm font-bold text-white">{images.length ? "Actual application screens" : "Illustrative workspace preview"}</p><span className="rounded-lg border border-white/15 bg-white/[0.04] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-300">{images.length?images.length+' approved screenshot'+(images.length===1?'':'s'):'Fictional preview · not a screenshot'}</span></div>
           {images.length?(
             <div className="grid gap-4">
               {images.map((screen,index)=><button type="button" key={screen.src} onClick={()=>openPhoto(index)} aria-label={'Expand actual CentralHub screenshot: '+screen.title} className="group min-w-0 overflow-hidden rounded-xl border border-cyan-300/20 bg-[#0e2134] text-left transition hover:border-cyan-300/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300">
@@ -86,14 +86,26 @@ export default function PublicRealIntegrationsShowcase({items}:{items:PublicFeat
               <p className="text-xs leading-6 text-slate-400">Actual CentralHub screen · published with reviewed sample or redacted information. The image shows a captured screen, not a live service connection.</p>
             </div>
           ):(
-            <div className="flex min-h-[320px] flex-col items-center justify-center rounded-2xl border border-dashed border-cyan-300/25 bg-gradient-to-br from-[#122b3f] via-[#0a1b2c] to-[#071321] px-6 py-10 text-center">
-              <span className="flex h-16 w-16 items-center justify-center rounded-2xl border border-cyan-300/20 bg-cyan-300/10"><CameraOff aria-hidden="true" className="h-7 w-7 text-cyan-200"/></span>
-              <p className="mt-5 text-lg font-extrabold text-white">Privacy-safe screenshot not published yet</p>
-              <p className="mt-3 max-w-sm text-sm leading-7 text-slate-300">The feature exists in the actual CentralHub application. We will only display its real screen here once private accounts, tokens and customer information have been removed from the screenshot file.</p>
-              <a href="#interactive-demo" className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-lg border border-cyan-300/35 bg-cyan-300/10 px-4 py-2.5 text-sm font-bold text-cyan-100 hover:bg-cyan-300/20"><MessageCircle aria-hidden="true" className="h-4 w-4"/>Explore the safe demo <ArrowRight aria-hidden="true" className="h-4 w-4"/></a>
+            <div className="overflow-hidden rounded-2xl border border-cyan-300/20 bg-[#0b1c2e]">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-[#10263a] px-4 py-3">
+                <span className="flex items-center gap-2 text-xs font-black text-white"><ImageIcon aria-hidden="true" className="h-4 w-4 text-cyan-300" /> CentralHub / Sample workspace</span>
+                <span className="rounded-md border border-amber-300/25 bg-amber-300/10 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-amber-200">Demo UI · not live</span>
+              </div>
+              <div className="space-y-4 p-4 sm:p-6">
+                <div className="rounded-xl border border-white/10 bg-[#081421] p-4">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-cyan-200">{selected.screenLabel}</p>
+                  <h4 className="mt-2 text-lg font-extrabold text-white">{selected.title}</h4>
+                  <p className="mt-2 text-xs leading-6 text-slate-300">A fictional walkthrough of this business area. No real account, customer record or provider is connected.</p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {selected.howItWorks.slice(0,2).map((instruction,index)=><div key={instruction} className="min-w-0 rounded-xl border border-white/10 bg-white/[0.035] p-4"><span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-300/10 text-xs font-black text-cyan-200">0{index+1}</span><p className="mt-3 text-xs leading-6 text-slate-200">{instruction}</p></div>)}
+                </div>
+                <p className="text-xs leading-6 text-slate-400">Illustrative interface only. Actual application screenshots will appear here only after privacy review.</p>
+                <a href="/demo" className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-cyan-300 px-4 py-2.5 text-sm font-extrabold text-slate-950 transition hover:bg-cyan-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"><MessageCircle aria-hidden="true" className="h-4 w-4" /> Open the full interactive demo <ArrowRight aria-hidden="true" className="h-4 w-4" /></a>
+              </div>
             </div>
           )}
-          <div className="mt-5 flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.04] p-4 text-xs leading-6 text-slate-300"><ImageIcon aria-hidden="true" className="mt-1 h-4 w-4 shrink-0 text-cyan-300"/><p>Screens are captured from the existing product. We never use live passwords, private conversations, unredacted customer information or payment credentials as marketing assets.</p></div>
+          <div className="mt-5 flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.04] p-4 text-xs leading-6 text-slate-300"><ImageIcon aria-hidden="true" className="mt-1 h-4 w-4 shrink-0 text-cyan-300"/><p>Fictional previews never access real accounts. Captured application screens are only published after private data and credentials have been removed and reviewed.</p></div>
         </div>
       </div>
     </div>

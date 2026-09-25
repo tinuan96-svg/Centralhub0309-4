@@ -78,6 +78,9 @@ jobs:
       - name: Public demo isolation and visual parity regression tests
         run: node --test scripts/public-demo-contract.test.cjs
 
+      - name: Public homepage navigation, image and privacy regression tests
+        run: node --test scripts/public-homepage-contract.test.cjs
+
       - name: Typecheck
         run: npx tsc --noEmit
 
