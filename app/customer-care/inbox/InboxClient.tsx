@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase';
 import CreateTicketModal from '@/components/CreateTicketModal';
 import SalesOpportunitiesPanel from './SalesOpportunitiesPanel';
 import WhatsAppMessageContent from '@/components/customer-care/WhatsAppMessageContent';
+import { useDemoMode } from '@/lib/hooks/useDemoMode';
 
 const formatDate = (date: string | null) => {
   if (!date) return '';
@@ -39,6 +40,7 @@ const messageStatusLabel = (status: WhatsAppMessage['status']) => {
 const money = (value: unknown) => `£${Number(value || 0).toFixed(2)}`;
 
 export default function InboxClient({ params, searchParams }: { params: any; searchParams: any }) {
+  const { isDemo } = useDemoMode();
   const [conversations, setConversations] = useState<WhatsAppConversation[]>([]);
   const [selectedConv, setSelectedConv] = useState<WhatsAppConversation | null>(null);
   const [messages, setMessages] = useState<WhatsAppMessage[]>([]);
@@ -386,9 +388,9 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
 
               <div className="flex items-center gap-1 shrink-0">
                 {selectedConv.handling_mode === 'AI' ? (
-                  <button onClick={handleTakeover} className="h-8 px-2 sm:px-3 rounded-lg bg-amber-600 hover:bg-amber-500 text-[9px] sm:text-[10px] font-black text-white">TAKEOVER</button>
+                  <button disabled={isDemo} onClick={handleTakeover} title={isDemo ? 'Disabled in Demo Mode' : 'Take over this conversation'} className="h-8 px-2 sm:px-3 rounded-lg bg-amber-600 hover:bg-amber-500 text-[9px] sm:text-[10px] font-black text-white disabled:cursor-not-allowed disabled:opacity-40">TAKEOVER</button>
                 ) : (
-                  <button onClick={handleReturnToAI} className="h-8 px-2 sm:px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-[9px] sm:text-[10px] font-black text-white">AUTO</button>
+                  <button disabled={isDemo} onClick={handleReturnToAI} title={isDemo ? 'Disabled in Demo Mode' : 'Return this conversation to AI'} className="h-8 px-2 sm:px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-[9px] sm:text-[10px] font-black text-white disabled:cursor-not-allowed disabled:opacity-40">AUTO</button>
                 )}
                 <button type="button" onClick={() => setShowMobileProfile(true)} className="2xl:hidden inline-flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-full text-slate-300 hover:bg-slate-800" aria-label="Customer details">
                   <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -429,15 +431,15 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
               ) : messages.map((msg) => (
                 <div key={msg.id} className={`group flex ${msg.direction === 'inbound' ? 'justify-start' : 'justify-end'}`}>
                   <div className={`relative max-w-[91%] sm:max-w-[76%] lg:max-w-[72%] rounded-xl sm:rounded-2xl px-3 py-2 sm:px-3.5 sm:py-2.5 shadow-sm text-[12px] sm:text-sm ${msg.direction === 'inbound' ? 'bg-slate-800 text-slate-100 rounded-tl-md' : msg.ai_generated ? 'bg-blue-600/20 border border-blue-500/30 text-blue-100 rounded-tr-md' : 'bg-emerald-600 text-white rounded-tr-md'}`}>
-                    <button
+                    {!isDemo && <button
                       type="button"
                       aria-label="Message actions"
                       onClick={() => setMessageMenuId(prev => prev === msg.id ? null : msg.id)}
                       className="absolute -top-2 -right-2 z-10 w-7 h-7 rounded-full border border-slate-700 bg-slate-950/95 text-slate-300 shadow-md flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100"
                     >
                       ⋮
-                    </button>
-                    {messageMenuId === msg.id && (
+                    </button>}
+                    {!isDemo && messageMenuId === msg.id && (
                       <div className="absolute right-0 top-7 z-30 w-44 overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-2xl text-left">
                         {msg.message_text && (
                           <button type="button" onClick={() => startLocalEdit(msg)} className="w-full px-3 py-2 text-xs text-slate-200 hover:bg-slate-800 text-left">Edit in CentralHub</button>
@@ -459,8 +461,9 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
             </div>
 
             <footer className="relative z-30 shrink-0 border-t border-slate-800 bg-slate-900 px-2 sm:px-3 lg:px-4 pt-2 sm:pt-3 pb-[calc(0.45rem+env(safe-area-inset-bottom))] sm:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+              {isDemo && <div className="mb-2 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-[10px] font-bold text-amber-100">Demo Mode · WhatsApp inbox is read-only. Sending and live actions are disabled.</div>}
               <div className="flex items-end gap-1.5 sm:gap-2">
-                <button type="button" className="shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-full text-slate-400 hover:text-white hover:bg-slate-800" aria-label="Attachments" title="Attachments">＋</button>
+                <button type="button" disabled={isDemo} className="shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40" aria-label="Attachments" title={isDemo ? 'Disabled in Demo Mode' : 'Attachments'}>＋</button>
                 <textarea
                   rows={1}
                   value={msgInput}
@@ -471,13 +474,14 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
                       handleSend();
                     }
                   }}
-                  placeholder="Type a message..."
+                  disabled={isDemo}
+                  placeholder={isDemo ? 'Demo Mode — sending disabled' : 'Type a message...'}
                   className="flex-1 max-h-28 min-h-8 sm:min-h-10 resize-none bg-slate-800 border border-slate-700 rounded-xl sm:rounded-2xl px-3 sm:px-4 py-1.5 sm:py-2.5 text-[12px] sm:text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500"
                 />
                 <button
                   type="button"
                   onClick={handleSend}
-                  disabled={!msgInput.trim() || sending}
+                  disabled={isDemo || !msgInput.trim() || sending}
                   className="shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-emerald-600 text-white inline-flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed hover:bg-emerald-500"
                   aria-label="Send message"
                 >
@@ -563,7 +567,7 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
             )}
 
             <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => setIsTicketModalOpen(true)} className="rounded-lg border border-blue-700/50 bg-blue-500/10 py-2 text-[10px] font-black text-blue-300">CREATE TICKET</button>
+              <button type="button" disabled={isDemo} title={isDemo ? 'Disabled in Demo Mode' : 'Create support ticket'} onClick={() => setIsTicketModalOpen(true)} className="rounded-lg border border-blue-700/50 bg-blue-500/10 py-2 text-[10px] font-black text-blue-300 disabled:cursor-not-allowed disabled:opacity-40">CREATE TICKET</button>
               <button type="button" onClick={() => setShowConversationList(true)} className="2xl:hidden rounded-lg border border-slate-700 bg-slate-800 py-2 text-[10px] font-black text-slate-300">RECENT CONTACTS</button>
             </div>
 
@@ -623,7 +627,7 @@ export default function InboxClient({ params, searchParams }: { params: any; sea
         </div>
       )}
 
-      {isTicketModalOpen && selectedConv && (
+      {!isDemo && isTicketModalOpen && selectedConv && (
         <CreateTicketModal
           isOpen={isTicketModalOpen}
           onClose={() => setIsTicketModalOpen(false)}

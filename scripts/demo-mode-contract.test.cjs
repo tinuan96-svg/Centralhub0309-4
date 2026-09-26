@@ -43,3 +43,13 @@ test('demo mode is visible and reversible', () => {
   assert.match(topbar, /activateDemo/);
   assert.match(mobile, /activateDemo/);
 });
+
+test('WhatsApp inbox cannot call live actions in demo mode', () => {
+  const service = read('lib/services/customer-care/whatsappService.ts');
+  const inbox = read('app/customer-care/inbox/InboxClient.tsx');
+  assert.match(service, /assertLiveWhatsAppAction\('Sending WhatsApp messages'\)/);
+  assert.match(service, /assertLiveWhatsAppAction\('Opening live WhatsApp media'\)/);
+  assert.match(service, /isDemoMode/);
+  assert.match(inbox, /WhatsApp inbox is read-only/);
+  assert.match(inbox, /disabled=\{isDemo \|\| !msgInput\.trim\(\) \|\| sending\}/);
+});

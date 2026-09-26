@@ -1,6 +1,13 @@
 import { supabase } from '@/lib/supabase';
 import { WhatsAppConversation, WhatsAppMessage, WhatsAppContact, HandlingMode } from '@/lib/types';
 import { normalizePhoneNumber, stripPhoneFormatting } from '@/lib/utils/phone-normalization';
+import { isDemoMode } from '@/lib/demoMode';
+
+function assertLiveWhatsAppAction(action: string) {
+  if (isDemoMode()) {
+    throw new Error(`${action} is disabled in Demo Mode. Exit Demo to use live WhatsApp.`);
+  }
+}
 
 async function getFreshSession() {
   const refreshed = await supabase.auth.refreshSession();
@@ -12,6 +19,7 @@ async function getFreshSession() {
 }
 
 async function invokeWhatsAppSend(body: Record<string, any>) {
+  assertLiveWhatsAppAction('Sending WhatsApp messages');
   const session = await getFreshSession();
   if (!session?.access_token) throw new Error('WhatsApp authentication unavailable. Please sign in again.');
 
@@ -45,6 +53,7 @@ async function invokeWhatsAppSend(body: Record<string, any>) {
 }
 
 async function invokeWhatsAppMedia(messageId: string) {
+  assertLiveWhatsAppAction('Opening live WhatsApp media');
   const session = await getFreshSession();
   if (!session?.access_token) throw new Error('WhatsApp authentication unavailable. Please sign in again.');
 
@@ -148,6 +157,7 @@ export const whatsappService = {
   },
 
   async editMessageLocally(message: WhatsAppMessage, newText: string) {
+    assertLiveWhatsAppAction('Editing WhatsApp inbox messages');
     const text = newText.trim();
     if (!text) throw new Error('Message cannot be empty.');
     const updates: any = {
@@ -162,6 +172,7 @@ export const whatsappService = {
   },
 
   async hideMessageLocally(messageId: string) {
+    assertLiveWhatsAppAction('Removing WhatsApp inbox messages');
     const { error } = await supabase.from('whatsapp_messages').update({
       locally_deleted_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -174,12 +185,14 @@ export const whatsappService = {
   },
 
   async updateHandlingMode(conversationId: string, mode: HandlingMode, agentId?: string) {
+    assertLiveWhatsAppAction('Changing WhatsApp handling mode');
     const { data, error } = await supabase.from('whatsapp_conversations').update({ handling_mode: mode, assigned_agent_id: agentId || null, updated_at: new Date().toISOString() }).eq('id', conversationId).select().single();
     if (error) throw error;
     return data as WhatsAppConversation;
   },
 
   async sendMessage(params: { to: string; text?: string; type?: 'text' | 'template'; template?: any; conversationId: string; storeId?: string; notificationId?: string }) {
+    assertLiveWhatsAppAction('Sending WhatsApp messages');
     let finalStoreId = params.storeId;
     if (!finalStoreId) {
       const { data: conv, error: convErr } = await supabase.from('whatsapp_conversations').select('store_id').eq('id', params.conversationId).maybeSingle();
