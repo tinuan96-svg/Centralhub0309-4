@@ -27,28 +27,29 @@ async function requireAdmin(req: Request, db: any) {
   const { data: { user }, error } = await userClient.auth.getUser(bearer)
   if (error || !user) throw new Error('Unauthorized: Supabase session is invalid or expired')
 
-  const appMetadata = user.app_metadata || {}
-  let isAdmin = ['admin', 'superadmin', 'administrator'].includes(
-    String(appMetadata.role || appMetadata.profile_role || '').toLowerCase()
-  )
-
-  if (!isAdmin) {
-    const { data: profile } = await db
-      .from('user_profiles')
-      .select('profile_role,is_active')
-      .eq('id', user.id)
-      .maybeSingle()
-    isAdmin = profile?.profile_role === 'admin' && profile?.is_active !== false
+  // Match CentralHub's canonical public.is_admin() contract: an active admin
+  // profile AND the server-managed Auth admin role, without a staff identity.
+  // A profile label alone must not grant access to private customer media.
+  if (String(user.app_metadata?.role || '').toLowerCase() !== 'admin') {
+    throw new Error('Forbidden: admin access required')
   }
-
-  if (!isAdmin) {
-    try {
-      isAdmin = !!(await db.rpc('is_admin', { user_id: user.id })).data
-    } catch {
-      isAdmin = false
-    }
+  const { data: profile, error: profileError } = await db
+    .from('user_profiles')
+    .select('profile_role,is_active')
+    .eq('id', user.id)
+    .maybeSingle()
+  if (profileError || profile?.profile_role !== 'admin' || profile?.is_active !== true) {
+    throw new Error('Forbidden: active admin profile required')
   }
-  if (!isAdmin) throw new Error('Forbidden: admin access required')
+  const { data: staffIdentity, error: staffError } = await db
+    .from('ch_staff_accounts')
+    .select('user_id')
+    .eq('user_id', user.id)
+    .limit(1)
+    .maybeSingle()
+  if (staffError || staffIdentity) {
+    throw new Error('Forbidden: staff identities cannot access admin media')
+  }
   return user
 }
 
