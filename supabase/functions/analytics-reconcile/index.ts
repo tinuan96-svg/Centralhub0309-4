@@ -77,8 +77,21 @@ async function reconcile(db: any, storeId: string, date: string) {
     .lte('occurred_at', end)
   if (eventError) throw eventError
 
+  // Users/sessions are canonicalized in analytics_sessions. Event-only counting
+  // undercounts visitors who establish a session but emit no later event row.
+  const { data: sessionRows, error: sessionError } = await db
+    .from('analytics_sessions')
+    .select('session_key,anonymous_id')
+    .eq('store_id', storeId)
+    .gte('started_at', start)
+    .lte('started_at', end)
+  if (sessionError) throw sessionError
   const sessions = new Set<string>()
   const users = new Set<string>()
+  for (const session of sessionRows || []) {
+    if (session.session_key) sessions.add(String(session.session_key))
+    if (session.anonymous_id) users.add(String(session.anonymous_id))
+  }
   const mirror = {
     users: 0,
     sessions: 0,
@@ -93,8 +106,6 @@ async function reconcile(db: any, storeId: string, date: string) {
 
   for (const event of events || []) {
     const eventName = String(event.event_name || '')
-    if (event.session_id) sessions.add(String(event.session_id))
-    if (event.anonymous_id) users.add(String(event.anonymous_id))
     if (eventName === 'page_view') mirror.page_views++
     if (eventName === 'view_item') mirror.product_views++
     if (eventName === 'add_to_cart') mirror.add_to_carts++
