@@ -345,9 +345,9 @@ async function reconcileProducts(target: Target, rows: Record<string, any>[], ce
 async function writeAudit(db: any, eventType: string, productId: string | null, productName: string | null, results: any[]) {
   try {
     const success = results.every((result) => result.success === true);
-    await db.from("webhook_logs").insert({
+    const { error: auditError } = await db.from("webhook_logs").insert({
       event_type: eventType,
-      product_id: productId,
+      product_id: productId ?? "",
       product_name: productName || (eventType === "FULL_SYNC" ? "Full product + variant sync" : eventType === "RECONCILE" ? "Product + variant reconciliation" : "Unknown"),
       attempt: 1,
       status_code: success ? 200 : 207,
@@ -356,6 +356,7 @@ async function writeAudit(db: any, eventType: string, productId: string | null, 
       status: success ? "delivered" : "partial",
       response: JSON.stringify({ method: "multi_store_direct_sync", targets: results.map((result) => result.store) }),
     });
+    if (auditError) console.warn("[product-webhook-dispatcher] audit log failed", errorText(auditError));
   } catch (error) {
     console.warn("[product-webhook-dispatcher] audit log failed", errorText(error));
   }

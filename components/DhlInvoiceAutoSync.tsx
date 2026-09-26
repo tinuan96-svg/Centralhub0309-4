@@ -34,9 +34,19 @@ export default function DhlInvoiceAutoSync() {
       const { data: auth } = await supabase.auth.getSession();
       if (cancelled || !auth.session) return;
 
+      // Read non-sensitive configuration flags before attempting Gmail setup or scanning.
+      // Missing OAuth/PubSub configuration must not generate repeated HTTP 503s on every login.
+      const { data: status, error: statusError } = await supabase.functions.invoke('dhl-invoice-reconcile', {
+        method: 'GET',
+      });
+      if (cancelled || statusError || status?.success === false) return;
+      const config = status?.config || {};
+      const canScan = config.gmailOAuthConfigured === true && config.gmailMailboxConfigured === true;
+      const canWatch = canScan && config.pubSubTopicConfigured === true && config.webhookSecretConfigured === true;
+
       let scanned = false;
 
-      if (due(WATCH_KEY, WATCH_INTERVAL_MS)) {
+      if (canWatch && due(WATCH_KEY, WATCH_INTERVAL_MS)) {
         const { data, error } = await supabase.functions.invoke('dhl-invoice-reconcile', {
           body: { action: 'setup_watch', days: 45 },
         });
@@ -49,7 +59,7 @@ export default function DhlInvoiceAutoSync() {
         }
       }
 
-      if (!scanned && due(SCAN_KEY, SCAN_INTERVAL_MS)) {
+      if (canScan && !scanned && due(SCAN_KEY, SCAN_INTERVAL_MS)) {
         const { data, error } = await supabase.functions.invoke('dhl-invoice-reconcile', {
           body: { action: 'scan_recent', days: 45 },
         });
