@@ -92,6 +92,21 @@ export default function MarketingIntegrations({ searchParams }: { params?: any; 
         </div>
       </Card>
 
+      <Card className="p-5 sm:p-6 bg-slate-900/40 border-slate-800 rounded-[2rem]">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-400">Mobile app publishing</p>
+            <h2 className="text-xl font-black text-white mt-1">Google Play &amp; Apple App Store</h2>
+            <p className="text-xs text-slate-400 mt-2 max-w-3xl">View your existing store app identities and securely configure publisher credentials. An app record marked configured does not mean that the publisher API is connected: only a successful connection test verifies access. App signing keys are not API credentials.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/marketing/apps/releases/publishers" className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-2.5 text-xs font-bold text-cyan-300 hover:bg-cyan-500/15">Publisher accounts &amp; connection tests</Link>
+            <Link href="/marketing/apps" className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-xs font-bold text-slate-200 hover:bg-slate-800">Store apps &amp; analytics</Link>
+          </div>
+        </div>
+        <p className="mt-3 text-[11px] text-amber-200">Use only credentials authorised for the selected business and matching app identifiers. Do not upload secrets to GitHub or paste them into a public form. Publishing remains disabled until permissions and API access are verified.</p>
+      </Card>
+
       {selectedStoreId === 'all' && <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4 text-xs text-slate-300"><strong className="text-white">All Stores view:</strong> connections are aggregated for visibility only. Select one store before connecting or managing a platform so credentials and external assets remain store-scoped.</div>}
 
       <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-slate-900/40 border border-slate-800/50 p-2 rounded-2xl">
