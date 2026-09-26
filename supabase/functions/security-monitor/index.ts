@@ -187,7 +187,10 @@ Deno.serve(async () => {
 
     const eventType = status === "offline" ? "availability_failure" : missing.length ? "security_headers" : "recovered";
     const severity = status === "offline" ? "critical" : status === "degraded" ? "medium" : "info";
-    const fingerprint = `${store.id}:centralhub_probe:${status}:${[...missing].sort().join(",")}`;
+    // Availability is one incident per store, regardless of changing response headers.
+    const fingerprint = status === "offline"
+      ? `${store.id}:centralhub_probe:availability_failure`
+      : `${store.id}:centralhub_probe:${status}:${[...missing].sort().join(",")}`;
     const title = status === "offline"
       ? `${store.name} storefront is unavailable`
       : missing.length
@@ -203,10 +206,15 @@ Deno.serve(async () => {
     };
 
     if (status !== "online") {
-      const { data: existing } = await db.from("security_events")
+      // Reuse existing legacy availability incidents even if their old fingerprints differ.
+      // Do not resolve an actual HTTP 401/5xx failure merely to suppress duplicate alerts.
+      let existingQuery = db.from("security_events")
         .select("id")
-        .eq("fingerprint", fingerprint)
-        .in("status", ["open", "acknowledged"])
+        .in("status", ["open", "acknowledged"]);
+      existingQuery = status === "offline"
+        ? existingQuery.eq("store_id", store.id).eq("source", "centralhub_probe").eq("event_type", "availability_failure")
+        : existingQuery.eq("fingerprint", fingerprint);
+      const { data: existing } = await existingQuery
         .order("occurred_at", { ascending: false })
         .limit(1)
         .maybeSingle();

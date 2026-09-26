@@ -125,7 +125,15 @@ serve(async (req) => {
     })
   } catch (error: any) {
     const errorMessage = String(error?.message || error)
-    const status = /^Unauthorized/i.test(errorMessage) ? 401 : /^Forbidden/i.test(errorMessage) ? 403 : 500
+    // A missing/expired Meta media object cannot be fixed by retrying the rendering request.
+    // Keep the original message and persisted download error for subsequent recovery.
+    const sourceUnavailable = /Unsupported get request|Object with ID.*does not exist|Meta media (lookup|download) failed [(]40[34][)]/i.test(errorMessage)
+    const status = /^Unauthorized/i.test(errorMessage) ? 401 : /^Forbidden/i.test(errorMessage) ? 403 : sourceUnavailable ? 424 : 500
+    if (sourceUnavailable) return json({
+      code: 'SOURCE_MEDIA_UNAVAILABLE',
+      error: 'The original WhatsApp attachment is not currently retrievable from Meta. The message is preserved; ask the sender to resend it or retry after restoring media access.',
+      retryable: true,
+    }, 424)
     return json({ error: errorMessage }, status)
   }
 })
