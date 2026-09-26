@@ -128,5 +128,40 @@ Deno.serve(async (req: Request) => {
     console.error("CentralHub inbound store failed:", error.code);
     return response(503, "email_store_failed");
   }
-  return response(200, error ? "already_received" : "stored_for_review");
+
+  // Canonical Email Intelligence Hub record. This is idempotent and keeps the
+  // original inbound table unchanged for continuity/audit.
+  const { data: hub, error: hubError } = await client.from("email_hub_messages").upsert({
+    source_provider: "resend",
+    source_account: "centralhub.network",
+    external_message_id: id,
+    external_thread_id: String(email.message_id || details.message_id || "").slice(0, 512) || null,
+    from_address: plainAddress(email.from || details.from).slice(0, 320),
+    to_addresses: targets,
+    subject: String(email.subject || details.subject || "").slice(0, 998),
+    body_text: text,
+    attachments,
+    received_at: typeof details.created_at === "string" && !Number.isNaN(Date.parse(details.created_at))
+      ? details.created_at : new Date().toISOString(),
+    route_status: "pending",
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "source_provider,source_account,external_message_id" }).select("id").single();
+  if (hubError) {
+    console.error("Email Hub store failed:", hubError.code);
+    return response(503, "email_hub_store_failed");
+  }
+  const routerSecret = Deno.env.get("EMAIL_HUB_WORKER_SECRET") || "";
+  if (routerSecret && hub?.id) {
+    try {
+      await fetch(url + "/functions/v1/email-hub-router", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-email-hub-worker-secret": routerSecret },
+        body: JSON.stringify({ messageId: hub.id }),
+        signal: AbortSignal.timeout(8000),
+      });
+    } catch (routeError) {
+      console.warn("Email Hub routing deferred:", routeError instanceof Error ? routeError.message : "route_failed");
+    }
+  }
+  return response(200, error ? "already_received" : "stored_and_routed");
 });
