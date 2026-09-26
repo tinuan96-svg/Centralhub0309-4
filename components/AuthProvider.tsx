@@ -9,6 +9,7 @@ import StaffPendingAccess from '@/components/StaffPendingAccess';
 import StaffWorkspace from '@/components/StaffWorkspace';
 import type { StaffAccessSnapshot } from '@/lib/access-control/routes';
 import type { User, Session } from '@supabase/supabase-js';
+import { isDemoMode } from '@/lib/demoMode';
 
 interface AuthContextType {
   user:User|null; session:Session|null; isLoading:boolean; isAdmin:boolean;
@@ -118,6 +119,7 @@ export default function AuthProvider({children}:{children:React.ReactNode}){
 
   useEffect(() => {
     if (!session?.user || session.user.app_metadata?.role !== 'admin' || verifiedAdminSessionToken!==session.access_token) return;
+    if (isDemoMode()) return;
     PushNotificationService.registerNativeDevice().catch((error) => {
       console.warn('CentralHub native push registration deferred:', error?.message || error);
     });

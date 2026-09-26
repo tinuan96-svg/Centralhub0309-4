@@ -9,6 +9,7 @@ import { syncOrders } from '@/lib/services/orderSyncClient';
 import { designTokens, getInputClasses, Button } from '@/lib/design-system';
 import GlobalSearchOverlay from '@/app/dashboard/components/GlobalSearchOverlay';
 import NotificationPanel from '@/app/dashboard/components/NotificationPanel';
+import { useDemoMode } from '@/lib/hooks/useDemoMode';
 
 export default function Topbar() {
   const { selectedStore, stores, setSelectedStore, setStores } = useStore();
@@ -17,6 +18,7 @@ export default function Topbar() {
   const [mounted, setMounted] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
+  const { isDemo, configured: demoConfigured, activateDemo, activateLive } = useDemoMode();
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -47,8 +49,8 @@ export default function Topbar() {
     };
     window.addEventListener('keydown', handleKeyDown);
 
-    // Auto-sync orders from remote stores on load
-    void syncOrders().catch(err => console.error('Auto-sync failed:', err));
+    // Production sync must never run during a customer demonstration.
+    if (!isDemo) void syncOrders().catch(err => console.error('Auto-sync failed:', err));
 
     const { data: authListener } = AuthService.onAuthStateChange((event, session) => {
       (async () => {
@@ -64,7 +66,7 @@ export default function Topbar() {
       window.removeEventListener('keydown', handleKeyDown);
       authListener?.subscription?.unsubscribe();
     };
-  }, [loadStores, checkAuth]);
+  }, [loadStores, checkAuth, isDemo]);
 
 
   const handleLogout = async () => {
@@ -83,6 +85,10 @@ export default function Topbar() {
   const [isSyncing, setIsSyncing] = useState(false);
 
   const handleSyncOrders = async () => {
+    if (isDemo) {
+      alert('Sync Orders is disabled in Demo Mode. Exit Demo to run production synchronisation.');
+      return;
+    }
     if (isSyncing) return;
     setIsSyncing(true);
     try {
@@ -143,11 +149,22 @@ export default function Topbar() {
       </div>
 
       <div className="flex items-center gap-3 shrink-0">
+        {pathname === '/dashboard' && demoConfigured && (
+          <button
+            type="button"
+            onClick={isDemo ? activateLive : activateDemo}
+            className={`hidden sm:inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-all ${isDemo ? 'border-amber-300/30 bg-amber-300/10 text-amber-100 hover:bg-amber-300/20' : 'border-violet-400/30 bg-violet-400/10 text-violet-200 hover:bg-violet-400/20'}`}
+            title={isDemo ? 'Return to live CentralHub data' : 'Use the actual CentralHub interface with sanitised Shop demo data'}
+          >
+            {isDemo ? 'Exit Demo' : 'Enter Demo'}
+          </button>
+        )}
+
         <button
           onClick={handleSyncOrders}
-          disabled={isSyncing}
+          disabled={isSyncing || isDemo}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
-            isSyncing
+            (isSyncing || isDemo)
               ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
               : 'bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/20 shadow-lg shadow-cyan-900/10 active:scale-95'
           }`}
@@ -155,7 +172,7 @@ export default function Topbar() {
           <svg className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
-          {isSyncing ? 'Syncing...' : 'Sync Orders'}
+          {isDemo ? 'Sync Disabled' : isSyncing ? 'Syncing...' : 'Sync Orders'}
         </button>
 
         <div className="relative">

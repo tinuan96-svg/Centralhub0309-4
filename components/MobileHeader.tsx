@@ -8,12 +8,14 @@ import { StoreService } from '@/lib/services/storeService';
 import { AuthService } from '@/lib/services/authService';
 import { useAuth } from '@/components/AuthProvider';
 import { designTokens } from '@/lib/design-system';
+import { useDemoMode } from '@/lib/hooks/useDemoMode';
 
 export default function MobileHeader() {
   const router = useRouter();
   const pathname = usePathname();
   const { selectedStore, setSelectedStore } = useStore();
   const { isAdmin, disabledNavKeys } = useAuth();
+  const { isDemo, configured: demoConfigured, activateDemo, activateLive } = useDemoMode();
   const [stores, setStores] = useState<any[]>([]);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
@@ -244,6 +246,16 @@ export default function MobileHeader() {
       <header className="sticky top-0 bg-slate-900 border-b border-slate-800 z-30 shadow-lg pt-safe-top">
         <div className="flex items-center justify-between px-4 h-14">
           <div className="flex items-center gap-2"><button onClick={() => setShowMobileMenu(true)} className="p-2 -ml-2 text-slate-400 hover:text-white transition-colors"><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg></button></div>
+          {pathname === '/dashboard' && demoConfigured && (
+            <button
+              type="button"
+              onClick={isDemo ? activateLive : activateDemo}
+              className={`rounded-lg border px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider ${isDemo ? 'border-amber-300/30 bg-amber-300/10 text-amber-100' : 'border-violet-400/30 bg-violet-400/10 text-violet-200'}`}
+              aria-label={isDemo ? 'Exit CentralHub Demo Mode' : 'Enter CentralHub Demo Mode'}
+            >
+              {isDemo ? 'Exit Demo' : 'Demo'}
+            </button>
+          )}
           <div className="flex items-center gap-2"><button onClick={() => setShowUserMenu(true)} className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg"><span className="text-white text-xs font-black">{user?.email?.[0]?.toUpperCase() || 'U'}</span></button></div>
         </div>
       </header>

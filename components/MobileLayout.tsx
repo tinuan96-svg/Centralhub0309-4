@@ -21,6 +21,8 @@ import ShruthiSecurityGate from './ShruthiSecurityGate';
 import QuickActionsFab from '@/app/dashboard/components/QuickActionsFab';
 import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
 import { useState, useEffect } from 'react';
+import DemoModeBanner from './DemoModeBanner';
+import { useDemoMode } from '@/lib/hooks/useDemoMode';
 
 interface MobileLayoutProps { children: React.ReactNode; }
 
@@ -32,6 +34,7 @@ export default function MobileLayout({ children }: MobileLayoutProps) {
   const isSupportInbox = pathname.startsWith('/customer-care/inbox') || pathname.startsWith('/customer-care/tickets/chat');
   const isMobile = useMediaQuery('(max-width: 699px)');
   const [mounted, setMounted] = useState(false);
+  const { isDemo } = useDemoMode();
   useEffect(() => { setMounted(true); }, []);
 
   if (isLoginPage) return <>{children}</>;
@@ -120,9 +123,10 @@ export default function MobileLayout({ children }: MobileLayoutProps) {
         className={`ch-workspace flex flex-col h-[100dvh] w-full max-w-full min-w-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden relative ${isDashboard ? 'ch-dashboard-route' : ''}`}
       >
         {isDashboard && dashboardFloatingControlStyles}
-        <DhlInvoiceAutoSync />
-        <CentralHubLiveUpdate />
+        {!isDemo && <DhlInvoiceAutoSync />}
+        {!isDemo && <CentralHubLiveUpdate />}
         <MobileHeader />
+        <DemoModeBanner />
         <main
           className={isSupportInbox
             ? 'flex-1 min-h-0 min-w-0 w-full max-w-full overflow-hidden px-safe-left pr-safe-right pb-[calc(4rem+env(safe-area-inset-bottom))]'
@@ -139,17 +143,19 @@ export default function MobileLayout({ children }: MobileLayoutProps) {
             {children}
           </div>
         </main>
-        {isDashboard && <QuickActionsFab />}
-        <ShruthiLearningPulse />
-        <ShruthiIdentitySkin />
-        <NoraAdaptiveVoiceNormalizer />
-        <NoraWakeListenerRecovery />
-        <ShruthiRealtimeVoiceEnhancer />
-        <CentralHubVoiceAssistant />
-        <ShruthiSystemInvocationBridge />
-        <NoraConversationSessionSync />
-        <NoraComputerLauncher />
-        <NoraLiveActionOverlay />
+        {!isDemo && isDashboard && <QuickActionsFab />}
+        {!isDemo && <>
+          <ShruthiLearningPulse />
+          <ShruthiIdentitySkin />
+          <NoraAdaptiveVoiceNormalizer />
+          <NoraWakeListenerRecovery />
+          <ShruthiRealtimeVoiceEnhancer />
+          <CentralHubVoiceAssistant />
+          <ShruthiSystemInvocationBridge />
+          <NoraConversationSessionSync />
+          <NoraComputerLauncher />
+          <NoraLiveActionOverlay />
+        </>}
         <MobileBottomNav />
       </div>
     </ShruthiSecurityGate>
@@ -162,11 +168,12 @@ export default function MobileLayout({ children }: MobileLayoutProps) {
         className={`ch-workspace centralhub-desktop-shell flex h-[100dvh] min-w-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden ${isDashboard ? 'ch-dashboard-route' : ''}`}
       >
         {isDashboard && dashboardFloatingControlStyles}
-        <DhlInvoiceAutoSync />
-        <CentralHubLiveUpdate />
+        {!isDemo && <DhlInvoiceAutoSync />}
+        {!isDemo && <CentralHubLiveUpdate />}
         <ClassifiedSidebar />
         <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
           <Topbar />
+          <DemoModeBanner />
           <main
             className={isSupportInbox
               ? 'flex-1 min-h-0 min-w-0 overflow-hidden pb-safe-bottom pr-safe-right pl-safe-left'
@@ -184,17 +191,19 @@ export default function MobileLayout({ children }: MobileLayoutProps) {
             </div>
           </main>
         </div>
-        {isDashboard && <QuickActionsFab />}
-        <ShruthiLearningPulse />
-        <ShruthiIdentitySkin />
-        <NoraAdaptiveVoiceNormalizer />
-        <NoraWakeListenerRecovery />
-        <ShruthiRealtimeVoiceEnhancer />
-        <CentralHubVoiceAssistant />
-        <ShruthiSystemInvocationBridge />
-        <NoraConversationSessionSync />
-        <NoraComputerLauncher />
-        <NoraLiveActionOverlay />
+        {!isDemo && isDashboard && <QuickActionsFab />}
+        {!isDemo && <>
+          <ShruthiLearningPulse />
+          <ShruthiIdentitySkin />
+          <NoraAdaptiveVoiceNormalizer />
+          <NoraWakeListenerRecovery />
+          <ShruthiRealtimeVoiceEnhancer />
+          <CentralHubVoiceAssistant />
+          <ShruthiSystemInvocationBridge />
+          <NoraConversationSessionSync />
+          <NoraComputerLauncher />
+          <NoraLiveActionOverlay />
+        </>}
       </div>
     </ShruthiSecurityGate>
   );

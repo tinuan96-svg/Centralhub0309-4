@@ -1,4 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
+import {
+  DEMO_SUPABASE_PUBLISHABLE_KEY,
+  DEMO_SUPABASE_URL,
+  isDemoConfigured,
+  isDemoMode,
+} from '@/lib/demoMode';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -7,17 +13,41 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.warn('[Supabase] Client initialized with missing environment variables. Features requiring database access will fail.');
 }
 
-export const supabase = createClient<any>(
+export const liveSupabase = createClient<any>(
   supabaseUrl || 'https://placeholder.supabase.co',
   supabaseAnonKey || 'placeholder',
-  {
-    realtime: {
-      params: {
-        eventsPerSecond: 10,
-      },
-    },
-  }
+  { realtime: { params: { eventsPerSecond: 10 } } },
 );
+
+export const demoSupabase = isDemoConfigured()
+  ? createClient<any>(
+      DEMO_SUPABASE_URL,
+      DEMO_SUPABASE_PUBLISHABLE_KEY,
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+        },
+        realtime: { params: { eventsPerSecond: 5 } },
+      },
+    )
+  : null;
+
+function operationalClient() {
+  return isDemoMode() && demoSupabase ? demoSupabase : liveSupabase;
+}
+
+// Existing imports can keep using `supabase`: authentication always stays on
+// private CentralHub, while operational data follows Live/Demo mode.
+export const supabase = new Proxy(liveSupabase as any, {
+  get(_target, prop) {
+    if (prop === 'auth') return liveSupabase.auth;
+    const client = operationalClient() as any;
+    const value = client[prop as keyof typeof client];
+    return typeof value === 'function' ? value.bind(client) : value;
+  },
+}) as typeof liveSupabase;
 
 export type Database = any;
 
@@ -95,3 +125,4 @@ export type WhatsAppMessage = any;
 export type WhatsAppContact = any;
 export type SupportTicket = any;
 export type ResolvedProduct = any;
+
